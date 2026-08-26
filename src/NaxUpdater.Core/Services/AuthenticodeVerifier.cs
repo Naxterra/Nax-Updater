@@ -53,6 +53,36 @@ public sealed class NativeAuthenticodeVerifier : IAuthenticodeVerifier
         }
     }
 
+    public static string? GetTrustedSigner(string filePath)
+    {
+        if (!File.Exists(filePath))
+        {
+            return null;
+        }
+        var fileInformation = new WinTrustFileInfo(filePath);
+        var filePointer = Marshal.AllocHGlobal(Marshal.SizeOf<WinTrustFileInfo>());
+        try
+        {
+            Marshal.StructureToPtr(fileInformation, filePointer, false);
+            var trustData = new WinTrustData(filePointer);
+            if (WinVerifyTrust(IntPtr.Zero, GenericVerifyV2, ref trustData) != 0)
+            {
+                return null;
+            }
+            using var certificate = LoadAuthenticodeSigner(filePath);
+            return certificate.GetNameInfo(X509NameType.SimpleName, forIssuer: false);
+        }
+        catch
+        {
+            return null;
+        }
+        finally
+        {
+            Marshal.DestroyStructure<WinTrustFileInfo>(filePointer);
+            Marshal.FreeHGlobal(filePointer);
+        }
+    }
+
     private static X509Certificate2 LoadAuthenticodeSigner(string filePath)
     {
         if (X509Certificate2.GetCertContentType(filePath) != X509ContentType.Authenticode)
