@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<WixLocalization xmlns="http://wixtoolset.org/schemas/v4/wxl" Culture="de-DE" Codepage="Windows-1252" SummaryInformationCodepage="Windows-1252">
+  <String Id="ProductLanguage" Value="1031" />
+  <String Id="DowngradeError" Value="Eine neuere Version von NaxUpdater ist bereits installiert." />
+  <String Id="MainFeatureTitle" Value="NaxUpdater-Anwendung" />
+  <String Id="MainFeatureDescription" Value="Erforderliche Anwendungsdateien und Windows-Integration." />
+  <String Id="StartMenuFeatureTitle" Value="Startmenü-Verknüpfung" />
+  <String Id="StartMenuFeatureDescription" Value="NaxUpdater zum Startmenü für alle Benutzer hinzufügen." />
+  <String Id="DesktopFeatureTitle" Value="Desktopverknüpfung" />
+  <String Id="DesktopFeatureDescription" Value="Eine NaxUpdater-Verknüpfung auf dem Desktop für alle Benutzer hinzufügen." />
+  <String Id="ShortcutDescription" Value="Verifizierter, sprachgerechter Windows-Anwendungsupdater" />
+  <String Id="ArpComments" Value="Native Windows-Anwendungsinventur und verifizierter Updater." />
+  <String Id="ExitDialogText" Value="NaxUpdater wurde installiert. Startmenü- und Desktopverknüpfungen sind verfügbar." />
+</WixLocalization>

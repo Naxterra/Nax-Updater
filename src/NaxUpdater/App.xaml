@@ -1,0 +1,97 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Application
+    x:Class="NaxUpdater.App"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    RequestedTheme="Dark">
+    <Application.Resources>
+        <ResourceDictionary>
+            <ResourceDictionary.MergedDictionaries>
+                <XamlControlsResources xmlns="using:Microsoft.UI.Xaml.Controls" />
+            </ResourceDictionary.MergedDictionaries>
+
+            <SolidColorBrush x:Key="NaxBlueBrush" Color="#5CC8FF" />
+            <SolidColorBrush x:Key="NaxPurpleBrush" Color="#B9A1FF" />
+            <SolidColorBrush x:Key="NaxGreenBrush" Color="#72D99A" />
+            <SolidColorBrush x:Key="NaxOrangeBrush" Color="#FFB86B" />
+            <SolidColorBrush x:Key="NaxPinkBrush" Color="#FF83B7" />
+            <SolidColorBrush x:Key="NaxBlueCardBrush" Color="#172B38" />
+            <SolidColorBrush x:Key="NaxPurpleCardBrush" Color="#29223D" />
+            <SolidColorBrush x:Key="NaxGreenCardBrush" Color="#172F27" />
+            <SolidColorBrush x:Key="NaxOrangeCardBrush" Color="#33281D" />
+            <SolidColorBrush x:Key="NaxPinkCardBrush" Color="#35202C" />
+
+            <Style x:Key="SummaryCardStyle" TargetType="Border">
+                <Setter Property="Padding" Value="16,12" />
+                <Setter Property="Background" Value="{ThemeResource CardBackgroundFillColorDefaultBrush}" />
+                <Setter Property="BorderBrush" Value="{ThemeResource CardStrokeColorDefaultBrush}" />
+                <Setter Property="BorderThickness" Value="1" />
+                <Setter Property="CornerRadius" Value="8" />
+            </Style>
+            <Style x:Key="SectionCardStyle" TargetType="Border">
+                <Setter Property="Background" Value="{ThemeResource CardBackgroundFillColorDefaultBrush}" />
+                <Setter Property="BorderBrush" Value="{ThemeResource CardStrokeColorDefaultBrush}" />
+                <Setter Property="BorderThickness" Value="1" />
+                <Setter Property="CornerRadius" Value="8" />
+            </Style>
+            <Style x:Key="BlueSummaryCardStyle" TargetType="Border" BasedOn="{StaticResource SummaryCardStyle}">
+                <Setter Property="Background" Value="{StaticResource NaxBlueCardBrush}" />
+                <Setter Property="BorderBrush" Value="#3E7794" />
+            </Style>
+            <Style x:Key="PurpleSummaryCardStyle" TargetType="Border" BasedOn="{StaticResource SummaryCardStyle}">
+                <Setter Property="Background" Value="{StaticResource NaxPurpleCardBrush}" />
+                <Setter Property="BorderBrush" Value="#65548F" />
+            </Style>
+            <Style x:Key="GreenSummaryCardStyle" TargetType="Border" BasedOn="{StaticResource SummaryCardStyle}">
+                <Setter Property="Background" Value="{StaticResource NaxGreenCardBrush}" />
+                <Setter Property="BorderBrush" Value="#3E7F60" />
+            </Style>
+            <Style x:Key="OrangeSummaryCardStyle" TargetType="Border" BasedOn="{StaticResource SummaryCardStyle}">
+                <Setter Property="Background" Value="{StaticResource NaxOrangeCardBrush}" />
+                <Setter Property="BorderBrush" Value="#8B6438" />
+            </Style>
+            <Style x:Key="PinkSummaryCardStyle" TargetType="Border" BasedOn="{StaticResource SummaryCardStyle}">
+                <Setter Property="Background" Value="{StaticResource NaxPinkCardBrush}" />
+                <Setter Property="BorderBrush" Value="#86506A" />
+            </Style>
+            <Style x:Key="BlueActionButtonStyle" TargetType="Button">
+                <Setter Property="Background" Value="#214B62" />
+                <Setter Property="BorderBrush" Value="#4F9DC2" />
+                <Setter Property="Foreground" Value="White" />
+                <Setter Property="CornerRadius" Value="6" />
+            </Style>
+            <Style x:Key="PurpleActionButtonStyle" TargetType="Button">
+                <Setter Property="Background" Value="#56438A" />
+                <Setter Property="BorderBrush" Value="#9C83E6" />
+                <Setter Property="Foreground" Value="White" />
+                <Setter Property="CornerRadius" Value="6" />
+            </Style>
+            <Style x:Key="DangerButtonStyle" TargetType="Button">
+                <Setter Property="Background" Value="#682D35" />
+                <Setter Property="BorderBrush" Value="#D96A78" />
+                <Setter Property="Foreground" Value="White" />
+                <Setter Property="CornerRadius" Value="6" />
+            </Style>
+            <Style x:Key="MutedTextStyle" TargetType="TextBlock">
+                <Setter Property="Foreground" Value="{ThemeResource TextFillColorSecondaryBrush}" />
+            </Style>
+            <Style x:Key="DetailLabelStyle" TargetType="TextBlock">
+                <Setter Property="FontSize" Value="12" />
+                <Setter Property="Foreground" Value="{ThemeResource TextFillColorSecondaryBrush}" />
+                <Setter Property="Margin" Value="0,10,0,2" />
+            </Style>
+            <Style x:Key="ColumnHeaderButtonStyle" TargetType="Button">
+                <Setter Property="MinWidth" Value="0" />
+                <Setter Property="MinHeight" Value="28" />
+                <Setter Property="Padding" Value="0" />
+                <Setter Property="Background" Value="Transparent" />
+                <Setter Property="BorderThickness" Value="0" />
+                <Setter Property="CornerRadius" Value="0" />
+                <Setter Property="HorizontalAlignment" Value="Stretch" />
+                <Setter Property="Foreground" Value="{ThemeResource TextFillColorSecondaryBrush}" />
+                <Setter Property="FontSize" Value="12" />
+                <Setter Property="FontWeight" Value="SemiBold" />
+            </Style>
+        </ResourceDictionary>
+    </Application.Resources>
+</Application>

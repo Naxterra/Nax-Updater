@@ -1,0 +1,55 @@
+{
+  "applications": [
+    {
+      "id": "DeepL.DeepL",
+      "displayName": "DeepL",
+      "publisherContains": "DeepL",
+      "blockedProviders": [ "WinGet" ],
+      "managementMode": "ZeroInstall",
+      "preferredProvider": "Zero Install native feed",
+      "appliesWhenAbsent": false,
+      "reason": "The installed app is content-addressed by Zero Install; WinGet sees an unknown version and uses a mutable bootstrapper URL."
+    },
+    {
+      "id": "Nextcloud.NextcloudDesktop",
+      "displayName": "Nextcloud",
+      "publisherContains": "Nextcloud",
+      "blockedProviders": [],
+      "managementMode": "DirectVendor",
+      "preferredProvider": "Official Nextcloud GitHub release and signed MSI",
+      "versionNormalization": "FirstThreeNumericComponents",
+      "appliesWhenAbsent": false,
+      "reason": "Use the executable for installed state and normalize the MSI build suffix to the public release version."
+    },
+    {
+      "id": "Blizzard.BattleNet",
+      "displayName": "Battle.net",
+      "publisherContains": "Blizzard",
+      "blockedProviders": [ "WinGet" ],
+      "managementMode": "NativeSelfUpdater",
+      "preferredProvider": "Blizzard native updater",
+      "appliesWhenAbsent": true,
+      "reason": "The WinGet pin is an intentional safety guard; Battle.net owns its update lifecycle."
+    },
+    {
+      "id": "CreativeTechnology.OpenAL",
+      "displayName": "OpenAL",
+      "publisherContains": null,
+      "blockedProviders": [ "WinGet" ],
+      "managementMode": "Unmanaged",
+      "preferredProvider": "No automatic provider",
+      "appliesWhenAbsent": true,
+      "reason": "Keep the preventive WinGet guard even when no global OpenAL package is detected."
+    },
+    {
+      "id": "Brave.BraveOrigin.Nightly",
+      "displayName": "Brave Origin",
+      "publisherContains": "Brave",
+      "blockedProviders": [ "WinGet" ],
+      "managementMode": "NativeSelfUpdater",
+      "preferredProvider": "Brave native update channel",
+      "appliesWhenAbsent": true,
+      "reason": "The WinGet pin is an intentional safety guard for the Origin/Nightly channel."
+    }
+  ]
+}

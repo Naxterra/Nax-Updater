@@ -1,0 +1,389 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Page
+    x:Class="NaxUpdater.MainPage"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+    xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+    mc:Ignorable="d"
+    Loaded="Page_Loaded">
+
+    <Grid Padding="20" RowSpacing="14">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+
+        <StackPanel Spacing="8">
+            <InfoBar
+                x:Uid="MainInfo"
+                IsOpen="True"
+                IsClosable="False"
+                Severity="Informational"
+                Title="Verified, language-aware updates"
+                Message="Checks are read-only. Installation requires your confirmation, an exact language/architecture match, release hash verification, and a trusted Windows publisher signature." />
+            <InfoBar x:Name="IssueBar" x:Uid="IssueBar" IsOpen="False" IsClosable="True" Severity="Warning" Title="Some evidence could not be read" />
+            <InfoBar x:Name="UpdateBar" x:Uid="UpdateBar" IsOpen="False" IsClosable="True" Severity="Informational" Title="Update status" />
+        </StackPanel>
+
+        <Grid Grid.Row="1" ColumnSpacing="10">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="*" MinWidth="250" />
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+            <Button x:Name="ScanButton" Height="36" Padding="14,0" Click="ScanButton_Click" Style="{StaticResource BlueActionButtonStyle}">
+                <StackPanel Orientation="Horizontal" Spacing="8">
+                    <FontIcon Glyph="&#xE72C;" FontSize="14" />
+                    <TextBlock x:Uid="ScanButtonText" Text="Scan applications" />
+                </StackPanel>
+            </Button>
+            <TextBox
+                x:Name="FilterBox"
+                x:Uid="FilterBox"
+                Grid.Column="1"
+                Height="36"
+                PlaceholderText="Filter name, publisher, version, provider, or path"
+                TextChanged="FilterBox_TextChanged" />
+            <CheckBox
+                x:Name="ShowSystemComponentsCheckBox"
+                x:Uid="ShowSystemComponentsCheckBox"
+                Grid.Column="2"
+                Content="Show Windows components"
+                VerticalAlignment="Center"
+                Checked="ShowSystemComponentsCheckBox_Changed"
+                Unchecked="ShowSystemComponentsCheckBox_Changed" />
+            <Button x:Name="LanguageButton" Grid.Column="3" Height="36" Padding="11,0" Click="LanguageButton_Click">
+                <StackPanel Orientation="Horizontal" Spacing="6">
+                    <FontIcon Glyph="&#xE774;" FontSize="14" />
+                    <TextBlock x:Uid="LanguageButtonText" Text="Language" />
+                </StackPanel>
+            </Button>
+        </Grid>
+
+        <Grid Grid.Row="2" ColumnSpacing="10">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="*" />
+            </Grid.ColumnDefinitions>
+            <Border Style="{StaticResource BlueSummaryCardStyle}">
+                <StackPanel>
+                    <TextBlock x:Uid="DetectedLabel" Text="Detected" Style="{StaticResource MutedTextStyle}" />
+                    <TextBlock x:Name="DetectedCountText" Text="—" FontSize="25" FontWeight="SemiBold" Foreground="{StaticResource NaxBlueBrush}" />
+                </StackPanel>
+            </Border>
+            <Border Grid.Column="1" Style="{StaticResource PurpleSummaryCardStyle}">
+                <StackPanel>
+                    <TextBlock x:Uid="VersionsResolvedLabel" Text="Versions resolved" Style="{StaticResource MutedTextStyle}" />
+                    <TextBlock x:Name="VersionCountText" Text="—" FontSize="25" FontWeight="SemiBold" Foreground="{StaticResource NaxPurpleBrush}" />
+                </StackPanel>
+            </Border>
+            <Border Grid.Column="2" Style="{StaticResource GreenSummaryCardStyle}">
+                <StackPanel>
+                    <TextBlock x:Uid="PathsResolvedLabel" Text="Paths resolved" Style="{StaticResource MutedTextStyle}" />
+                    <TextBlock x:Name="PathCountText" Text="—" FontSize="25" FontWeight="SemiBold" Foreground="{StaticResource NaxGreenBrush}" />
+                </StackPanel>
+            </Border>
+            <Border Grid.Column="3" Style="{StaticResource PinkSummaryCardStyle}">
+                <StackPanel>
+                    <TextBlock x:Uid="ProviderGuardsLabel" Text="Provider guards" Style="{StaticResource MutedTextStyle}" />
+                    <TextBlock x:Name="GuardCountText" Text="—" FontSize="25" FontWeight="SemiBold" Foreground="{StaticResource NaxPinkBrush}" />
+                </StackPanel>
+            </Border>
+        </Grid>
+
+        <Grid x:Name="InventoryWorkspace" Grid.Row="3" ColumnSpacing="12">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="2*" MinWidth="650" />
+                <ColumnDefinition Width="1" />
+                <ColumnDefinition Width="*" MinWidth="360" />
+            </Grid.ColumnDefinitions>
+
+            <Border Style="{StaticResource SectionCardStyle}">
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="*" />
+                    </Grid.RowDefinitions>
+                    <Grid Padding="14,12">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <TextBlock x:Uid="InstalledApplicationsHeader" Text="Installed applications" FontSize="18" FontWeight="SemiBold" Foreground="{StaticResource NaxBlueBrush}" />
+                        <Button x:Name="ShowUpdatesButton" x:Uid="ShowUpdatesButton" Grid.Column="1" Content="Updates" Padding="10,4" Margin="0,0,12,0" Click="ShowUpdatesButton_Click" Style="{StaticResource PurpleActionButtonStyle}" IsEnabled="False" />
+                        <TextBlock x:Name="VisibleCountText" x:Uid="VisibleCountText" Grid.Column="2" Text="Not scanned" Style="{StaticResource MutedTextStyle}" VerticalAlignment="Center" />
+                    </Grid>
+                    <Grid Grid.Row="1" Padding="14,7" ColumnSpacing="12" Background="{ThemeResource SubtleFillColorSecondaryBrush}">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="130" />
+                            <ColumnDefinition Width="130" />
+                            <ColumnDefinition Width="120" />
+                        </Grid.ColumnDefinitions>
+                        <Button Grid.Column="0" Tag="Name" Style="{StaticResource ColumnHeaderButtonStyle}" HorizontalContentAlignment="Left" Click="SortHeader_Click">
+                            <TextBlock x:Name="ApplicationHeaderText" Text="Application ↑" />
+                        </Button>
+                        <TextBlock x:Uid="VersionHeader" Grid.Column="1" Text="Version" FontSize="12" FontWeight="SemiBold" Style="{StaticResource MutedTextStyle}" />
+                        <TextBlock x:Uid="UpdateOwnerHeader" Grid.Column="2" Text="Update owner" FontSize="12" FontWeight="SemiBold" Style="{StaticResource MutedTextStyle}" />
+                        <Button Grid.Column="3" Tag="InstallDate" Style="{StaticResource ColumnHeaderButtonStyle}" HorizontalContentAlignment="Left" Click="SortHeader_Click">
+                            <TextBlock x:Name="InstallDateHeaderText" Text="Installed" />
+                        </Button>
+                    </Grid>
+                    <ListView x:Name="ApplicationsList" Grid.Row="2" SelectionMode="Single" SelectionChanged="ApplicationsList_SelectionChanged">
+                        <ListView.ItemContainerStyle>
+                            <Style TargetType="ListViewItem">
+                                <Setter Property="Padding" Value="0" />
+                                <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+                            </Style>
+                        </ListView.ItemContainerStyle>
+                        <ListView.ItemTemplate>
+                            <DataTemplate>
+                                <Grid Padding="14,9" ColumnSpacing="12">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="130" />
+                                        <ColumnDefinition Width="130" />
+                                        <ColumnDefinition Width="120" />
+                                    </Grid.ColumnDefinitions>
+                                    <StackPanel>
+                                        <TextBlock Text="{Binding Name}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
+                                        <TextBlock Text="{Binding Publisher}" FontSize="11" Style="{StaticResource MutedTextStyle}" TextTrimming="CharacterEllipsis" />
+                                    </StackPanel>
+                                    <TextBlock Grid.Column="1" Text="{Binding Version}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+                                    <TextBlock Grid.Column="2" Text="{Binding Provider}" VerticalAlignment="Center" TextWrapping="Wrap" />
+                                    <TextBlock Grid.Column="3" Text="{Binding InstallationDate}" VerticalAlignment="Center" />
+                                </Grid>
+                            </DataTemplate>
+                        </ListView.ItemTemplate>
+                    </ListView>
+                </Grid>
+            </Border>
+
+            <Border Grid.Column="1" Background="{ThemeResource DividerStrokeColorDefaultBrush}" />
+
+            <Border Grid.Column="2" Style="{StaticResource SectionCardStyle}">
+                <ScrollViewer Padding="16">
+                    <StackPanel Spacing="4">
+                        <TextBlock x:Uid="EvidenceDetailsHeader" Text="Evidence details" FontSize="18" FontWeight="SemiBold" Foreground="{StaticResource NaxPurpleBrush}" />
+                        <TextBlock x:Name="DetailsPlaceholder" x:Uid="DetailsPlaceholder" Text="Select an application to inspect why it was detected." Style="{StaticResource MutedTextStyle}" TextWrapping="Wrap" Margin="0,4,0,8" />
+
+                        <StackPanel x:Name="DetailsContent" Visibility="Collapsed">
+                            <TextBlock x:Name="DetailNameText" FontSize="22" FontWeight="SemiBold" TextWrapping="Wrap" />
+                            <TextBlock x:Name="DetailPublisherText" Style="{StaticResource MutedTextStyle}" TextWrapping="Wrap" />
+
+                            <TextBlock x:Uid="InstalledVersionLabel" Text="Installed version" Style="{StaticResource DetailLabelStyle}" />
+                            <TextBlock x:Name="DetailVersionText" IsTextSelectionEnabled="True" TextWrapping="Wrap" />
+
+                            <TextBlock x:Uid="ResolvedPathLabel" Text="Resolved path" Style="{StaticResource DetailLabelStyle}" />
+                            <TextBlock x:Name="DetailPathText" IsTextSelectionEnabled="True" TextWrapping="Wrap" />
+
+                            <Grid ColumnSpacing="12">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="*" />
+                                </Grid.ColumnDefinitions>
+                                <StackPanel>
+                                    <TextBlock x:Uid="UpdateOwnerLabel" Text="Update owner" Style="{StaticResource DetailLabelStyle}" />
+                                    <TextBlock x:Name="DetailProviderText" TextWrapping="Wrap" />
+                                </StackPanel>
+                                <StackPanel Grid.Column="1">
+                                    <TextBlock x:Uid="InstallScopeLabel" Text="Installation scope" Style="{StaticResource DetailLabelStyle}" />
+                                    <TextBlock x:Name="DetailScopeText" TextWrapping="Wrap" />
+                                </StackPanel>
+                            </Grid>
+
+                            <TextBlock x:Uid="InstallationDateLabel" Text="Installation date" Style="{StaticResource DetailLabelStyle}" />
+                            <TextBlock x:Name="DetailInstallDateText" TextWrapping="Wrap" />
+
+                            <TextBlock x:Uid="BlockedProvidersLabel" Text="Blocked providers" Style="{StaticResource DetailLabelStyle}" />
+                            <TextBlock x:Name="DetailBlockedText" TextWrapping="Wrap" />
+
+                            <Button x:Name="UninstallButton" x:Uid="UninstallButton" Content="Uninstall / remove" HorizontalAlignment="Stretch" Margin="0,16,0,0" Click="UninstallButton_Click" IsEnabled="False" Style="{StaticResource DangerButtonStyle}" />
+
+                            <TextBlock x:Uid="EvidenceHeader" Text="Evidence" FontSize="16" FontWeight="SemiBold" Foreground="{StaticResource NaxGreenBrush}" Margin="0,18,0,5" />
+                            <ItemsControl x:Name="EvidenceItems">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate>
+                                        <Border Padding="10,8" Margin="0,0,0,7" CornerRadius="6" Background="{ThemeResource SubtleFillColorSecondaryBrush}">
+                                            <Grid ColumnSpacing="9">
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="4" />
+                                                    <ColumnDefinition Width="*" />
+                                                </Grid.ColumnDefinitions>
+                                                <Border Background="{Binding AccentBrush}" CornerRadius="2" />
+                                                <StackPanel Grid.Column="1">
+                                                <Grid ColumnSpacing="8">
+                                                    <Grid.ColumnDefinitions>
+                                                        <ColumnDefinition Width="*" />
+                                                        <ColumnDefinition Width="Auto" />
+                                                    </Grid.ColumnDefinitions>
+                                                    <TextBlock Text="{Binding Label}" FontWeight="SemiBold" TextWrapping="Wrap" />
+                                                    <TextBlock Grid.Column="1" Text="{Binding Verification}" FontSize="11" Style="{StaticResource MutedTextStyle}" />
+                                                </Grid>
+                                                <TextBlock Text="{Binding Kind}" FontSize="11" Style="{StaticResource MutedTextStyle}" />
+                                                <TextBlock Text="{Binding Value}" FontSize="12" TextWrapping="Wrap" IsTextSelectionEnabled="True" Margin="0,3,0,0" />
+                                                </StackPanel>
+                                            </Grid>
+                                        </Border>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                        </StackPanel>
+
+                        <StackPanel x:Name="UnmatchedPolicySection" Visibility="Collapsed" Margin="0,18,0,0">
+                            <TextBlock x:Uid="PersistentGuardsHeader" Text="Persistent guards without a detected app" FontSize="16" FontWeight="SemiBold" Foreground="{StaticResource NaxPinkBrush}" />
+                            <TextBlock x:Uid="PersistentGuardsHint" Text="These protections remain active even when the associated package is absent." Style="{StaticResource MutedTextStyle}" TextWrapping="Wrap" Margin="0,2,0,8" />
+                            <ItemsControl x:Name="PolicyItems">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate>
+                                        <Border Padding="10,8" Margin="0,0,0,7" CornerRadius="6" Background="{ThemeResource SubtleFillColorSecondaryBrush}">
+                                            <StackPanel>
+                                                <TextBlock Text="{Binding Name}" FontWeight="SemiBold" />
+                                                <TextBlock Text="{Binding Id}" FontSize="11" Style="{StaticResource MutedTextStyle}" />
+                                                <TextBlock Text="{Binding BlockedProviders}" FontSize="12" Margin="0,3,0,0" />
+                                                <TextBlock Text="{Binding Reason}" FontSize="12" TextWrapping="Wrap" Style="{StaticResource MutedTextStyle}" />
+                                            </StackPanel>
+                                        </Border>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                        </StackPanel>
+                    </StackPanel>
+                </ScrollViewer>
+            </Border>
+        </Grid>
+
+        <Grid x:Name="UpdatesWorkspace" Grid.Row="3" ColumnSpacing="12" Visibility="Collapsed">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="2*" MinWidth="650" />
+                <ColumnDefinition Width="1" />
+                <ColumnDefinition Width="*" MinWidth="360" />
+            </Grid.ColumnDefinitions>
+
+            <Border Style="{StaticResource SectionCardStyle}">
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="*" />
+                    </Grid.RowDefinitions>
+                    <Grid Padding="14,10" ColumnSpacing="10">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <Button Padding="10,5" Click="ShowApplicationsButton_Click">
+                            <StackPanel Orientation="Horizontal" Spacing="6">
+                                <FontIcon Glyph="&#xE72B;" FontSize="13" />
+                                <TextBlock x:Uid="ApplicationsBackText" Text="Applications" />
+                            </StackPanel>
+                        </Button>
+                        <TextBlock x:Uid="UpdateProvidersHeader" Grid.Column="1" Text="Update providers" FontSize="18" FontWeight="SemiBold" Foreground="{StaticResource NaxPurpleBrush}" VerticalAlignment="Center" />
+                        <TextBlock x:Name="UpdateCountText" x:Uid="UpdateCountText" Grid.Column="2" Text="Not checked" Style="{StaticResource MutedTextStyle}" VerticalAlignment="Center" />
+                    </Grid>
+                    <Grid Grid.Row="1" Padding="14,7" ColumnSpacing="10" Background="{ThemeResource SubtleFillColorSecondaryBrush}">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="105" />
+                            <ColumnDefinition Width="105" />
+                            <ColumnDefinition Width="90" />
+                            <ColumnDefinition Width="115" />
+                        </Grid.ColumnDefinitions>
+                        <TextBlock x:Uid="ApplicationHeader" Text="Application" FontSize="12" FontWeight="SemiBold" Style="{StaticResource MutedTextStyle}" />
+                        <TextBlock x:Uid="InstalledHeader" Grid.Column="1" Text="Installed" FontSize="12" FontWeight="SemiBold" Style="{StaticResource MutedTextStyle}" />
+                        <TextBlock x:Uid="AvailableHeader" Grid.Column="2" Text="Available" FontSize="12" FontWeight="SemiBold" Style="{StaticResource MutedTextStyle}" />
+                        <TextBlock x:Uid="LanguageHeader" Grid.Column="3" Text="Language" FontSize="12" FontWeight="SemiBold" Style="{StaticResource MutedTextStyle}" />
+                        <TextBlock x:Uid="StatusHeader" Grid.Column="4" Text="Status" FontSize="12" FontWeight="SemiBold" Style="{StaticResource MutedTextStyle}" />
+                    </Grid>
+                    <ListView x:Name="UpdatesList" Grid.Row="2" SelectionMode="Single" SelectionChanged="UpdatesList_SelectionChanged">
+                        <ListView.ItemContainerStyle>
+                            <Style TargetType="ListViewItem">
+                                <Setter Property="Padding" Value="0" />
+                                <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+                            </Style>
+                        </ListView.ItemContainerStyle>
+                        <ListView.ItemTemplate>
+                            <DataTemplate>
+                                <Grid Padding="14,10" ColumnSpacing="10">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="105" />
+                                        <ColumnDefinition Width="105" />
+                                        <ColumnDefinition Width="90" />
+                                        <ColumnDefinition Width="115" />
+                                    </Grid.ColumnDefinitions>
+                                    <StackPanel>
+                                        <TextBlock Text="{Binding Name}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
+                                        <TextBlock Text="{Binding Provider}" FontSize="11" Style="{StaticResource MutedTextStyle}" TextTrimming="CharacterEllipsis" />
+                                    </StackPanel>
+                                    <TextBlock Grid.Column="1" Text="{Binding Installed}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+                                    <TextBlock Grid.Column="2" Text="{Binding Available}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+                                    <TextBlock Grid.Column="3" Text="{Binding Language}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+                                    <Border Grid.Column="4" Background="{Binding StatusBackground}" BorderBrush="{Binding StatusForeground}" BorderThickness="1" CornerRadius="10" Padding="7,3" HorizontalAlignment="Left" VerticalAlignment="Center">
+                                        <TextBlock Text="{Binding Status}" Foreground="{Binding StatusForeground}" FontSize="11" TextWrapping="Wrap" />
+                                    </Border>
+                                </Grid>
+                            </DataTemplate>
+                        </ListView.ItemTemplate>
+                    </ListView>
+                </Grid>
+            </Border>
+
+            <Border Grid.Column="1" Background="{ThemeResource DividerStrokeColorDefaultBrush}" />
+
+            <Border Grid.Column="2" Style="{StaticResource SectionCardStyle}">
+                <ScrollViewer Padding="16">
+                    <StackPanel Spacing="4">
+                        <TextBlock x:Uid="UpdateDetailsHeader" Text="Update details" FontSize="18" FontWeight="SemiBold" Foreground="{StaticResource NaxPurpleBrush}" />
+                        <TextBlock x:Name="UpdateDetailsPlaceholder" x:Uid="UpdateDetailsPlaceholder" Text="Check for updates and select an application." Style="{StaticResource MutedTextStyle}" TextWrapping="Wrap" Margin="0,4,0,8" />
+                        <StackPanel x:Name="UpdateDetailsContent" Visibility="Collapsed">
+                            <TextBlock x:Name="UpdateNameText" FontSize="22" FontWeight="SemiBold" TextWrapping="Wrap" />
+                            <TextBlock x:Name="UpdateProviderText" Style="{StaticResource MutedTextStyle}" TextWrapping="Wrap" />
+
+                            <TextBlock x:Uid="VersionHeader" Text="Version" Style="{StaticResource DetailLabelStyle}" />
+                            <TextBlock x:Name="UpdateVersionText" IsTextSelectionEnabled="True" TextWrapping="Wrap" />
+
+                            <TextBlock x:Uid="LanguagePreservationLabel" Text="Language preservation" Style="{StaticResource DetailLabelStyle}" />
+                            <TextBlock x:Name="UpdateLanguageText" IsTextSelectionEnabled="True" TextWrapping="Wrap" />
+
+                            <TextBlock x:Uid="ArchitectureChannelLabel" Text="Architecture and channel" Style="{StaticResource DetailLabelStyle}" />
+                            <TextBlock x:Name="UpdatePlatformText" TextWrapping="Wrap" />
+
+                            <TextBlock x:Uid="VerificationLabel" Text="Verification" Style="{StaticResource DetailLabelStyle}" />
+                            <TextBlock x:Name="UpdateSecurityText" TextWrapping="Wrap" />
+
+                            <TextBlock x:Uid="ReleasePageLabel" Text="Release page" Style="{StaticResource DetailLabelStyle}" />
+                            <TextBlock x:Name="UpdateReleaseText" IsTextSelectionEnabled="True" TextWrapping="Wrap" />
+
+                            <TextBlock x:Uid="ProviderNotesLabel" Text="Provider notes" Style="{StaticResource DetailLabelStyle}" />
+                            <TextBlock x:Name="UpdateMessageText" TextWrapping="Wrap" />
+
+                            <ProgressBar x:Name="UpdateProgress" Visibility="Collapsed" Margin="0,18,0,8" Minimum="0" Maximum="100" />
+                            <Button x:Name="InstallUpdateButton" x:Uid="InstallUpdateButton" Content="Download and install" HorizontalAlignment="Stretch" Margin="0,14,0,0" Click="InstallUpdateButton_Click" IsEnabled="False" Style="{StaticResource PurpleActionButtonStyle}" />
+                            <TextBlock x:Uid="CloseAppsHint" Text="Applications must be closed manually before installation. NaxUpdater never terminates them." Style="{StaticResource MutedTextStyle}" FontSize="11" TextWrapping="Wrap" Margin="0,7,0,0" />
+                        </StackPanel>
+                    </StackPanel>
+                </ScrollViewer>
+            </Border>
+        </Grid>
+
+        <Grid Grid.Row="4" ColumnSpacing="10">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="*" />
+            </Grid.ColumnDefinitions>
+            <ProgressRing x:Name="ScanProgress" Width="18" Height="18" IsActive="False" Visibility="Collapsed" />
+            <TextBlock x:Name="StatusText" x:Uid="StatusText" Grid.Column="1" Text="Ready for the first scan" Style="{StaticResource MutedTextStyle}" VerticalAlignment="Center" />
+        </Grid>
+    </Grid>
+</Page>

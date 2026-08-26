@@ -1,0 +1,18 @@
+{
+  "github": [
+    {
+      "id": "Nextcloud.NextcloudDesktop",
+      "displayName": "Nextcloud",
+      "publisherContains": "Nextcloud",
+      "repository": "nextcloud-releases/desktop",
+      "assetNamePattern": "^Nextcloud-(?<version>[0-9]+(?:\\.[0-9]+)+)-x64\\.msi$",
+      "architecture": "x64",
+      "language": "neutral",
+      "expectedSigner": "Nextcloud GmbH",
+      "installerKind": "DownloadedMsi",
+      "installerArguments": [ "/qn", "/norestart" ],
+      "runningProcessNames": [ "nextcloud" ],
+      "requiresElevation": true
+    }
+  ]
+}

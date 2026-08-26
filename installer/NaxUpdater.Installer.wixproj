@@ -1,0 +1,21 @@
+<Project Sdk="WixToolset.Sdk/6.0.2">
+  <PropertyGroup>
+    <OutputType>Package</OutputType>
+    <Platform>x64</Platform>
+    <InstallerPlatform>x64</InstallerPlatform>
+    <Cultures>en-US;de-DE</Cultures>
+    <OutputName>NaxUpdater-Setup-x64</OutputName>
+    <OutputPath>$(MSBuildProjectDirectory)\..\artifacts\installer\</OutputPath>
+    <NaxUpdaterVersion Condition="'$(NaxUpdaterVersion)' == ''">0.4.0</NaxUpdaterVersion>
+    <DefineConstants>ProductVersion=$(NaxUpdaterVersion)</DefineConstants>
+    <DefaultCompressionLevel>high</DefaultCompressionLevel>
+    <SuppressIces>ICE03</SuppressIces>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <BindPath Include="$(MSBuildProjectDirectory)\..\artifacts\NaxUpdater-win-x64">
+      <BindName>Publish</BindName>
+    </BindPath>
+    <PackageReference Include="WixToolset.UI.wixext" Version="6.0.2" />
+  </ItemGroup>
+</Project>
