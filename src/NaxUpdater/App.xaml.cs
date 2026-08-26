@@ -7,10 +7,12 @@ public partial class App : Application
 {
     public static Window MainWindow { get; private set; } = null!;
     public static string CurrentLanguage { get; private set; } = "en-US";
+    public static bool ShowSafetyInformation { get; private set; } = true;
 
     public App()
     {
         CurrentLanguage = LoadLanguage();
+        ShowSafetyInformation = LoadBooleanSetting("show-safety-information.txt", true);
         Services.TaskbarIdentity.Initialize();
         Microsoft.Windows.Globalization.ApplicationLanguages.PrimaryLanguageOverride = CurrentLanguage;
         var culture = CultureInfo.GetCultureInfo(CurrentLanguage);
@@ -43,6 +45,21 @@ public partial class App : Application
         MainWindow.Close();
     }
 
+    public static void SetShowSafetyInformation(bool show)
+    {
+        ShowSafetyInformation = show;
+        try
+        {
+            var settingsDirectory = GetSettingsDirectory();
+            Directory.CreateDirectory(settingsDirectory);
+            File.WriteAllText(Path.Combine(settingsDirectory, "show-safety-information.txt"), show.ToString());
+        }
+        catch
+        {
+            // Keep the in-memory preference when the settings directory is unavailable.
+        }
+    }
+
     private static string LoadLanguage()
     {
         try
@@ -64,6 +81,21 @@ public partial class App : Application
         return CultureInfo.CurrentUICulture.TwoLetterISOLanguageName.Equals("de", StringComparison.OrdinalIgnoreCase)
             ? "de-DE"
             : "en-US";
+    }
+
+    private static bool LoadBooleanSetting(string fileName, bool fallback)
+    {
+        try
+        {
+            var path = Path.Combine(GetSettingsDirectory(), fileName);
+            return File.Exists(path) && bool.TryParse(File.ReadAllText(path).Trim(), out var saved)
+                ? saved
+                : fallback;
+        }
+        catch
+        {
+            return fallback;
+        }
     }
 
     private static string GetSettingsDirectory() => Path.Combine(

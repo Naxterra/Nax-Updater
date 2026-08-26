@@ -180,6 +180,11 @@ var snapshot = await new ApplicationInventoryService(policyPath).ScanAsync();
 Assert(snapshot.Applications.Count > 0, "The inventory scan did not find any applications.");
 Assert(snapshot.Applications.All(static app => !string.IsNullOrWhiteSpace(app.DisplayName)), "An application has an empty display name.");
 Assert(snapshot.Applications.All(static app => app.Evidence.Count > 0), "Every application must retain detection evidence.");
+var opaqueMsixNames = snapshot.Applications
+    .Where(static app => app.ManagementMode == ManagementMode.Msix && Guid.TryParse(app.DisplayName, out _))
+    .Select(static app => app.DisplayName)
+    .ToArray();
+Assert(opaqueMsixNames.Length == 0, $"MSIX applications still expose raw GUID names: {string.Join(", ", opaqueMsixNames)}");
 Assert(snapshot.Applications.Any(static app => app.InstalledOn.HasValue), "No Windows-reported installation dates were retained.");
 Assert(snapshot.Applications.Where(static app => app.InstalledOn.HasValue).All(static app => app.InstalledOn!.Value.Year >= 2000),
     "An invalid installation date was retained.");
@@ -194,6 +199,13 @@ var exactDuplicates = snapshot.Applications
     .Where(static group => group.Count() > 1)
     .ToArray();
 Assert(exactDuplicates.Length == 0, $"Exact duplicate application records remain: {string.Join(", ", exactDuplicates.Select(static group => group.Key))}");
+
+var doom = snapshot.Applications.FirstOrDefault(app => app.DisplayName.Equals("DOOM The Dark Ages", StringComparison.OrdinalIgnoreCase));
+if (doom is not null && string.IsNullOrWhiteSpace(doom.Evidence.FirstOrDefault(static evidence => evidence.Label == "Install date")?.Value))
+{
+    Assert(doom.InstalledOn.HasValue, "The installation-folder date fallback did not resolve DOOM's missing registry date.");
+    Assert(doom.InstallDateSource == "Installation folder modified date", $"DOOM used an unexpected date source: {doom.InstallDateSource}");
+}
 
 AssertProtectedApplication(
     snapshot,

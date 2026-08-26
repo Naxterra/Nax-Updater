@@ -111,6 +111,7 @@ public static partial class LocalizationService
             "Registry version" => Get("EvidenceLabelRegistryVersion"),
             "Install location" => Get("EvidenceLabelInstallLocation"),
             "Install date" => Get("EvidenceLabelInstallDate"),
+            "Install or update date fallback" => Get("EvidenceLabelInstallOrUpdateFallback"),
             "Display icon path" => Get("EvidenceLabelDisplayIcon"),
             "Uninstall command" => Get("EvidenceLabelUninstallCommand"),
             "Installer technology" => Get("EvidenceLabelInstallerTechnology"),

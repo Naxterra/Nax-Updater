@@ -30,7 +30,7 @@ The inventory engine:
 
 ## Update providers
 
-Version 0.4.0 includes:
+Version 0.4.1 includes:
 
 - Mozilla Firefox releases from Mozilla's official product-details and release archive, preserving the effective Firefox profile language, architecture, channel, scope, and installation directory;
 - Nextcloud releases from the official `nextcloud-releases/desktop` GitHub repository using its release-asset SHA-256 digest and a multi-language MSI;
@@ -43,9 +43,12 @@ The single **Scan and check updates** action rebuilds the installed-application 
 
 - Native WinUI 3 dark mode with restrained blue, violet, green, orange, and pink status accents.
 - Complete English and German resources, selected from the Windows UI language by default.
-- An in-app language selector stores the preference and restarts NaxUpdater when changed.
-- Installed applications can be sorted by clicking the **Application** or **Installed** column header. Clicking the active header reverses direction; unknown dates remain last.
+- An in-app settings dialog stores the language and verification-banner preferences.
+- The verification information banner can be closed permanently and restored from Settings.
+- Installed applications can be sorted by clicking the **Application** or **Installed / updated** column header. Clicking the active header reverses direction; unknown dates remain last.
 - The former confidence/safety summary and list column are intentionally omitted from the user interface.
+
+MSIX app-list resources and package-directory identities are used to replace opaque package GUIDs with meaningful names. Dates are labelled **Installed / updated** because Windows and MSI can replace the original installation date during servicing; when no reported date exists, NaxUpdater can show the installation folder's modification date as an explicitly identified fallback.
 
 NaxUpdater never falls back to an English Firefox installer when the detected locale is unavailable. An update is blocked instead.
 
@@ -74,7 +77,7 @@ From this directory:
 dotnet build NaxUpdater.slnx
 dotnet run --project tests/NaxUpdater.Core.SmokeTests/NaxUpdater.Core.SmokeTests.csproj
 dotnet publish src/NaxUpdater/NaxUpdater.csproj -c Release -r win-x64 --self-contained true -o artifacts/NaxUpdater-win-x64
-./scripts/package-release.ps1 -Version 0.4.0
+./scripts/package-release.ps1 -Version 0.4.1
 ```
 
 The desktop project uses .NET 11, WinUI 3, and the Windows App SDK. It is not an Electron or WebView application.

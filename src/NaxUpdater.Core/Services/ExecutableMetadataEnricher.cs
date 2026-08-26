@@ -23,6 +23,7 @@ internal static class ExecutableMetadataEnricher
         {
             TryReadExecutableMetadata(candidate, primaryPath);
         }
+        TryResolveInstallOrUpdateDate(candidate, primaryPath);
 
         var (version, versionSource) = !string.IsNullOrWhiteSpace(candidate.ProviderVersion)
             ? (candidate.ProviderVersion, "Native provider")
@@ -106,6 +107,44 @@ internal static class ExecutableMetadataEnricher
         catch
         {
             // A locked or unusual executable remains useful as path evidence.
+        }
+    }
+
+    private static void TryResolveInstallOrUpdateDate(ApplicationCandidate candidate, string? primaryPath)
+    {
+        if (candidate.InstalledOn.HasValue || string.IsNullOrWhiteSpace(primaryPath))
+        {
+            return;
+        }
+
+        try
+        {
+            var directory = Directory.Exists(primaryPath)
+                ? primaryPath
+                : File.Exists(primaryPath)
+                    ? Path.GetDirectoryName(primaryPath)
+                    : null;
+            if (string.IsNullOrWhiteSpace(directory) || !Directory.Exists(directory))
+            {
+                return;
+            }
+
+            var modified = new DateTimeOffset(Directory.GetLastWriteTime(directory));
+            if (modified.Year < 2000 || modified > DateTimeOffset.Now.AddDays(1))
+            {
+                return;
+            }
+
+            candidate.InstalledOn = modified;
+            candidate.InstallDateSource = "Installation folder modified date";
+            candidate.Evidence.Add(new ApplicationEvidence(
+                EvidenceKind.FileSystem,
+                "Install or update date fallback",
+                modified.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture)));
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+        {
+            // Date fallback is optional and must never make inventory scanning fail.
         }
     }
 

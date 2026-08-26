@@ -31,8 +31,11 @@ public sealed partial class MainPage : Page
             AppContext.BaseDirectory,
             "Configuration",
             "application-policies.json"));
+        MainInfo.IsOpen = App.ShowSafetyInformation;
         UpdateSortHeaders();
     }
+
+    private void MainInfo_CloseButtonClick(InfoBar sender, object args) => App.SetShowSafetyInformation(false);
 
     private async void Page_Loaded(object sender, RoutedEventArgs e)
     {
@@ -530,6 +533,13 @@ public sealed partial class MainPage : Page
             ItemsSource = new[] { "English", "Deutsch" },
             SelectedIndex = App.CurrentLanguage == "de-DE" ? 1 : 0
         };
+        var safetyInformationToggle = new ToggleSwitch
+        {
+            Header = LocalizationService.Get("SettingsSafetyInformation"),
+            OffContent = LocalizationService.Get("Disabled"),
+            OnContent = LocalizationService.Get("Enabled"),
+            IsOn = App.ShowSafetyInformation
+        };
         var content = new StackPanel
         {
             Spacing = 10,
@@ -537,6 +547,7 @@ public sealed partial class MainPage : Page
             Children =
             {
                 languageBox,
+                safetyInformationToggle,
                 new TextBlock
                 {
                     Text = LocalizationService.Get("SettingsRestartHint"),
@@ -556,6 +567,8 @@ public sealed partial class MainPage : Page
         };
         if (await dialog.ShowAsync() == ContentDialogResult.Primary)
         {
+            App.SetShowSafetyInformation(safetyInformationToggle.IsOn);
+            MainInfo.IsOpen = safetyInformationToggle.IsOn;
             App.RestartWithLanguage(languageBox.SelectedIndex == 1 ? "de-DE" : "en-US");
         }
     }

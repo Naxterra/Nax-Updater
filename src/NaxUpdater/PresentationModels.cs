@@ -73,6 +73,7 @@ public sealed class ApplicationRow
             "Registry install location" => LocalizationService.Get("SourceRegistryInstallLocation"),
             "MSIX installed location" => LocalizationService.Get("SourceMsixLocation"),
             "MSIX package installed or updated date" => LocalizationService.Get("SourceMsixInstalledDate"),
+            "Installation folder modified date" => LocalizationService.Get("SourceInstallFolderModifiedDate"),
             null => LocalizationService.Get("Unknown"),
             _ => source
         };
