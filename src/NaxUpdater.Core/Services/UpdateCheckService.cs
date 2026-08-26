@@ -11,7 +11,8 @@ public sealed class UpdateCheckService
         var providers = new List<IUpdateProvider>
         {
             new FirefoxUpdateProvider(httpClient, firefoxMetadataDetector ?? new FirefoxMetadataDetector()),
-            new ZeroInstallUpdateProvider(new ProcessQueryRunner())
+            new ZeroInstallUpdateProvider(new ProcessQueryRunner()),
+            new ElectronBuilderUpdateProvider(httpClient)
         };
         providers.AddRange(catalog.GitHub.Select(recipe => new GitHubReleaseUpdateProvider(httpClient, recipe)));
         _providers = providers;

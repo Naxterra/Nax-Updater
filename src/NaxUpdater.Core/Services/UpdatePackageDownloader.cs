@@ -19,15 +19,11 @@ public sealed class UpdatePackageDownloader(
             throw new InvalidOperationException("Native-provider updates do not download an installer.");
         }
         if (plan.DownloadUri is null || plan.DownloadUri.Scheme != Uri.UriSchemeHttps ||
-            string.IsNullOrWhiteSpace(plan.FileName) || string.IsNullOrWhiteSpace(plan.Sha256) ||
-            string.IsNullOrWhiteSpace(plan.ExpectedSigner))
+            string.IsNullOrWhiteSpace(plan.FileName) || string.IsNullOrWhiteSpace(plan.ExpectedSigner))
         {
-            throw new InvalidOperationException("The update plan is missing its HTTPS URL, filename, SHA-256, or signer policy.");
+            throw new InvalidOperationException("The update plan is missing its HTTPS URL, filename, hash, or signer policy.");
         }
-        if (plan.Sha256.Length != 64 || !plan.Sha256.All(Uri.IsHexDigit))
-        {
-            throw new InvalidOperationException("The expected SHA-256 is invalid.");
-        }
+        var hashPolicy = ResolveHashPolicy(plan);
 
         var safeFileName = Path.GetFileName(plan.FileName);
         if (!string.Equals(safeFileName, plan.FileName, StringComparison.Ordinal) || safeFileName.Length == 0)
@@ -77,7 +73,7 @@ public sealed class UpdatePackageDownloader(
                              1024 * 128,
                              FileOptions.Asynchronous | FileOptions.SequentialScan))
             {
-                using var hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
+                using var hash = IncrementalHash.CreateHash(hashPolicy.Algorithm);
                 var buffer = new byte[1024 * 128];
                 long received = 0;
                 while (true)
@@ -98,9 +94,9 @@ public sealed class UpdatePackageDownloader(
                 await output.FlushAsync(cancellationToken);
                 actualHash = Convert.ToHexString(hash.GetHashAndReset());
             }
-            if (!actualHash.Equals(plan.Sha256, StringComparison.OrdinalIgnoreCase))
+            if (!actualHash.Equals(hashPolicy.ExpectedHash, StringComparison.OrdinalIgnoreCase))
             {
-                throw new InvalidDataException($"SHA-256 mismatch. Expected {plan.Sha256}, received {actualHash}.");
+                throw new InvalidDataException($"{hashPolicy.DisplayName} mismatch. Expected {hashPolicy.ExpectedHash}, received {actualHash}.");
             }
             File.Move(partialPath, destinationPath, overwrite: true);
 
@@ -129,11 +125,14 @@ public sealed class UpdatePackageDownloader(
         CancellationToken cancellationToken)
     {
         await using var stream = File.OpenRead(path);
-        var hash = await SHA256.HashDataAsync(stream, cancellationToken);
+        var hashPolicy = ResolveHashPolicy(plan);
+        var hash = hashPolicy.Algorithm == HashAlgorithmName.SHA512
+            ? await SHA512.HashDataAsync(stream, cancellationToken)
+            : await SHA256.HashDataAsync(stream, cancellationToken);
         var actualHash = Convert.ToHexString(hash);
-        if (!actualHash.Equals(plan.Sha256, StringComparison.OrdinalIgnoreCase))
+        if (!actualHash.Equals(hashPolicy.ExpectedHash, StringComparison.OrdinalIgnoreCase))
         {
-            return new FileVerification(false, null, "The cached installer SHA-256 does not match the release.");
+            return new FileVerification(false, null, $"The cached installer {hashPolicy.DisplayName} does not match the release.");
         }
         var signature = authenticodeVerifier.Verify(path, plan.ExpectedSigner!);
         return new FileVerification(signature.IsValid, signature.Signer, signature.Error);
@@ -141,6 +140,23 @@ public sealed class UpdatePackageDownloader(
 
     private static bool IsAllowedHost(string host, IReadOnlyList<string> allowedHosts) =>
         allowedHosts.Any(allowed => host.Equals(allowed, StringComparison.OrdinalIgnoreCase));
+
+    private static HashPolicy ResolveHashPolicy(UpdateExecutionPlan plan)
+    {
+        if (!string.IsNullOrWhiteSpace(plan.Sha512))
+        {
+            if (plan.Sha512.Length != 128 || !plan.Sha512.All(Uri.IsHexDigit))
+            {
+                throw new InvalidOperationException("The expected SHA-512 is invalid.");
+            }
+            return new HashPolicy(HashAlgorithmName.SHA512, plan.Sha512, "SHA-512");
+        }
+        if (!string.IsNullOrWhiteSpace(plan.Sha256) && plan.Sha256.Length == 64 && plan.Sha256.All(Uri.IsHexDigit))
+        {
+            return new HashPolicy(HashAlgorithmName.SHA256, plan.Sha256, "SHA-256");
+        }
+        throw new InvalidOperationException("The update plan does not contain a valid SHA-256 or SHA-512 hash.");
+    }
 
     private static string SanitizePathSegment(string value)
     {
@@ -150,6 +166,7 @@ public sealed class UpdatePackageDownloader(
     }
 
     private sealed record FileVerification(bool IsValid, string? Signer, string? Error);
+    private sealed record HashPolicy(HashAlgorithmName Algorithm, string ExpectedHash, string DisplayName);
 }
 
 public sealed record VerifiedInstaller(string Path, string Signer);

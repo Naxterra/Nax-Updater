@@ -31,6 +31,7 @@ public static partial class LocalizationService
         if (update.ProviderId == "mozilla-firefox") return Get("ProviderMozilla");
         if (update.ProviderId == "zero-install") return Get("ProviderZeroInstall");
         if (update.ProviderId == "native-updater") return Get("ProviderNative");
+        if (update.ProviderId == "installed-updater-metadata") return Get("ProviderInstalledMetadata");
         if (update.ProviderId.StartsWith("github:", StringComparison.Ordinal))
         {
             return Format("ProviderGitHub", update.ProviderId[7..]);
@@ -41,6 +42,7 @@ public static partial class LocalizationService
     public static string ProviderMessage(UpdateCheckResult update)
     {
         if (update.ProviderId == "native-updater") return Get("ProviderNativeNote");
+        if (update.ProviderId == "installed-updater-metadata") return Get("ProviderInstalledMetadataNote");
         if (update.ProviderId.StartsWith("github:", StringComparison.Ordinal)) return Get("ProviderGitHubNote");
         if (update.ProviderId == "zero-install")
         {
