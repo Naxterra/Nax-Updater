@@ -19,6 +19,7 @@ public sealed partial class MainPage : Page
     private IReadOnlyList<ApplicationRow> _allApplications = [];
     private InventorySnapshot? _snapshot;
     private bool _loaded;
+    private bool _updateBusy;
     private ApplicationSortColumn _sortColumn = ApplicationSortColumn.Name;
     private bool _sortDescending;
 
@@ -427,42 +428,30 @@ public sealed partial class MainPage : Page
         UpdateSecurityText.Text = row.SecurityDetail;
         UpdateReleaseText.Text = row.ReleaseNotes;
         UpdateMessageText.Text = row.Message;
-        InstallUpdateButton.IsEnabled = row.CanInstall;
-        InstallUpdateButton.Content = row.Source.ExecutionPlan?.Kind == UpdateExecutionKind.NativeCommand
-            ? LocalizationService.Get("RunNativeProvider")
-            : LocalizationService.Get("DownloadInstallVerified");
     }
 
-    private async void InstallUpdateButton_Click(object sender, RoutedEventArgs e)
+    private async void UpdateRowButton_Click(object sender, RoutedEventArgs e)
     {
-        if (UpdatesList.SelectedItem is not UpdateRow row || !row.CanInstall || row.Source.ExecutionPlan is null)
+        if (_updateBusy || sender is not Button { DataContext: UpdateRow row } button ||
+            !row.CanInstall || row.Source.ExecutionPlan is null)
         {
             return;
         }
+        UpdatesList.SelectedItem = row;
 
         var running = _updateExecutionService.FindRunningProcesses(row.Source);
         if (running.Count > 0)
         {
-            await CreateDialog(
-                LocalizationService.Format("CloseFirstTitle", row.Name),
-                LocalizationService.Format("CloseProcessesMessage", string.Join(", ", running)),
-                LocalizationService.Get("Ok")).ShowAsync();
+            UpdateBar.Title = LocalizationService.Format("CloseFirstTitle", row.Name);
+            UpdateBar.Message = LocalizationService.Format("CloseProcessesMessage", string.Join(", ", running));
+            UpdateBar.Severity = InfoBarSeverity.Warning;
+            UpdateBar.IsOpen = true;
             return;
         }
 
         var plan = row.Source.ExecutionPlan;
-        var confirmation = CreateDialog(
-            LocalizationService.Format("UpdateConfirmTitle", row.Name),
-            LocalizationService.Format("UpdateConfirmContent", row.VersionChange, row.LanguageDetail, row.PlatformDetail, row.Provider, row.SecurityDetail),
-            plan.Kind == UpdateExecutionKind.NativeCommand ? LocalizationService.Get("RunUpdate") : LocalizationService.Get("DownloadInstall"),
-            LocalizationService.Get("Cancel"));
-        if (await confirmation.ShowAsync() != ContentDialogResult.Primary)
-        {
-            return;
-        }
-
         SetUpdateBusy(true, LocalizationService.Format("PreparingUpdate", row.Name));
-        InstallUpdateButton.IsEnabled = false;
+        button.IsEnabled = false;
         UpdateProgress.Visibility = Visibility.Visible;
         UpdateProgress.IsIndeterminate = plan.Kind == UpdateExecutionKind.NativeCommand;
         UpdateProgress.Value = 0;
@@ -515,15 +504,17 @@ public sealed partial class MainPage : Page
         {
             UpdateProgress.Visibility = Visibility.Collapsed;
             UpdateProgress.IsIndeterminate = false;
-            InstallUpdateButton.IsEnabled = row.CanInstall;
+            button.IsEnabled = row.CanInstall;
             SetUpdateBusy(false, null);
         }
     }
 
     private void SetUpdateBusy(bool busy, string? message)
     {
+        _updateBusy = busy;
         ScanButton.IsEnabled = !busy;
         ShowUpdatesButton.IsEnabled = !busy && _updates.Count > 0;
+        UpdatesList.IsEnabled = !busy;
         ScanProgress.IsActive = busy;
         ScanProgress.Visibility = busy ? Visibility.Visible : Visibility.Collapsed;
         if (!string.IsNullOrWhiteSpace(message))
