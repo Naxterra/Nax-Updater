@@ -137,6 +137,52 @@ try
     Assert(nextcloudUpdate.Language == "neutral" && nextcloudUpdate.ExecutionPlan?.Kind == UpdateExecutionKind.DownloadedMsi,
         "Nextcloud multi-language MSI plan is incorrect.");
 
+    var metadataFixture = Directory.CreateDirectory(Path.Combine(firefoxFixture, "MetadataApp"));
+    var metadataResources = Directory.CreateDirectory(Path.Combine(metadataFixture.FullName, "resources"));
+    var metadataExecutable = Path.Combine(metadataFixture.FullName, "MetadataApp.exe");
+    await File.WriteAllBytesAsync(metadataExecutable, []);
+    await File.WriteAllTextAsync(Path.Combine(metadataResources.FullName, "app-update.yml"), """
+        provider: generic
+        url: https://updates.example.test/desktop
+        publisherName:
+          - Example Publisher LLC
+        """);
+    var metadataPayload = Encoding.UTF8.GetBytes("electron-builder installer fixture");
+    var metadataSha512 = Convert.ToBase64String(SHA512.HashData(metadataPayload));
+    using var metadataClient = new HttpClient(new StubHttpMessageHandler(request =>
+        request.RequestUri?.AbsolutePath.EndsWith("latest.yml", StringComparison.OrdinalIgnoreCase) == true
+            ? new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent($$"""
+                    version: 2.0.0
+                    files:
+                      - url: metadata-app-win-x64-2.0.0.exe
+                        sha512: {{metadataSha512}}
+                    path: metadata-app-win-x64-2.0.0.exe
+                    sha512: {{metadataSha512}}
+                    """, Encoding.UTF8, "text/yaml")
+            }
+            : new HttpResponseMessage(HttpStatusCode.OK) { Content = new ByteArrayContent(metadataPayload) }));
+    var metadataApplication = CreateApplication(
+        "metadata-test",
+        "Metadata App",
+        "Example Publisher LLC",
+        "1.0.0",
+        metadataExecutable,
+        InstallScope.CurrentUser,
+        ManagementMode.Registry);
+    var metadataProvider = new ElectronBuilderUpdateProvider(metadataClient);
+    Assert(metadataProvider.CanHandle(metadataApplication), "Installed electron-builder updater metadata was not discovered.");
+    var metadataUpdate = await metadataProvider.CheckAsync(metadataApplication, CancellationToken.None);
+    Assert(metadataUpdate.Status == UpdateStatus.Available && metadataUpdate.AvailableVersion == "2.0.0",
+        "Generic installed updater metadata did not detect an update.");
+    Assert(metadataUpdate.ExecutionPlan?.Sha512 == Convert.ToHexString(SHA512.HashData(metadataPayload)) &&
+           metadataUpdate.ExecutionPlan.ExpectedSigner == "Example Publisher LLC",
+        "Generic installed updater metadata lost its SHA-512 or publisher policy.");
+    var metadataInstaller = await new UpdatePackageDownloader(metadataClient, new StubAuthenticodeVerifier("Example Publisher LLC"))
+        .DownloadAndVerifyAsync(metadataUpdate, Path.Combine(firefoxFixture, "metadata-cache"));
+    Assert(File.ReadAllBytes(metadataInstaller.Path).SequenceEqual(metadataPayload), "SHA-512 verified metadata installer download failed.");
+
     var installerPayload = Encoding.UTF8.GetBytes("verified installer fixture");
     var installerHash = Convert.ToHexString(SHA256.HashData(installerPayload));
     var downloadPlan = nextcloudUpdate.ExecutionPlan! with
@@ -171,7 +217,7 @@ finally
 var policyPath = Path.Combine(AppContext.BaseDirectory, "Configuration", "application-policies.json");
 Assert(File.Exists(policyPath), "The default policy catalog was not copied to the test output.");
 var policies = await new PolicyService().LoadAsync(policyPath);
-Assert(policies.Count >= 5, "The default guard policies were not loaded.");
+Assert(policies.Count >= 4, "The default application policies were not loaded.");
 var battleNetPolicy = policies.Single(policy => policy.Id == "Blizzard.BattleNet");
 Assert(PolicyService.IsMatch(battleNetPolicy, "Battle.net", "Blizzard Entertainment"), "Battle.net policy matching failed.");
 Assert(!PolicyService.IsMatch(battleNetPolicy, "Battle.net", "Unrelated Publisher"), "Publisher matching accepted an unrelated app.");
@@ -199,6 +245,18 @@ var exactDuplicates = snapshot.Applications
     .Where(static group => group.Count() > 1)
     .ToArray();
 Assert(exactDuplicates.Length == 0, $"Exact duplicate application records remain: {string.Join(", ", exactDuplicates.Select(static group => group.Key))}");
+
+var installedSignal = snapshot.Applications.FirstOrDefault(app => app.DisplayName.StartsWith("Signal", StringComparison.OrdinalIgnoreCase));
+if (installedSignal is not null)
+{
+    using var liveSignalClient = new HttpClient { Timeout = TimeSpan.FromSeconds(20) };
+    var installedMetadataProvider = new ElectronBuilderUpdateProvider(liveSignalClient);
+    Assert(installedMetadataProvider.CanHandle(installedSignal), "Signal's installed updater metadata was not discovered.");
+    var liveSignalUpdate = await installedMetadataProvider.CheckAsync(installedSignal, CancellationToken.None);
+    Assert(liveSignalUpdate.Status is UpdateStatus.Current or UpdateStatus.Available,
+        $"Signal's installed updater feed could not be checked: {liveSignalUpdate.Message}");
+    Assert(!string.IsNullOrWhiteSpace(liveSignalUpdate.AvailableVersion), "Signal's installed updater feed returned no version.");
+}
 
 var doom = snapshot.Applications.FirstOrDefault(app => app.DisplayName.Equals("DOOM The Dark Ages", StringComparison.OrdinalIgnoreCase));
 if (doom is not null && string.IsNullOrWhiteSpace(doom.Evidence.FirstOrDefault(static evidence => evidence.Label == "Install date")?.Value))
@@ -241,9 +299,8 @@ if (deepLRemoval is not null)
     Assert(deepLRemoval.RemovalPlan?.Kind == RemovalKind.ZeroInstall, "DeepL Zero Install removal plan was not detected.");
 }
 
-var openAlIsDetected = snapshot.Applications.Any(app => app.DisplayName.Equals("OpenAL", StringComparison.OrdinalIgnoreCase));
-var openAlGuardIsUnmatched = snapshot.UnmatchedPolicies.Any(policy => policy.Id == "CreativeTechnology.OpenAL");
-Assert(openAlIsDetected || openAlGuardIsUnmatched, "The preventive OpenAL provider guard was lost.");
+Assert(snapshot.UnmatchedPolicies.All(static policy => policy.Id != "CreativeTechnology.OpenAL"),
+    "OpenAL must not be presented as a persistent policy when it is not installed.");
 
 AssertIntegrationAttached(
     snapshot,
@@ -256,7 +313,9 @@ AssertIntegrationAttached(
     expectedMainVersionPrefix: "4.",
     expectedPackageFamily: "RazerDynamicLighting_qemfkr3nbbywc");
 
-Console.WriteLine($"NaxUpdater core smoke tests passed. {snapshot.Applications.Count} applications, {snapshot.UnmatchedPolicies.Count} unmatched guards, {snapshot.Issues.Count} scan issues.");
+using var capabilityClient = new HttpClient();
+var installedMetadataCoverage = snapshot.Applications.Count(new ElectronBuilderUpdateProvider(capabilityClient).CanHandle);
+Console.WriteLine($"NaxUpdater core smoke tests passed. {snapshot.Applications.Count} applications, {installedMetadataCoverage} installed-metadata providers, {snapshot.UnmatchedPolicies.Count} unmatched guards, {snapshot.Issues.Count} scan issues.");
 return 0;
 
 static void AssertProtectedApplication(

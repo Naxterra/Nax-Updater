@@ -28,18 +28,8 @@
       "blockedProviders": [ "WinGet" ],
       "managementMode": "NativeSelfUpdater",
       "preferredProvider": "Blizzard native updater",
-      "appliesWhenAbsent": true,
+      "appliesWhenAbsent": false,
       "reason": "The WinGet pin is an intentional safety guard; Battle.net owns its update lifecycle."
-    },
-    {
-      "id": "CreativeTechnology.OpenAL",
-      "displayName": "OpenAL",
-      "publisherContains": null,
-      "blockedProviders": [ "WinGet" ],
-      "managementMode": "Unmanaged",
-      "preferredProvider": "No automatic provider",
-      "appliesWhenAbsent": true,
-      "reason": "Keep the preventive WinGet guard even when no global OpenAL package is detected."
     },
     {
       "id": "Brave.BraveOrigin.Nightly",
@@ -48,7 +38,7 @@
       "blockedProviders": [ "WinGet" ],
       "managementMode": "NativeSelfUpdater",
       "preferredProvider": "Brave native update channel",
-      "appliesWhenAbsent": true,
+      "appliesWhenAbsent": false,
       "reason": "The WinGet pin is an intentional safety guard for the Origin/Nightly channel."
     }
   ]

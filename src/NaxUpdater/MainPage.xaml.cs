@@ -350,7 +350,11 @@ public sealed partial class MainPage : Page
             var available = result.Results.Count(static update => update.Status == UpdateStatus.Available);
             var errors = result.Results.Count(static update => update.Status == UpdateStatus.Error);
             UpdateCountText.Text = LocalizationService.Format("UpdateCountFormat", available, _updates.Count);
-            ShowUpdatesButton.Content = LocalizationService.Format("UpdatesNavigation", available);
+            ShowUpdatesButton.Content = LocalizationService.Format(
+                "UpdatesNavigationCoverage",
+                available,
+                result.Results.Count,
+                result.Results.Count + result.UnsupportedApplicationCount);
             ShowUpdatesButton.IsEnabled = _updates.Count > 0;
             UpdatesList.SelectedItem = _updates.FirstOrDefault();
             if (showWorkspace)
