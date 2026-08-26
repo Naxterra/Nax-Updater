@@ -54,7 +54,23 @@ public sealed class UpdateCheckService
                     null,
                     "NaxUpdater will not replace this application's own update mechanism.",
                     null));
+                continue;
             }
+            externalResults.Add(new UpdateCheckResult(
+                application.Identity,
+                application.DisplayName,
+                application.NormalizedVersion,
+                null,
+                UpdateStatus.Unsupported,
+                "unverified",
+                "No verifiable update source",
+                "unknown",
+                "No verified update source discovered",
+                "unknown",
+                "unknown",
+                null,
+                "The application was inventoried, but no unambiguous catalog identity or installed updater protocol could be verified.",
+                null));
         }
 
         var checkedResults = await Task.WhenAll(checks);
@@ -63,11 +79,11 @@ public sealed class UpdateCheckService
             .OrderBy(static result => result.Status == UpdateStatus.Available ? 0 : result.Status == UpdateStatus.Error ? 1 : 2)
             .ThenBy(static result => result.DisplayName, StringComparer.CurrentCultureIgnoreCase)
             .ToArray();
-        var userApplicationCount = inventory.Applications.Count(static application => !application.IsSystemComponent);
+        var unsupportedCount = results.Count(static result => result.Status == UpdateStatus.Unsupported);
         return new UpdateCheckSnapshot(
             DateTimeOffset.Now,
             results,
-            Math.Max(0, userApplicationCount - supportedIdentities.Count));
+            unsupportedCount);
     }
 
     private static async Task<UpdateCheckResult> SafeCheckAsync(
