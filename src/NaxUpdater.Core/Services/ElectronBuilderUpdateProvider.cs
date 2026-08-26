@@ -41,7 +41,8 @@ public sealed partial class ElectronBuilderUpdateProvider(HttpClient httpClient)
             ? UpdateStatus.Available
             : UpdateStatus.Current;
         var downloadUri = ResolveDownloadUri(configuration, artifact.Url);
-        var signer = configuration.PublisherNames.FirstOrDefault();
+        var signer = configuration.PublisherNames.FirstOrDefault() ??
+                     NativeAuthenticodeVerifier.GetTrustedSigner(application.PrimaryInstallPath ?? string.Empty);
         if (status == UpdateStatus.Available &&
             (downloadUri is null || artifact.Sha512 is null || string.IsNullOrWhiteSpace(signer)))
         {

@@ -258,6 +258,44 @@ if (installedSignal is not null)
     Assert(!string.IsNullOrWhiteSpace(liveSignalUpdate.AvailableVersion), "Signal's installed updater feed returned no version.");
 }
 
+var installedComfy = snapshot.Applications.FirstOrDefault(app => app.DisplayName.StartsWith("Comfy Desktop", StringComparison.OrdinalIgnoreCase));
+if (installedComfy is not null)
+{
+    using var liveComfyClient = new HttpClient { Timeout = TimeSpan.FromSeconds(20) };
+    var installedMetadataProvider = new ElectronBuilderUpdateProvider(liveComfyClient);
+    Assert(installedMetadataProvider.CanHandle(installedComfy), "Comfy Desktop's installed updater metadata was not discovered.");
+    var liveComfyUpdate = await installedMetadataProvider.CheckAsync(installedComfy, CancellationToken.None);
+    Assert(liveComfyUpdate.Status is UpdateStatus.Current or UpdateStatus.Available,
+        $"Comfy Desktop's installed updater feed could not be checked: {liveComfyUpdate.Message}");
+    if (liveComfyUpdate.Status == UpdateStatus.Available)
+    {
+        Assert(liveComfyUpdate.ExecutionPlan?.ExpectedSigner == "Drip Artificial Inc",
+            "Comfy Desktop did not inherit the trusted signer from its installed executable.");
+    }
+}
+
+using var liveCatalogClient = new HttpClient { Timeout = TimeSpan.FromSeconds(30) };
+var federatedCatalog = new FederatedCatalogUpdateProvider(liveCatalogClient);
+var installedLibreOffice = snapshot.Applications.FirstOrDefault(app => app.DisplayName.StartsWith("LibreOffice", StringComparison.OrdinalIgnoreCase));
+if (installedLibreOffice is not null)
+{
+    Assert(federatedCatalog.CanHandle(installedLibreOffice), "LibreOffice did not receive an exact public-catalog identity match.");
+    var libreOfficeUpdate = await federatedCatalog.CheckAsync(installedLibreOffice, CancellationToken.None);
+    Assert(libreOfficeUpdate.Status == UpdateStatus.Available && VersionOrder.Compare(libreOfficeUpdate.AvailableVersion, installedLibreOffice.NormalizedVersion) > 0,
+        $"LibreOffice update was not detected: {libreOfficeUpdate.Message}");
+    Assert(libreOfficeUpdate.ExecutionPlan?.Sha256?.Length == 64, $"LibreOffice update lacks a verified catalog installer plan: {libreOfficeUpdate.Message}");
+}
+
+var installedNode = snapshot.Applications.FirstOrDefault(app => app.DisplayName.Equals("Node.js", StringComparison.OrdinalIgnoreCase));
+if (installedNode is not null)
+{
+    Assert(federatedCatalog.CanHandle(installedNode), "Node.js did not receive an exact public-catalog identity match.");
+    var nodeUpdate = await federatedCatalog.CheckAsync(installedNode, CancellationToken.None);
+    Assert(nodeUpdate.Status == UpdateStatus.Available && VersionOrder.Compare(nodeUpdate.AvailableVersion, installedNode.NormalizedVersion) > 0,
+        $"The fresher Node.js catalog update was not detected: {nodeUpdate.Message}");
+    Assert(nodeUpdate.ExecutionPlan?.Sha256?.Length == 64, $"Node.js update lacks an official checksum-backed MSI plan: {nodeUpdate.Message}");
+}
+
 var doom = snapshot.Applications.FirstOrDefault(app => app.DisplayName.Equals("DOOM The Dark Ages", StringComparison.OrdinalIgnoreCase));
 if (doom is not null && string.IsNullOrWhiteSpace(doom.Evidence.FirstOrDefault(static evidence => evidence.Label == "Install date")?.Value))
 {
@@ -315,7 +353,8 @@ AssertIntegrationAttached(
 
 using var capabilityClient = new HttpClient();
 var installedMetadataCoverage = snapshot.Applications.Count(new ElectronBuilderUpdateProvider(capabilityClient).CanHandle);
-Console.WriteLine($"NaxUpdater core smoke tests passed. {snapshot.Applications.Count} applications, {installedMetadataCoverage} installed-metadata providers, {snapshot.UnmatchedPolicies.Count} unmatched guards, {snapshot.Issues.Count} scan issues.");
+var federatedCatalogCoverage = snapshot.Applications.Count(new FederatedCatalogUpdateProvider(capabilityClient).CanHandle);
+Console.WriteLine($"NaxUpdater core smoke tests passed. {snapshot.Applications.Count} applications, {installedMetadataCoverage} installed-metadata providers, {federatedCatalogCoverage} exact catalog identities, {snapshot.UnmatchedPolicies.Count} unmatched guards, {snapshot.Issues.Count} scan issues.");
 return 0;
 
 static void AssertProtectedApplication(

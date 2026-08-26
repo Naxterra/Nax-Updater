@@ -6,10 +6,11 @@
     <Cultures>en-US;de-DE</Cultures>
     <OutputName>NaxUpdater-Setup-x64</OutputName>
     <OutputPath>$(MSBuildProjectDirectory)\..\artifacts\installer\</OutputPath>
-    <NaxUpdaterVersion Condition="'$(NaxUpdaterVersion)' == ''">0.5.0</NaxUpdaterVersion>
+    <NaxUpdaterVersion Condition="'$(NaxUpdaterVersion)' == ''">0.6.0</NaxUpdaterVersion>
     <DefineConstants>ProductVersion=$(NaxUpdaterVersion)</DefineConstants>
     <DefaultCompressionLevel>high</DefaultCompressionLevel>
     <SuppressIces>ICE03</SuppressIces>
+    <SuppressSpecificWarnings>1101</SuppressSpecificWarnings>
   </PropertyGroup>
 
   <ItemGroup>

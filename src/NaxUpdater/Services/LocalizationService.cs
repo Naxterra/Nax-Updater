@@ -32,6 +32,7 @@ public static partial class LocalizationService
         if (update.ProviderId == "zero-install") return Get("ProviderZeroInstall");
         if (update.ProviderId == "native-updater") return Get("ProviderNative");
         if (update.ProviderId == "installed-updater-metadata") return Get("ProviderInstalledMetadata");
+        if (update.ProviderId == "federated-public-catalogs") return Get("ProviderFederatedCatalogs");
         if (update.ProviderId.StartsWith("github:", StringComparison.Ordinal))
         {
             return Format("ProviderGitHub", update.ProviderId[7..]);
@@ -43,6 +44,13 @@ public static partial class LocalizationService
     {
         if (update.ProviderId == "native-updater") return Get("ProviderNativeNote");
         if (update.ProviderId == "installed-updater-metadata") return Get("ProviderInstalledMetadataNote");
+        if (update.ProviderId == "federated-public-catalogs")
+        {
+            if (update.Status == UpdateStatus.Current) return Get("ProviderFederatedCatalogCurrent");
+            return update.ExecutionPlan is not null
+                ? Get("ProviderFederatedCatalogVerified")
+                : Get("ProviderFederatedCatalogBlocked");
+        }
         if (update.ProviderId.StartsWith("github:", StringComparison.Ordinal)) return Get("ProviderGitHubNote");
         if (update.ProviderId == "zero-install")
         {
