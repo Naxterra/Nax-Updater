@@ -300,12 +300,14 @@
                             <ColumnDefinition Width="105" />
                             <ColumnDefinition Width="90" />
                             <ColumnDefinition Width="115" />
+                            <ColumnDefinition Width="100" />
                         </Grid.ColumnDefinitions>
                         <TextBlock x:Uid="ApplicationHeader" Text="Application" FontSize="12" FontWeight="SemiBold" Style="{StaticResource MutedTextStyle}" />
                         <TextBlock x:Uid="InstalledHeader" Grid.Column="1" Text="Installed" FontSize="12" FontWeight="SemiBold" Style="{StaticResource MutedTextStyle}" />
                         <TextBlock x:Uid="AvailableHeader" Grid.Column="2" Text="Available" FontSize="12" FontWeight="SemiBold" Style="{StaticResource MutedTextStyle}" />
                         <TextBlock x:Uid="LanguageHeader" Grid.Column="3" Text="Language" FontSize="12" FontWeight="SemiBold" Style="{StaticResource MutedTextStyle}" />
                         <TextBlock x:Uid="StatusHeader" Grid.Column="4" Text="Status" FontSize="12" FontWeight="SemiBold" Style="{StaticResource MutedTextStyle}" />
+                        <TextBlock x:Uid="ActionHeader" Grid.Column="5" Text="Action" FontSize="12" FontWeight="SemiBold" Style="{StaticResource MutedTextStyle}" />
                     </Grid>
                     <ListView x:Name="UpdatesList" Grid.Row="2" SelectionMode="Single" SelectionChanged="UpdatesList_SelectionChanged">
                         <ListView.ItemContainerStyle>
@@ -323,6 +325,7 @@
                                         <ColumnDefinition Width="105" />
                                         <ColumnDefinition Width="90" />
                                         <ColumnDefinition Width="115" />
+                                        <ColumnDefinition Width="100" />
                                     </Grid.ColumnDefinitions>
                                     <StackPanel>
                                         <TextBlock Text="{Binding Name}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
@@ -334,6 +337,16 @@
                                     <Border Grid.Column="4" Background="{Binding StatusBackground}" BorderBrush="{Binding StatusForeground}" BorderThickness="1" CornerRadius="10" Padding="7,3" HorizontalAlignment="Left" VerticalAlignment="Center">
                                         <TextBlock Text="{Binding Status}" Foreground="{Binding StatusForeground}" FontSize="11" TextWrapping="Wrap" />
                                     </Border>
+                                    <Button
+                                        Grid.Column="5"
+                                        Content="{Binding UpdateActionText}"
+                                        Visibility="{Binding UpdateActionVisibility}"
+                                        IsEnabled="{Binding CanInstall}"
+                                        Click="UpdateRowButton_Click"
+                                        Padding="12,5"
+                                        HorizontalAlignment="Stretch"
+                                        VerticalAlignment="Center"
+                                        Style="{StaticResource PurpleActionButtonStyle}" />
                                 </Grid>
                             </DataTemplate>
                         </ListView.ItemTemplate>
@@ -371,7 +384,6 @@
                             <TextBlock x:Name="UpdateMessageText" TextWrapping="Wrap" />
 
                             <ProgressBar x:Name="UpdateProgress" Visibility="Collapsed" Margin="0,18,0,8" Minimum="0" Maximum="100" />
-                            <Button x:Name="InstallUpdateButton" x:Uid="InstallUpdateButton" Content="Download and install" HorizontalAlignment="Stretch" Margin="0,14,0,0" Click="InstallUpdateButton_Click" IsEnabled="False" Style="{StaticResource PurpleActionButtonStyle}" />
                             <TextBlock x:Uid="CloseAppsHint" Text="Applications must be closed manually before installation. NaxUpdater never terminates them." Style="{StaticResource MutedTextStyle}" FontSize="11" TextWrapping="Wrap" Margin="0,7,0,0" />
                         </StackPanel>
                     </StackPanel>

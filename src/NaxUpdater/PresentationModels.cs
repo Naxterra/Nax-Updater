@@ -171,6 +171,10 @@ public sealed class UpdateRow
     public string Message => LocalizationService.ProviderMessage(Source);
     public string ReleaseNotes => Source.ReleaseNotesUrl ?? LocalizationService.Get("NotProvided");
     public bool CanInstall => Source.IsInstallable;
+    public string UpdateActionText => Source.ExecutionPlan?.Kind == UpdateExecutionKind.NativeCommand
+        ? LocalizationService.Get("RunUpdateShort")
+        : LocalizationService.Get("UpdateShort");
+    public Visibility UpdateActionVisibility => CanInstall ? Visibility.Visible : Visibility.Collapsed;
     public Brush StatusForeground => PresentationBrushes.Get(Source.Status switch
     {
         UpdateStatus.Available => "NaxOrangeBrush",

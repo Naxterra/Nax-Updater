@@ -63,7 +63,7 @@ public sealed partial class ElectronBuilderUpdateProvider(HttpClient httpClient)
                 null,
                 signer,
                 null,
-                [],
+                ["/S"],
                 application.Scope == InstallScope.Machine,
                 AllowedHosts(configuration.MetadataUri, downloadUri),
                 RunningProcesses(application),

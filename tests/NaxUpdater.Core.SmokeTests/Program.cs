@@ -178,8 +178,9 @@ try
     Assert(metadataUpdate.Status == UpdateStatus.Available && metadataUpdate.AvailableVersion == "2.0.0",
         "Generic installed updater metadata did not detect an update.");
     Assert(metadataUpdate.ExecutionPlan?.Sha512 == Convert.ToHexString(SHA512.HashData(metadataPayload)) &&
-           metadataUpdate.ExecutionPlan.ExpectedSigner == "Example Publisher LLC",
-        "Generic installed updater metadata lost its SHA-512 or publisher policy.");
+           metadataUpdate.ExecutionPlan.ExpectedSigner == "Example Publisher LLC" &&
+           metadataUpdate.ExecutionPlan.Arguments.Contains("/S"),
+        "Generic installed updater metadata lost its SHA-512, publisher, or silent-install policy.");
     var metadataInstaller = await new UpdatePackageDownloader(metadataClient, new StubAuthenticodeVerifier("Example Publisher LLC"))
         .DownloadAndVerifyAsync(metadataUpdate, Path.Combine(firefoxFixture, "metadata-cache"));
     Assert(File.ReadAllBytes(metadataInstaller.Path).SequenceEqual(metadataPayload), "SHA-512 verified metadata installer download failed.");
@@ -234,8 +235,10 @@ try
     var catalogUpdate = await deterministicCatalog.CheckAsync(catalogApplication, CancellationToken.None);
     Assert(catalogUpdate.Status == UpdateStatus.Available && catalogUpdate.AvailableVersion == "2.0.0",
         "Deterministic catalog update detection failed.");
-    Assert(catalogUpdate.ExecutionPlan?.Sha256 == catalogHash && catalogUpdate.ExecutionPlan.Kind == UpdateExecutionKind.DownloadedMsi,
-        "Deterministic catalog update plan lost its installer hash or type.");
+    Assert(catalogUpdate.ExecutionPlan?.Sha256 == catalogHash &&
+           catalogUpdate.ExecutionPlan.Kind == UpdateExecutionKind.DownloadedMsi &&
+           catalogUpdate.ExecutionPlan.Arguments.Contains("/qn"),
+        "Deterministic catalog update plan lost its installer hash, type, or silent-install policy.");
     var uniqueCatalogApplication = CreateApplication(
         "unique-catalog-test",
         "Unique App 1.0.0",

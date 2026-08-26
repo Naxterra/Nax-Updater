@@ -104,7 +104,9 @@ public sealed partial class FederatedCatalogUpdateProvider(HttpClient httpClient
             installer.Sha256,
             signer,
             null,
-            [],
+            installer.Kind == UpdateExecutionKind.DownloadedMsi
+                ? ["/qn", "/norestart"]
+                : ["/S"],
             application.Scope == InstallScope.Machine,
             AllowedHosts(installer.Uri),
             RunningProcesses(application),
