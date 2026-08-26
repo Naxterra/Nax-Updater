@@ -5,6 +5,7 @@ public enum UpdateStatus
     Current,
     Available,
     ManagedExternally,
+    Unsupported,
     Error
 }
 

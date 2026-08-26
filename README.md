@@ -30,7 +30,7 @@ The inventory engine:
 
 ## Update providers
 
-Version 0.6.1 includes:
+Version 0.7.0 includes:
 
 - Mozilla Firefox releases from Mozilla's official product-details and release archive, preserving the effective Firefox profile language, architecture, channel, scope, and installation directory;
 - Nextcloud releases from the official `nextcloud-releases/desktop` GitHub repository using its release-asset SHA-256 digest and a multi-language MSI;
@@ -40,7 +40,9 @@ Version 0.6.1 includes:
 - SHA-512 verification from those installed update feeds in addition to SHA-256 and Authenticode verification;
 - exact MSI product-code correlation against WinGet's signed local catalog index without using WinGet's installed-version or path detection;
 - fresher-version comparison with Scoop manifests, with official same-host installer derivation allowed only when a vendor publishes a matching `SHASUMS256.txt`;
-- trusted signer inheritance from already-installed, validly signed executables when an installed updater configuration omits its publisher.
+- trusted signer inheritance from already-installed, validly signed executables when an installed updater configuration omits its publisher;
+- unique normalized name-and-publisher catalog correlation when no stable package identifier is available; ambiguous matches are rejected and weak matches never produce an install button;
+- a complete assessment result for every visible application, including an explicit **No verifiable update source** status instead of silently omitting unsupported software.
 
 Catalogs provide candidates, never installed state. NaxUpdater still decides the installed version, location, architecture, channel, and scope from its independent inventory. A package-manager match is accepted only through a stable identifier such as an exact MSI product code; name-only search results are not installable.
 
@@ -84,7 +86,7 @@ From this directory:
 dotnet build NaxUpdater.slnx
 dotnet run --project tests/NaxUpdater.Core.SmokeTests/NaxUpdater.Core.SmokeTests.csproj
 dotnet publish src/NaxUpdater/NaxUpdater.csproj -c Release -r win-x64 --self-contained true -o artifacts/NaxUpdater-win-x64
-./scripts/package-release.ps1 -Version 0.6.1
+./scripts/package-release.ps1 -Version 0.7.0
 ```
 
 The desktop project uses .NET 11, WinUI 3, and the Windows App SDK. It is not an Electron or WebView application.

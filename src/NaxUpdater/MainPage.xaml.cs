@@ -353,15 +353,19 @@ public sealed partial class MainPage : Page
             ShowUpdatesButton.Content = LocalizationService.Format(
                 "UpdatesNavigationCoverage",
                 available,
-                result.Results.Count,
-                result.Results.Count + result.UnsupportedApplicationCount);
+                result.Results.Count - result.UnsupportedApplicationCount,
+                result.Results.Count);
             ShowUpdatesButton.IsEnabled = _updates.Count > 0;
             UpdatesList.SelectedItem = _updates.FirstOrDefault();
             if (showWorkspace)
             {
                 ShowUpdatesWorkspace();
             }
-            StatusText.Text = LocalizationService.Format("UpdateCheckedStatus", _updates.Count, available, result.UnsupportedApplicationCount);
+            StatusText.Text = LocalizationService.Format(
+                "UpdateCheckedStatus",
+                result.Results.Count - result.UnsupportedApplicationCount,
+                available,
+                result.UnsupportedApplicationCount);
 
             UpdateBar.Title = available == 0
                 ? LocalizationService.Get("ApplicationsCurrent")

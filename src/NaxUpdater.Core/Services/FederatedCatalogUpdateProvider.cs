@@ -1,4 +1,5 @@
 using Microsoft.Data.Sqlite;
+using NaxUpdater.Core.Internal;
 using NaxUpdater.Core.Models;
 using System.Collections.Concurrent;
 using System.Text.Json;
@@ -38,6 +39,18 @@ public sealed partial class FederatedCatalogUpdateProvider(HttpClient httpClient
         if (VersionOrder.Compare(availableVersion, application.NormalizedVersion) <= 0)
         {
             return Result(application, identity, availableVersion, UpdateStatus.Current, source, null, null);
+        }
+
+        if (!identity.MatchKind.Equals("MSI product code", StringComparison.Ordinal))
+        {
+            return Result(
+                application,
+                identity,
+                availableVersion,
+                UpdateStatus.Available,
+                source,
+                "A unique name-and-publisher catalog match found a newer version, but this weaker identity is intentionally not installable.",
+                null);
         }
 
         var manifest = await ReadWingetInstallerManifestAsync(identity, cancellationToken);
@@ -112,12 +125,7 @@ public sealed partial class FederatedCatalogUpdateProvider(HttpClient httpClient
         {
             return cached;
         }
-        var productCode = ProductCode(application);
-        if (productCode is null)
-        {
-            return null;
-        }
-        var discovered = FindWingetIdentity(productCode, catalogIndexPath);
+        var discovered = FindWingetIdentity(application, ProductCode(application), catalogIndexPath);
         if (discovered is not null)
         {
             _identities.TryAdd(application.Identity, discovered);
@@ -125,7 +133,10 @@ public sealed partial class FederatedCatalogUpdateProvider(HttpClient httpClient
         return discovered;
     }
 
-    private static CatalogIdentity? FindWingetIdentity(string productCode, string? catalogIndexPath)
+    private static CatalogIdentity? FindWingetIdentity(
+        InstalledApplication application,
+        string? productCode,
+        string? catalogIndexPath)
     {
         var indexPath = !string.IsNullOrWhiteSpace(catalogIndexPath) && File.Exists(catalogIndexPath)
             ? catalogIndexPath
@@ -143,31 +154,96 @@ public sealed partial class FederatedCatalogUpdateProvider(HttpClient httpClient
                 Pooling = false
             }.ToString());
             connection.Open();
-            using var command = connection.CreateCommand();
-            command.CommandText = """
-                SELECT p.id, p.name, p.moniker, p.latest_version
-                FROM productcodes2 c
-                JOIN packages p ON p.rowid = c.package
-                WHERE upper(c.productcode) = upper($productCode)
+            if (!string.IsNullOrWhiteSpace(productCode))
+            {
+                using var productCommand = connection.CreateCommand();
+                productCommand.CommandText = """
+                    SELECT p.id, p.name, p.moniker, p.latest_version
+                    FROM productcodes2 c
+                    JOIN packages p ON p.rowid = c.package
+                    WHERE upper(c.productcode) = upper($productCode)
+                    ORDER BY p.id
+                    LIMIT 1
+                    """;
+                productCommand.Parameters.AddWithValue("$productCode", productCode);
+                using var productReader = productCommand.ExecuteReader();
+                if (productReader.Read())
+                {
+                    return ReadIdentity(productReader, "MSI product code");
+                }
+            }
+
+            var publisher = NormalizeCatalogValue(application.Publisher);
+            var names = CatalogNameCandidates(application).ToArray();
+            if (publisher.Length == 0 || names.Length == 0)
+            {
+                return null;
+            }
+            using var nameCommand = connection.CreateCommand();
+            var nameParameters = names.Select((_, index) => $"$name{index}").ToArray();
+            nameCommand.CommandText = $"""
+                SELECT DISTINCT p.id, p.name, p.moniker, p.latest_version
+                FROM packages p
+                JOIN norm_names2 n ON n.package = p.rowid
+                JOIN norm_publishers2 q ON q.package = p.rowid
+                WHERE n.norm_name IN ({string.Join(",", nameParameters)})
+                  AND q.norm_publisher = $publisher
                 ORDER BY p.id
-                LIMIT 1
                 """;
-            command.Parameters.AddWithValue("$productCode", productCode);
-            using var reader = command.ExecuteReader();
-            return reader.Read()
-                ? new CatalogIdentity(
-                    reader.GetString(0),
-                    reader.GetString(1),
-                    reader.IsDBNull(2) ? string.Empty : reader.GetString(2),
-                    reader.GetString(3),
-                    productCode)
-                : null;
+            for (var index = 0; index < names.Length; index++)
+            {
+                nameCommand.Parameters.AddWithValue(nameParameters[index], names[index]);
+            }
+            nameCommand.Parameters.AddWithValue("$publisher", publisher);
+            using var nameReader = nameCommand.ExecuteReader();
+            CatalogIdentity? unique = null;
+            while (nameReader.Read())
+            {
+                if (unique is not null)
+                {
+                    return null;
+                }
+                unique = ReadIdentity(nameReader, "unique name + publisher");
+            }
+            return unique;
         }
         catch (Exception exception) when (exception is SqliteException or IOException or UnauthorizedAccessException)
         {
             return null;
         }
     }
+
+    private static CatalogIdentity ReadIdentity(SqliteDataReader reader, string matchKind) => new(
+        reader.GetString(0),
+        reader.GetString(1),
+        reader.IsDBNull(2) ? string.Empty : reader.GetString(2),
+        reader.GetString(3),
+        matchKind);
+
+    private static IEnumerable<string> CatalogNameCandidates(InstalledApplication application)
+    {
+        var candidates = new HashSet<string>(StringComparer.Ordinal);
+        Add(application.DisplayName);
+        Add(VersionSuffixRegex().Replace(application.DisplayName, string.Empty));
+        Add(ArchitectureSuffixRegex().Replace(application.DisplayName, string.Empty));
+        foreach (var evidence in application.Evidence.Where(static item => item.Label == "Executable product"))
+        {
+            Add(evidence.Value);
+        }
+        return candidates;
+
+        void Add(string? value)
+        {
+            var normalized = NormalizeCatalogValue(value);
+            if (normalized.Length >= 3)
+            {
+                candidates.Add(normalized);
+            }
+        }
+    }
+
+    private static string NormalizeCatalogValue(string? value) =>
+        string.IsNullOrWhiteSpace(value) ? string.Empty : NativePathParser.NormalizeName(value);
 
     private static string? FindWingetIndex()
     {
@@ -431,7 +507,7 @@ public sealed partial class FederatedCatalogUpdateProvider(HttpClient httpClient
             DetectArchitecture(application.PrimaryInstallPath),
             "stable",
             $"https://github.com/microsoft/winget-pkgs/tree/master/manifests/{char.ToLowerInvariant(identity.Id[0])}/{string.Join('/', identity.Id.Split('.'))}",
-            message ?? $"Exact MSI product-code match to {identity.Id}; {source} reports the current version.",
+            message ?? $"{identity.MatchKind} match to {identity.Id}; {source} reports the current version.",
             plan);
 
     private UpdateCheckResult Error(InstalledApplication application, string message) => new(
@@ -466,7 +542,13 @@ public sealed partial class FederatedCatalogUpdateProvider(HttpClient httpClient
     [GeneratedRegex(@"^[A-Za-z0-9_.-]+$", RegexOptions.CultureInvariant)]
     private static partial Regex SafePartRegex();
 
-    private sealed record CatalogIdentity(string Id, string Name, string Moniker, string LatestVersion, string ProductCode);
+    [GeneratedRegex(@"(?:\s+|\s*[-(]\s*)v?\d+(?:\.\d+)+(?:[^)]*)?\)?\s*$", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
+    private static partial Regex VersionSuffixRegex();
+
+    [GeneratedRegex(@"\s*\((?:x64|x86|arm64|64-bit|32-bit)[^)]*\)\s*$", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
+    private static partial Regex ArchitectureSuffixRegex();
+
+    private sealed record CatalogIdentity(string Id, string Name, string Moniker, string LatestVersion, string MatchKind);
     private sealed record ScoopCandidate(string Version, string? Homepage);
     private sealed record CatalogInstaller(string Architecture, UpdateExecutionKind Kind, Uri Uri, string Sha256);
 }

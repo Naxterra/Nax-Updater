@@ -151,6 +151,7 @@ public sealed class UpdateRow
         UpdateStatus.Available => LocalizationService.Get("StatusUpdateAvailable"),
         UpdateStatus.Current => LocalizationService.Get("StatusCurrent"),
         UpdateStatus.ManagedExternally => LocalizationService.Get("StatusNativeUpdater"),
+        UpdateStatus.Unsupported => LocalizationService.Get("StatusUnsupported"),
         UpdateStatus.Error => LocalizationService.Get("StatusCheckFailed"),
         _ => Source.Status.ToString()
     };
@@ -175,6 +176,7 @@ public sealed class UpdateRow
         UpdateStatus.Available => "NaxOrangeBrush",
         UpdateStatus.Current => "NaxGreenBrush",
         UpdateStatus.ManagedExternally => "NaxBlueBrush",
+        UpdateStatus.Unsupported => "NaxPurpleBrush",
         _ => "NaxPinkBrush"
     });
     public Brush StatusBackground => PresentationBrushes.Get(Source.Status switch
@@ -182,6 +184,7 @@ public sealed class UpdateRow
         UpdateStatus.Available => "NaxOrangeCardBrush",
         UpdateStatus.Current => "NaxGreenCardBrush",
         UpdateStatus.ManagedExternally => "NaxBlueCardBrush",
+        UpdateStatus.Unsupported => "NaxPurpleCardBrush",
         _ => "NaxPinkCardBrush"
     });
 }
