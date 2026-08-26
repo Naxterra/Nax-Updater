@@ -7,7 +7,7 @@ using Windows.Management.Deployment;
 
 namespace NaxUpdater.Core.Services;
 
-public sealed partial class FederatedCatalogUpdateProvider(HttpClient httpClient) : IUpdateProvider
+public sealed partial class FederatedCatalogUpdateProvider(HttpClient httpClient, string? catalogIndexPath = null) : IUpdateProvider
 {
     private readonly ConcurrentDictionary<string, CatalogIdentity> _identities = new(StringComparer.Ordinal);
     private readonly ConcurrentDictionary<string, Task<ScoopCandidate?>> _scoopCandidates = new(StringComparer.OrdinalIgnoreCase);
@@ -117,7 +117,7 @@ public sealed partial class FederatedCatalogUpdateProvider(HttpClient httpClient
         {
             return null;
         }
-        var discovered = FindWingetIdentity(productCode);
+        var discovered = FindWingetIdentity(productCode, catalogIndexPath);
         if (discovered is not null)
         {
             _identities.TryAdd(application.Identity, discovered);
@@ -125,9 +125,11 @@ public sealed partial class FederatedCatalogUpdateProvider(HttpClient httpClient
         return discovered;
     }
 
-    private static CatalogIdentity? FindWingetIdentity(string productCode)
+    private static CatalogIdentity? FindWingetIdentity(string productCode, string? catalogIndexPath)
     {
-        var indexPath = FindWingetIndex();
+        var indexPath = !string.IsNullOrWhiteSpace(catalogIndexPath) && File.Exists(catalogIndexPath)
+            ? catalogIndexPath
+            : FindWingetIndex();
         if (indexPath is null)
         {
             return null;
@@ -137,7 +139,8 @@ public sealed partial class FederatedCatalogUpdateProvider(HttpClient httpClient
             using var connection = new SqliteConnection(new SqliteConnectionStringBuilder
             {
                 DataSource = indexPath,
-                Mode = SqliteOpenMode.ReadOnly
+                Mode = SqliteOpenMode.ReadOnly,
+                Pooling = false
             }.ToString());
             connection.Open();
             using var command = connection.CreateCommand();
