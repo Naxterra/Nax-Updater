@@ -1,0 +1,9 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/NaxUpdater.Core/NaxUpdater.Core.csproj" />
+    <Project Path="src/NaxUpdater/NaxUpdater.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/NaxUpdater.Core.SmokeTests/NaxUpdater.Core.SmokeTests.csproj" />
+  </Folder>
+</Solution>

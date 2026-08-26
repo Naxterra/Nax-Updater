@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<WixLocalization xmlns="http://wixtoolset.org/schemas/v4/wxl" Culture="en-US" Codepage="Windows-1252" SummaryInformationCodepage="Windows-1252">
+  <String Id="ProductLanguage" Value="1033" />
+  <String Id="DowngradeError" Value="A newer version of NaxUpdater is already installed." />
+  <String Id="MainFeatureTitle" Value="NaxUpdater application" />
+  <String Id="MainFeatureDescription" Value="Required application files and Windows integration." />
+  <String Id="StartMenuFeatureTitle" Value="Start menu shortcut" />
+  <String Id="StartMenuFeatureDescription" Value="Add NaxUpdater to the all-users Start menu." />
+  <String Id="DesktopFeatureTitle" Value="Desktop shortcut" />
+  <String Id="DesktopFeatureDescription" Value="Add a NaxUpdater shortcut to the all-users desktop." />
+  <String Id="ShortcutDescription" Value="Verified, language-aware Windows application updater" />
+  <String Id="ArpComments" Value="Native Windows application inventory and verified updater." />
+  <String Id="ExitDialogText" Value="NaxUpdater is installed. Start menu and desktop shortcuts are ready." />
+</WixLocalization>
