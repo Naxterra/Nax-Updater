@@ -1,5 +1,6 @@
 using NaxUpdater.Core.Internal;
 using NaxUpdater.Core.Models;
+using System.Text.RegularExpressions;
 using Windows.ApplicationModel;
 using Windows.Management.Deployment;
 
@@ -22,7 +23,8 @@ internal sealed class MsixInventoryScanner
                         continue;
                     }
 
-                    var displayName = ReadDisplayName(package);
+                    var installedPath = ReadInstalledPath(package);
+                    var displayName = ReadDisplayName(package, installedPath);
                     var publisher = ReadPublisher(package);
                     var version = FormatVersion(package.Id.Version);
                     var installedOn = ReadInstalledDate(package);
@@ -78,7 +80,6 @@ internal sealed class MsixInventoryScanner
 
                     try
                     {
-                        var installedPath = package.InstalledLocation?.Path;
                         if (!string.IsNullOrWhiteSpace(installedPath))
                         {
                             var manifestPath = Path.Combine(installedPath, "AppxManifest.xml");
@@ -143,18 +144,80 @@ internal sealed class MsixInventoryScanner
         return results;
     }
 
-    private static string ReadDisplayName(Package package)
+    private static string ReadDisplayName(Package package, string? installedPath)
     {
         try
         {
             var displayName = package.DisplayName;
-            return string.IsNullOrWhiteSpace(displayName) || displayName.StartsWith("ms-resource:", StringComparison.OrdinalIgnoreCase)
-                ? package.Id.Name
-                : displayName;
+            if (IsFriendlyDisplayName(displayName))
+            {
+                return displayName.Trim();
+            }
         }
         catch
         {
-            return package.Id.Name;
+            // Continue through stronger fallbacks below.
+        }
+
+        try
+        {
+            foreach (var entry in package.GetAppListEntriesAsync().AsTask().GetAwaiter().GetResult())
+            {
+                var displayName = entry.DisplayInfo.DisplayName;
+                if (IsFriendlyDisplayName(displayName))
+                {
+                    return displayName.Trim();
+                }
+            }
+        }
+        catch
+        {
+            // Internal packages can intentionally omit app-list entries.
+        }
+
+        var identifier = package.Id.Name;
+        if (!string.IsNullOrWhiteSpace(installedPath))
+        {
+            var directoryName = Path.GetFileName(installedPath.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
+            var publisherSuffix = $"_{package.Id.PublisherId}";
+            if (directoryName.EndsWith(publisherSuffix, StringComparison.OrdinalIgnoreCase))
+            {
+                directoryName = directoryName[..^publisherSuffix.Length];
+            }
+            if (!string.IsNullOrWhiteSpace(directoryName) && !Guid.TryParse(directoryName, out _))
+            {
+                identifier = directoryName;
+            }
+        }
+        return HumanizeIdentifier(identifier);
+    }
+
+    private static bool IsFriendlyDisplayName(string? value) =>
+        !string.IsNullOrWhiteSpace(value) &&
+        !value.StartsWith("ms-resource:", StringComparison.OrdinalIgnoreCase) &&
+        !Guid.TryParse(value, out _);
+
+    internal static string HumanizeIdentifier(string value)
+    {
+        if (Guid.TryParse(value, out _))
+        {
+            return $"Windows component ({value})";
+        }
+        var separated = Regex.Replace(value, @"[._-]+", " ");
+        separated = Regex.Replace(separated, @"([a-z0-9])([A-Z])", "$1 $2");
+        separated = Regex.Replace(separated, @"([A-Z]+)([A-Z][a-z])", "$1 $2");
+        return Regex.Replace(separated, @"\s+", " ").Trim();
+    }
+
+    private static string? ReadInstalledPath(Package package)
+    {
+        try
+        {
+            return package.InstalledLocation?.Path;
+        }
+        catch
+        {
+            return null;
         }
     }
 

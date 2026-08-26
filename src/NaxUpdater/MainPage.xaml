@@ -19,9 +19,11 @@
 
         <StackPanel Spacing="8">
             <InfoBar
+                x:Name="MainInfo"
                 x:Uid="MainInfo"
                 IsOpen="True"
-                IsClosable="False"
+                IsClosable="True"
+                CloseButtonClick="MainInfo_CloseButtonClick"
                 Severity="Informational"
                 Title="Verified, language-aware updates"
                 Message="Checks are read-only. Installation requires your confirmation, an exact language/architecture match, release hash verification, and a trusted Windows publisher signature." />
@@ -59,8 +61,8 @@
                 Unchecked="ShowSystemComponentsCheckBox_Changed" />
             <Button x:Name="LanguageButton" Grid.Column="3" Height="36" Padding="11,0" Click="LanguageButton_Click">
                 <StackPanel Orientation="Horizontal" Spacing="6">
-                    <FontIcon Glyph="&#xE774;" FontSize="14" />
-                    <TextBlock x:Uid="LanguageButtonText" Text="Language" />
+                    <FontIcon Glyph="&#xE713;" FontSize="14" />
+                    <TextBlock x:Uid="LanguageButtonText" Text="Settings" />
                 </StackPanel>
             </Button>
         </Grid>
@@ -135,7 +137,7 @@
                         <TextBlock x:Uid="VersionHeader" Grid.Column="1" Text="Version" FontSize="12" FontWeight="SemiBold" Style="{StaticResource MutedTextStyle}" />
                         <TextBlock x:Uid="UpdateOwnerHeader" Grid.Column="2" Text="Update owner" FontSize="12" FontWeight="SemiBold" Style="{StaticResource MutedTextStyle}" />
                         <Button Grid.Column="3" Tag="InstallDate" Style="{StaticResource ColumnHeaderButtonStyle}" HorizontalContentAlignment="Left" Click="SortHeader_Click">
-                            <TextBlock x:Name="InstallDateHeaderText" Text="Installed" />
+                            <TextBlock x:Name="InstallDateHeaderText" Text="Installed / updated" />
                         </Button>
                     </Grid>
                     <ListView x:Name="ApplicationsList" Grid.Row="2" SelectionMode="Single" SelectionChanged="ApplicationsList_SelectionChanged">
@@ -201,7 +203,7 @@
                                 </StackPanel>
                             </Grid>
 
-                            <TextBlock x:Uid="InstallationDateLabel" Text="Installation date" Style="{StaticResource DetailLabelStyle}" />
+                            <TextBlock x:Uid="InstallationDateLabel" Text="Installed / updated" Style="{StaticResource DetailLabelStyle}" />
                             <TextBlock x:Name="DetailInstallDateText" TextWrapping="Wrap" />
 
                             <TextBlock x:Uid="BlockedProvidersLabel" Text="Blocked providers" Style="{StaticResource DetailLabelStyle}" />
