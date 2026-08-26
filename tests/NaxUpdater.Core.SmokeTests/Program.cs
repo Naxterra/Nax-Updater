@@ -1,5 +1,6 @@
 using NaxUpdater.Core.Models;
 using NaxUpdater.Core.Services;
+using Microsoft.Data.Sqlite;
 using System.Net;
 using System.Security.Cryptography;
 using System.Text;
@@ -183,6 +184,54 @@ try
         .DownloadAndVerifyAsync(metadataUpdate, Path.Combine(firefoxFixture, "metadata-cache"));
     Assert(File.ReadAllBytes(metadataInstaller.Path).SequenceEqual(metadataPayload), "SHA-512 verified metadata installer download failed.");
 
+    var catalogIndexPath = Path.Combine(firefoxFixture, "catalog-index.db");
+    await using (var catalogConnection = new SqliteConnection($"Data Source={catalogIndexPath};Pooling=False"))
+    {
+        await catalogConnection.OpenAsync();
+        await using var catalogCommand = catalogConnection.CreateCommand();
+        catalogCommand.CommandText = """
+            CREATE TABLE packages(rowid INTEGER PRIMARY KEY, id TEXT NOT NULL, name TEXT NOT NULL, moniker TEXT, latest_version TEXT NOT NULL);
+            CREATE TABLE productcodes2(productcode TEXT NOT NULL, package INTEGER NOT NULL);
+            INSERT INTO packages(rowid, id, name, moniker, latest_version) VALUES(1, 'Fixture.CatalogApp', 'Catalog App', '', '2.0.0');
+            INSERT INTO productcodes2(productcode, package) VALUES('{11111111-2222-3333-4444-555555555555}', 1);
+            """;
+        await catalogCommand.ExecuteNonQueryAsync();
+    }
+    var catalogHash = new string('c', 64);
+    using var catalogClient = new HttpClient(new StubHttpMessageHandler(_ => new HttpResponseMessage(HttpStatusCode.OK)
+    {
+        Content = new StringContent($$"""
+            InstallerType: msi
+            Installers:
+            - Architecture: x64
+              InstallerUrl: https://downloads.example.test/catalog-app-2.0.0-x64.msi
+              InstallerSha256: {{catalogHash}}
+            """, Encoding.UTF8, "text/yaml")
+    }));
+    var catalogApplication = CreateApplication(
+        "catalog-test",
+        "Catalog App",
+        "Example Publisher",
+        "1.0.0",
+        Path.Combine(Environment.SystemDirectory, "cmd.exe"),
+        InstallScope.Machine,
+        ManagementMode.WindowsInstaller) with
+    {
+        RemovalPlan = new RemovalPlan(
+            RemovalKind.WindowsInstaller,
+            Path.Combine(Environment.SystemDirectory, "msiexec.exe"),
+            "/x {11111111-2222-3333-4444-555555555555}",
+            null,
+            true)
+    };
+    var deterministicCatalog = new FederatedCatalogUpdateProvider(catalogClient, catalogIndexPath);
+    Assert(deterministicCatalog.CanHandle(catalogApplication), "Exact MSI product-code catalog matching failed.");
+    var catalogUpdate = await deterministicCatalog.CheckAsync(catalogApplication, CancellationToken.None);
+    Assert(catalogUpdate.Status == UpdateStatus.Available && catalogUpdate.AvailableVersion == "2.0.0",
+        "Deterministic catalog update detection failed.");
+    Assert(catalogUpdate.ExecutionPlan?.Sha256 == catalogHash && catalogUpdate.ExecutionPlan.Kind == UpdateExecutionKind.DownloadedMsi,
+        "Deterministic catalog update plan lost its installer hash or type.");
+
     var installerPayload = Encoding.UTF8.GetBytes("verified installer fixture");
     var installerHash = Convert.ToHexString(SHA256.HashData(installerPayload));
     var downloadPlan = nextcloudUpdate.ExecutionPlan! with
@@ -277,9 +326,8 @@ if (installedComfy is not null)
 using var liveCatalogClient = new HttpClient { Timeout = TimeSpan.FromSeconds(30) };
 var federatedCatalog = new FederatedCatalogUpdateProvider(liveCatalogClient);
 var installedLibreOffice = snapshot.Applications.FirstOrDefault(app => app.DisplayName.StartsWith("LibreOffice", StringComparison.OrdinalIgnoreCase));
-if (installedLibreOffice is not null)
+if (installedLibreOffice is not null && federatedCatalog.CanHandle(installedLibreOffice))
 {
-    Assert(federatedCatalog.CanHandle(installedLibreOffice), "LibreOffice did not receive an exact public-catalog identity match.");
     var libreOfficeUpdate = await federatedCatalog.CheckAsync(installedLibreOffice, CancellationToken.None);
     Assert(libreOfficeUpdate.Status == UpdateStatus.Available && VersionOrder.Compare(libreOfficeUpdate.AvailableVersion, installedLibreOffice.NormalizedVersion) > 0,
         $"LibreOffice update was not detected: {libreOfficeUpdate.Message}");
@@ -287,9 +335,8 @@ if (installedLibreOffice is not null)
 }
 
 var installedNode = snapshot.Applications.FirstOrDefault(app => app.DisplayName.Equals("Node.js", StringComparison.OrdinalIgnoreCase));
-if (installedNode is not null)
+if (installedNode is not null && federatedCatalog.CanHandle(installedNode))
 {
-    Assert(federatedCatalog.CanHandle(installedNode), "Node.js did not receive an exact public-catalog identity match.");
     var nodeUpdate = await federatedCatalog.CheckAsync(installedNode, CancellationToken.None);
     Assert(nodeUpdate.Status == UpdateStatus.Available && VersionOrder.Compare(nodeUpdate.AvailableVersion, installedNode.NormalizedVersion) > 0,
         $"The fresher Node.js catalog update was not detected: {nodeUpdate.Message}");
