@@ -150,6 +150,7 @@ public sealed class UpdateRow
     {
         UpdateStatus.Available => LocalizationService.Get("StatusUpdateAvailable"),
         UpdateStatus.Current => LocalizationService.Get("StatusCurrent"),
+        UpdateStatus.ManagedExternally when Source.ProviderId == "msix-store" => LocalizationService.Get("StatusStoreManaged"),
         UpdateStatus.ManagedExternally => LocalizationService.Get("StatusNativeUpdater"),
         UpdateStatus.Unsupported => LocalizationService.Get("StatusUnsupported"),
         UpdateStatus.Error => LocalizationService.Get("StatusCheckFailed"),

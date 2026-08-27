@@ -16,6 +16,7 @@ public sealed class UpdateCheckService
         };
         providers.AddRange(catalog.GitHub.Select(recipe => new GitHubReleaseUpdateProvider(httpClient, recipe)));
         providers.Add(new FederatedCatalogUpdateProvider(httpClient));
+        providers.Add(new MsixStoreUpdateProvider());
         _providers = providers;
     }
 

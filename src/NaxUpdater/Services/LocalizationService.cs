@@ -32,6 +32,7 @@ public static partial class LocalizationService
         if (update.ProviderId == "zero-install") return Get("ProviderZeroInstall");
         if (update.ProviderId == "native-updater") return Get("ProviderNative");
         if (update.ProviderId == "unverified") return Get("ProviderUnverified");
+        if (update.ProviderId == "msix-store") return Get("ProviderMsixStore");
         if (update.ProviderId == "installed-updater-metadata") return Get("ProviderInstalledMetadata");
         if (update.ProviderId == "federated-public-catalogs") return Get("ProviderFederatedCatalogs");
         if (update.ProviderId.StartsWith("github:", StringComparison.Ordinal))
@@ -45,6 +46,7 @@ public static partial class LocalizationService
     {
         if (update.ProviderId == "native-updater") return Get("ProviderNativeNote");
         if (update.ProviderId == "unverified") return Get("ProviderUnverifiedNote");
+        if (update.ProviderId == "msix-store") return Get("ProviderMsixStoreNote");
         if (update.ProviderId == "installed-updater-metadata") return Get("ProviderInstalledMetadataNote");
         if (update.ProviderId == "federated-public-catalogs")
         {
@@ -84,6 +86,7 @@ public static partial class LocalizationService
         "Recipe-pinned installer language" => Get("LanguageSourceRecipe"),
         "Zero Install application feed" => Get("LanguageSourceZeroInstall"),
         "Preserved by the application's updater" => Get("LanguageSourceNative"),
+        "Preserved by Microsoft Store/MSIX package" => Get("LanguageSourceMsixStore"),
         "Check failed before language could be verified" => Get("LanguageSourceFailed"),
         _ => source
     };
