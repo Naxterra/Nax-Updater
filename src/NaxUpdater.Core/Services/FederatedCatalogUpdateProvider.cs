@@ -42,7 +42,7 @@ public sealed partial class FederatedCatalogUpdateProvider(HttpClient httpClient
             return Result(application, identity, availableVersion, UpdateStatus.Current, source, null, null);
         }
 
-        if (!identity.MatchKind.EndsWith("product code", StringComparison.Ordinal))
+        if (!IsStrongCatalogIdentity(identity))
         {
             return Result(
                 application,
@@ -97,10 +97,13 @@ public sealed partial class FederatedCatalogUpdateProvider(HttpClient httpClient
             installer.Arguments,
             application.Scope == InstallScope.Machine,
             AllowedHosts(installer.Uri),
-            installer.Kind == UpdateExecutionKind.DownloadedMsi ? [] : RunningProcesses(application),
+            installer.Kind is UpdateExecutionKind.DownloadedMsi or UpdateExecutionKind.DownloadedZipMsi
+                ? []
+                : RunningProcesses(application),
             null,
             !string.IsNullOrWhiteSpace(signer),
-            true);
+            true,
+            NestedInstallerRelativePath: installer.NestedInstallerRelativePath);
         return Result(
             application,
             identity,
@@ -162,6 +165,44 @@ public sealed partial class FederatedCatalogUpdateProvider(HttpClient httpClient
                 if (productReader.Read())
                 {
                     return ReadIdentity(productReader, "registered product code");
+                }
+            }
+
+            var upgradeCode = UpgradeCode(application);
+            var upgradeNames = CatalogNameCandidates(application).ToArray();
+            if (!string.IsNullOrWhiteSpace(upgradeCode) && upgradeNames.Length > 0)
+            {
+                using var upgradeCommand = connection.CreateCommand();
+                var upgradeNameParameters = upgradeNames.Select((_, index) => $"$upgradeName{index}").ToArray();
+                upgradeCommand.CommandText = $"""
+                    SELECT DISTINCT p.id, p.name, p.moniker, p.latest_version
+                    FROM upgradecodes2 c
+                    JOIN packages p ON p.rowid = c.package
+                    JOIN norm_names2 n ON n.package = p.rowid
+                    WHERE upper(c.upgradecode) = upper($upgradeCode)
+                      AND n.norm_name IN ({string.Join(",", upgradeNameParameters)})
+                    ORDER BY p.id
+                    """;
+                upgradeCommand.Parameters.AddWithValue("$upgradeCode", upgradeCode);
+                for (var index = 0; index < upgradeNames.Length; index++)
+                {
+                    upgradeCommand.Parameters.AddWithValue(upgradeNameParameters[index], upgradeNames[index]);
+                }
+                using var upgradeReader = upgradeCommand.ExecuteReader();
+                CatalogIdentity? upgradeIdentity = null;
+                while (upgradeReader.Read())
+                {
+                    if (upgradeIdentity is not null)
+                    {
+                        upgradeIdentity = null;
+                        break;
+                    }
+                    upgradeIdentity = ReadIdentity(upgradeReader, "MSI upgrade code");
+                }
+                if (upgradeIdentity is not null &&
+                    upgradeNames.Contains(NormalizeCatalogValue(upgradeIdentity.Name), StringComparer.Ordinal))
+                {
+                    return upgradeIdentity;
                 }
             }
 
@@ -340,6 +381,8 @@ public sealed partial class FederatedCatalogUpdateProvider(HttpClient httpClient
     {
         var installers = new List<CatalogInstaller>();
         string? globalType = null;
+        string? globalNestedType = null;
+        string? globalNestedPath = null;
         string? architecture = null;
         string? type = null;
         string? url = null;
@@ -351,22 +394,32 @@ public sealed partial class FederatedCatalogUpdateProvider(HttpClient httpClient
                 hash?.Length == 64 && hash.All(Uri.IsHexDigit))
             {
                 var installerType = type ?? globalType;
-                var kind = installerType?.ToLowerInvariant() switch
+                var normalizedType = installerType?.ToLowerInvariant();
+                var kind = normalizedType switch
                 {
                     "msi" or "wix" => UpdateExecutionKind.DownloadedMsi,
                     "exe" or "inno" or "nullsoft" or "burn" => UpdateExecutionKind.DownloadedExe,
+                    "zip" when globalNestedType?.Equals("msi", StringComparison.OrdinalIgnoreCase) == true &&
+                               !string.IsNullOrWhiteSpace(globalNestedPath) => UpdateExecutionKind.DownloadedZipMsi,
                     _ => (UpdateExecutionKind?)null
                 };
                 if (kind.HasValue)
                 {
-                    var arguments = installerType?.ToLowerInvariant() switch
+                    var arguments = normalizedType switch
                     {
                         "msi" or "wix" => new[] { "/qn", "/norestart" },
+                        "zip" when kind == UpdateExecutionKind.DownloadedZipMsi => new[] { "/qn", "/norestart" },
                         "inno" => new[] { "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART" },
                         "nullsoft" => new[] { "/S" },
                         _ => []
                     };
-                    installers.Add(new CatalogInstaller(architecture ?? "neutral", kind.Value, uri, hash, arguments));
+                    installers.Add(new CatalogInstaller(
+                        architecture ?? "neutral",
+                        kind.Value,
+                        uri,
+                        hash,
+                        arguments,
+                        kind == UpdateExecutionKind.DownloadedZipMsi ? globalNestedPath : null));
                 }
             }
             architecture = type = url = hash = null;
@@ -383,6 +436,9 @@ public sealed partial class FederatedCatalogUpdateProvider(HttpClient httpClient
             else if (line.StartsWith("Architecture:", StringComparison.OrdinalIgnoreCase)) architecture = Scalar(line);
             else if (line.StartsWith("InstallerUrl:", StringComparison.OrdinalIgnoreCase)) url = Scalar(line);
             else if (line.StartsWith("InstallerSha256:", StringComparison.OrdinalIgnoreCase)) hash = Scalar(line);
+            else if (line.StartsWith("NestedInstallerType:", StringComparison.OrdinalIgnoreCase)) globalNestedType = Scalar(line);
+            else if (line.StartsWith("- RelativeFilePath:", StringComparison.OrdinalIgnoreCase) ||
+                     line.StartsWith("RelativeFilePath:", StringComparison.OrdinalIgnoreCase)) globalNestedPath = Scalar(line);
             else if (line.StartsWith("InstallerType:", StringComparison.OrdinalIgnoreCase))
             {
                 if (architecture is null) globalType = Scalar(line); else type = Scalar(line);
@@ -564,6 +620,14 @@ public sealed partial class FederatedCatalogUpdateProvider(HttpClient httpClient
         return null;
     }
 
+    private static string? UpgradeCode(InstalledApplication application) => application.Evidence
+        .FirstOrDefault(static item => item.Label == RegistryInventoryScanner.InstallerUpgradeFamilyEvidenceLabel)
+        ?.Value;
+
+    private static bool IsStrongCatalogIdentity(CatalogIdentity identity) =>
+        identity.MatchKind.EndsWith("product code", StringComparison.Ordinal) ||
+        identity.MatchKind.Equals("MSI upgrade code", StringComparison.Ordinal);
+
     private static string? PackageFamily(InstalledApplication application)
     {
         const string prefix = "msix:";
@@ -620,5 +684,6 @@ public sealed partial class FederatedCatalogUpdateProvider(HttpClient httpClient
         UpdateExecutionKind Kind,
         Uri Uri,
         string Sha256,
-        IReadOnlyList<string> Arguments);
+        IReadOnlyList<string> Arguments,
+        string? NestedInstallerRelativePath = null);
 }

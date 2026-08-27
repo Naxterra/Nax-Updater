@@ -13,6 +13,7 @@ public enum UpdateExecutionKind
 {
     DownloadedExe,
     DownloadedMsi,
+    DownloadedZipMsi,
     NativeCommand,
     StorePackage
 }
@@ -34,7 +35,8 @@ public sealed record UpdateExecutionPlan(
     string? StoreProductId = null,
     string? StorePackageFamilyName = null,
     string? StorePublisher = null,
-    IReadOnlyList<string>? ExpectedSigners = null);
+    IReadOnlyList<string>? ExpectedSigners = null,
+    string? NestedInstallerRelativePath = null);
 
 public sealed record UpdateCheckResult(
     string ApplicationIdentity,

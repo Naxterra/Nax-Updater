@@ -520,7 +520,7 @@ public sealed partial class MainPage : Page
         try
         {
             VerifiedInstaller? installer = null;
-            if (plan.Kind is UpdateExecutionKind.DownloadedExe or UpdateExecutionKind.DownloadedMsi)
+            if (plan.Kind is UpdateExecutionKind.DownloadedExe or UpdateExecutionKind.DownloadedMsi or UpdateExecutionKind.DownloadedZipMsi)
             {
                 var cacheRoot = Path.Combine(
                     Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),

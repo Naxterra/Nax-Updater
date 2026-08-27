@@ -1,6 +1,7 @@
 using NaxUpdater.Core.Models;
 using NaxUpdater.Core.Services;
 using Microsoft.Data.Sqlite;
+using System.IO.Compression;
 using System.Net;
 using System.Net.Http.Headers;
 using System.Security.Cryptography;
@@ -194,6 +195,7 @@ try
         catalogCommand.CommandText = """
             CREATE TABLE packages(rowid INTEGER PRIMARY KEY, id TEXT NOT NULL, name TEXT NOT NULL, moniker TEXT, latest_version TEXT NOT NULL);
             CREATE TABLE productcodes2(productcode TEXT NOT NULL, package INTEGER NOT NULL);
+            CREATE TABLE upgradecodes2(upgradecode TEXT NOT NULL, package INTEGER NOT NULL);
             CREATE TABLE norm_names2(norm_name TEXT NOT NULL, package INTEGER NOT NULL);
             CREATE TABLE norm_publishers2(norm_publisher TEXT NOT NULL, package INTEGER NOT NULL);
             CREATE TABLE pfns2(pfn TEXT NOT NULL, package INTEGER NOT NULL);
@@ -204,19 +206,37 @@ try
             INSERT INTO norm_publishers2(norm_publisher, package) VALUES('uniquepublisherllc', 2);
             INSERT INTO packages(rowid, id, name, moniker, latest_version) VALUES(3, 'Fixture.StoreApp', 'Store App', '', '4.0.0');
             INSERT INTO pfns2(pfn, package) VALUES('Fixture.StoreApp_1234567890abc', 3);
+            INSERT INTO packages(rowid, id, name, moniker, latest_version) VALUES(4, 'Fixture.ArchiveMsi', 'Archive MSI', '', '2.0.0');
+            INSERT INTO upgradecodes2(upgradecode, package) VALUES('{AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE}', 4);
+            INSERT INTO norm_names2(norm_name, package) VALUES('archivemsi', 4);
             """;
         await catalogCommand.ExecuteNonQueryAsync();
     }
     var catalogHash = new string('c', 64);
-    using var catalogClient = new HttpClient(new StubHttpMessageHandler(_ => new HttpResponseMessage(HttpStatusCode.OK)
+    var archiveHash = new string('d', 64);
+    using var catalogClient = new HttpClient(new StubHttpMessageHandler(request => new HttpResponseMessage(HttpStatusCode.OK)
     {
-        Content = new StringContent($$"""
-            InstallerType: msi
-            Installers:
-            - Architecture: x64
-              InstallerUrl: https://downloads.example.test/catalog-app-2.0.0-x64.msi
-              InstallerSha256: {{catalogHash}}
-            """, Encoding.UTF8, "text/yaml")
+        Content = new StringContent(
+            request.RequestUri?.AbsoluteUri.Contains("ArchiveMsi", StringComparison.Ordinal) == true
+                ? $$"""
+                    InstallerType: zip
+                    NestedInstallerType: msi
+                    NestedInstallerFiles:
+                    - RelativeFilePath: redist\ArchiveRedist.msi
+                    Installers:
+                    - Architecture: x64
+                      InstallerUrl: https://downloads.example.test/archive-msi.2.0.0.nupkg
+                      InstallerSha256: {{archiveHash}}
+                    """
+                : $$"""
+                    InstallerType: msi
+                    Installers:
+                    - Architecture: x64
+                      InstallerUrl: https://downloads.example.test/catalog-app-2.0.0-x64.msi
+                      InstallerSha256: {{catalogHash}}
+                    """,
+            Encoding.UTF8,
+            "text/yaml")
     }));
     var catalogApplication = CreateApplication(
         "catalog-test",
@@ -245,6 +265,59 @@ try
            catalogUpdate.ExecutionPlan.RunningProcessNames.Count == 0 &&
            catalogUpdate.ExecutionPlan.AllowHashVerifiedRedirects,
         "Deterministic catalog update plan lost its hash, MSI policy, or verified-redirect policy.");
+    var archiveApplication = CreateApplication(
+        "archive-msi-test",
+        "Archive MSI",
+        "Example Publisher",
+        "1.0.0",
+        Path.Combine(firefoxFixture, "ArchiveMsi.exe"),
+        InstallScope.Machine,
+        ManagementMode.WindowsInstaller) with
+    {
+        Evidence =
+        [
+            new ApplicationEvidence(
+                EvidenceKind.Registry,
+                "Windows Installer upgrade family",
+                "{AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE}",
+                true)
+        ]
+    };
+    Assert(deterministicCatalog.CanHandle(archiveApplication), "Exact MSI upgrade-code catalog matching failed.");
+    var archiveUpdate = await deterministicCatalog.CheckAsync(archiveApplication, CancellationToken.None);
+    Assert(archiveUpdate.Status == UpdateStatus.Available &&
+           archiveUpdate.ExecutionPlan is
+           {
+               Kind: UpdateExecutionKind.DownloadedZipMsi,
+               Sha256: var parsedArchiveHash,
+               NestedInstallerRelativePath: "redist\\ArchiveRedist.msi"
+           } && parsedArchiveHash == archiveHash,
+        "The verified nested-MSI archive plan was not preserved.");
+    var archiveFixturePath = Path.Combine(firefoxFixture, "nested-installer.nupkg");
+    var nestedPayload = Encoding.UTF8.GetBytes("nested MSI fixture");
+    using (var archive = ZipFile.Open(archiveFixturePath, ZipArchiveMode.Create))
+    {
+        var entry = archive.CreateEntry("redist/ArchiveRedist.msi");
+        await using var output = entry.Open();
+        await output.WriteAsync(nestedPayload);
+    }
+    var extractionFixture = Directory.CreateDirectory(Path.Combine(firefoxFixture, "nested-extraction"));
+    var extractedInstaller = UpdateExecutionService.ExtractNestedInstaller(
+        archiveFixturePath,
+        "redist\\ArchiveRedist.msi",
+        extractionFixture.FullName);
+    Assert(File.ReadAllBytes(extractedInstaller).SequenceEqual(nestedPayload),
+        "The exact nested MSI was not extracted from the verified archive.");
+    var traversalRejected = false;
+    try
+    {
+        UpdateExecutionService.ExtractNestedInstaller(archiveFixturePath, "..\\ArchiveRedist.msi", extractionFixture.FullName);
+    }
+    catch (InvalidDataException)
+    {
+        traversalRejected = true;
+    }
+    Assert(traversalRejected, "A traversal path was accepted for a nested installer.");
     var uniqueCatalogApplication = CreateApplication(
         "unique-catalog-test",
         "Unique App 1.0.0",
@@ -522,6 +595,24 @@ if (installedGog is not null && federatedCatalog.CanHandle(installedGog))
     var gogUpdate = await federatedCatalog.CheckAsync(installedGog, CancellationToken.None);
     Assert(gogUpdate.Status == UpdateStatus.Current && gogUpdate.InstalledVersion == "2.1.8.30",
         $"GOG GALAXY should use its newer registered package version instead of an older executable version: {gogUpdate.Message}");
+}
+
+var installedGameInput = snapshot.Applications.FirstOrDefault(app =>
+    app.DisplayName.Equals("Microsoft GameInput", StringComparison.OrdinalIgnoreCase));
+if (installedGameInput is not null)
+{
+    Assert(federatedCatalog.CanHandle(installedGameInput),
+        "Microsoft GameInput was not correlated through its exact installed MSI identity.");
+    var gameInputUpdate = await federatedCatalog.CheckAsync(installedGameInput, CancellationToken.None);
+    Assert(gameInputUpdate.Status == UpdateStatus.Available &&
+           VersionOrder.Compare(gameInputUpdate.AvailableVersion, installedGameInput.NormalizedVersion) > 0 &&
+           gameInputUpdate.ExecutionPlan is
+           {
+               Kind: UpdateExecutionKind.DownloadedZipMsi,
+               Sha256.Length: 64,
+               NestedInstallerRelativePath: "redist\\GameInputRedist.msi"
+           },
+        $"Microsoft GameInput 3.4.218 was not detected from its exact catalog identity: {gameInputUpdate.Status} · {gameInputUpdate.Message}");
 }
 
 var installedOpenSslEntries = snapshot.Applications
