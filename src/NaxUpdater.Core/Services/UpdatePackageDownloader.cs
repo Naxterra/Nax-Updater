@@ -1,11 +1,14 @@
 using NaxUpdater.Core.Models;
+using System.Net;
+using System.Net.Http.Headers;
 using System.Security.Cryptography;
 
 namespace NaxUpdater.Core.Services;
 
 public sealed class UpdatePackageDownloader(
     HttpClient httpClient,
-    IAuthenticodeVerifier authenticodeVerifier)
+    IAuthenticodeVerifier authenticodeVerifier,
+    long segmentedDownloadThresholdBytes = 64L * 1024 * 1024)
 {
     public async Task<VerifiedInstaller> DownloadAndVerifyAsync(
         UpdateCheckResult update,
@@ -66,35 +69,29 @@ public sealed class UpdatePackageDownloader(
 
             var contentLength = response.Content.Headers.ContentLength;
             string actualHash;
-            await using (var input = await response.Content.ReadAsStreamAsync(cancellationToken))
-            await using (var output = new FileStream(
-                             partialPath,
-                             FileMode.CreateNew,
-                             FileAccess.Write,
-                             FileShare.None,
-                             1024 * 128,
-                             FileOptions.Asynchronous | FileOptions.SequentialScan))
+            var supportsRanges = contentLength >= segmentedDownloadThresholdBytes &&
+                                 response.Headers.AcceptRanges.Any(static value => value.Equals("bytes", StringComparison.OrdinalIgnoreCase));
+            if (supportsRanges)
             {
-                using var hash = IncrementalHash.CreateHash(hashPolicy.Algorithm);
-                var buffer = new byte[1024 * 128];
-                long received = 0;
-                while (true)
-                {
-                    var read = await input.ReadAsync(buffer, cancellationToken);
-                    if (read == 0)
-                    {
-                        break;
-                    }
-                    await output.WriteAsync(buffer.AsMemory(0, read), cancellationToken);
-                    hash.AppendData(buffer, 0, read);
-                    received += read;
-                    if (contentLength is > 0)
-                    {
-                        progress?.Report(Math.Clamp((double)received / contentLength.Value, 0, 1));
-                    }
-                }
-                await output.FlushAsync(cancellationToken);
-                actualHash = Convert.ToHexString(hash.GetHashAndReset());
+                response.Dispose();
+                actualHash = await DownloadSegmentedAsync(
+                    finalUri,
+                    partialPath,
+                    contentLength!.Value,
+                    hashPolicy,
+                    plan,
+                    progress,
+                    cancellationToken);
+            }
+            else
+            {
+                actualHash = await DownloadSingleResponseAsync(
+                    response,
+                    partialPath,
+                    contentLength,
+                    hashPolicy,
+                    progress,
+                    cancellationToken);
             }
             if (!actualHash.Equals(hashPolicy.ExpectedHash, StringComparison.OrdinalIgnoreCase))
             {
@@ -118,6 +115,150 @@ public sealed class UpdatePackageDownloader(
                 File.Delete(partialPath);
             }
             throw;
+        }
+    }
+
+    private static async Task<string> DownloadSingleResponseAsync(
+        HttpResponseMessage response,
+        string partialPath,
+        long? contentLength,
+        HashPolicy hashPolicy,
+        IProgress<double>? progress,
+        CancellationToken cancellationToken)
+    {
+        await using var input = await response.Content.ReadAsStreamAsync(cancellationToken);
+        await using var output = new FileStream(
+            partialPath,
+            FileMode.CreateNew,
+            FileAccess.Write,
+            FileShare.None,
+            1024 * 128,
+            FileOptions.Asynchronous | FileOptions.SequentialScan);
+        using var hash = IncrementalHash.CreateHash(hashPolicy.Algorithm);
+        var buffer = new byte[1024 * 128];
+        long received = 0;
+        while (true)
+        {
+            var read = await input.ReadAsync(buffer, cancellationToken);
+            if (read == 0)
+            {
+                break;
+            }
+            await output.WriteAsync(buffer.AsMemory(0, read), cancellationToken);
+            hash.AppendData(buffer, 0, read);
+            received += read;
+            if (contentLength is > 0)
+            {
+                progress?.Report(Math.Clamp((double)received / contentLength.Value, 0, 1));
+            }
+        }
+        await output.FlushAsync(cancellationToken);
+        return Convert.ToHexString(hash.GetHashAndReset());
+    }
+
+    private async Task<string> DownloadSegmentedAsync(
+        Uri uri,
+        string partialPath,
+        long contentLength,
+        HashPolicy hashPolicy,
+        UpdateExecutionPlan plan,
+        IProgress<double>? progress,
+        CancellationToken cancellationToken)
+    {
+        const int segmentCount = 6;
+        var segmentPaths = Enumerable.Range(0, segmentCount)
+            .Select(index => $"{partialPath}.segment{index}")
+            .ToArray();
+        long receivedTotal = 0;
+        try
+        {
+            var segmentSize = (contentLength + segmentCount - 1) / segmentCount;
+            var downloads = Enumerable.Range(0, segmentCount).Select(async index =>
+            {
+                var start = index * segmentSize;
+                var end = Math.Min(contentLength - 1, start + segmentSize - 1);
+                using var request = new HttpRequestMessage(HttpMethod.Get, uri);
+                request.Headers.Range = new RangeHeaderValue(start, end);
+                using var response = await httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
+                if (response.StatusCode != HttpStatusCode.PartialContent ||
+                    response.Content.Headers.ContentRange is not { From: not null, To: not null } range ||
+                    range.From.Value != start || range.To.Value != end)
+                {
+                    throw new InvalidDataException($"The server did not honor byte range {start}-{end}.");
+                }
+                var finalUri = response.RequestMessage?.RequestUri ?? uri;
+                if (finalUri.Scheme != Uri.UriSchemeHttps ||
+                    (!plan.AllowHashVerifiedRedirects && !IsAllowedHost(finalUri.Host, plan.AllowedDownloadHosts)))
+                {
+                    throw new InvalidOperationException($"A download segment redirected to untrusted host '{finalUri.Host}'.");
+                }
+                await using var input = await response.Content.ReadAsStreamAsync(cancellationToken);
+                await using var output = new FileStream(
+                    segmentPaths[index],
+                    FileMode.Create,
+                    FileAccess.Write,
+                    FileShare.None,
+                    1024 * 128,
+                    FileOptions.Asynchronous | FileOptions.SequentialScan);
+                var buffer = new byte[1024 * 128];
+                while (true)
+                {
+                    var read = await input.ReadAsync(buffer, cancellationToken);
+                    if (read == 0)
+                    {
+                        break;
+                    }
+                    await output.WriteAsync(buffer.AsMemory(0, read), cancellationToken);
+                    var received = Interlocked.Add(ref receivedTotal, read);
+                    progress?.Report(Math.Clamp((double)received / contentLength, 0, 1));
+                }
+                await output.FlushAsync(cancellationToken);
+                if (output.Length != end - start + 1)
+                {
+                    throw new InvalidDataException($"Segment {index} length was {output.Length}; expected {end - start + 1}.");
+                }
+            });
+            await Task.WhenAll(downloads);
+
+            using var hash = IncrementalHash.CreateHash(hashPolicy.Algorithm);
+            await using var combined = new FileStream(
+                partialPath,
+                FileMode.CreateNew,
+                FileAccess.Write,
+                FileShare.None,
+                1024 * 128,
+                FileOptions.Asynchronous | FileOptions.SequentialScan);
+            var mergeBuffer = new byte[1024 * 128];
+            foreach (var segmentPath in segmentPaths)
+            {
+                await using var segment = File.OpenRead(segmentPath);
+                while (true)
+                {
+                    var read = await segment.ReadAsync(mergeBuffer, cancellationToken);
+                    if (read == 0)
+                    {
+                        break;
+                    }
+                    await combined.WriteAsync(mergeBuffer.AsMemory(0, read), cancellationToken);
+                    hash.AppendData(mergeBuffer, 0, read);
+                }
+            }
+            await combined.FlushAsync(cancellationToken);
+            if (combined.Length != contentLength)
+            {
+                throw new InvalidDataException($"Combined download length was {combined.Length}; expected {contentLength}.");
+            }
+            return Convert.ToHexString(hash.GetHashAndReset());
+        }
+        finally
+        {
+            foreach (var segmentPath in segmentPaths)
+            {
+                if (File.Exists(segmentPath))
+                {
+                    File.Delete(segmentPath);
+                }
+            }
         }
     }
 

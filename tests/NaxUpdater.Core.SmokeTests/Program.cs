@@ -2,6 +2,7 @@ using NaxUpdater.Core.Models;
 using NaxUpdater.Core.Services;
 using Microsoft.Data.Sqlite;
 using System.Net;
+using System.Net.Http.Headers;
 using System.Security.Cryptography;
 using System.Text;
 using System.Xml.Linq;
@@ -327,6 +328,34 @@ try
     var redirectedInstaller = await new UpdatePackageDownloader(redirectClient, new StubAuthenticodeVerifier("Fixture Signer"))
         .DownloadAndVerifyAsync(downloadUpdate with { ExecutionPlan = redirectPlan }, Path.Combine(firefoxFixture, "redirect-cache"));
     Assert(File.Exists(redirectedInstaller.Path), "Hash-verified HTTPS mirror redirect was rejected.");
+    using var segmentedClient = new HttpClient(new StubHttpMessageHandler(request =>
+    {
+        if (request.Headers.Range?.Ranges.SingleOrDefault() is { } requestedRange)
+        {
+            var start = requestedRange.From!.Value;
+            var end = requestedRange.To!.Value;
+            var segment = installerPayload[(int)start..((int)end + 1)];
+            var partialResponse = new HttpResponseMessage(HttpStatusCode.PartialContent)
+            {
+                Content = new ByteArrayContent(segment)
+            };
+            partialResponse.Content.Headers.ContentRange = new ContentRangeHeaderValue(start, end, installerPayload.Length);
+            return partialResponse;
+        }
+        var initialResponse = new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new ByteArrayContent(installerPayload)
+        };
+        initialResponse.Headers.AcceptRanges.Add("bytes");
+        return initialResponse;
+    }));
+    var segmentedInstaller = await new UpdatePackageDownloader(
+            segmentedClient,
+            new StubAuthenticodeVerifier("Fixture Signer"),
+            segmentedDownloadThresholdBytes: 1)
+        .DownloadAndVerifyAsync(downloadUpdate, Path.Combine(firefoxFixture, "segmented-cache"));
+    Assert(File.ReadAllBytes(segmentedInstaller.Path).SequenceEqual(installerPayload),
+        "Parallel ranged download did not reconstruct the verified installer exactly.");
 
     var installedFirefox = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "Mozilla Firefox", "firefox.exe");
     if (File.Exists(installedFirefox))
@@ -382,6 +411,17 @@ if (installedSignal is not null)
     Assert(liveSignalUpdate.Status is UpdateStatus.Current or UpdateStatus.Available,
         $"Signal's installed updater feed could not be checked: {liveSignalUpdate.Message}");
     Assert(!string.IsNullOrWhiteSpace(liveSignalUpdate.AvailableVersion), "Signal's installed updater feed returned no version.");
+}
+
+var installedChatGpt = snapshot.Applications.FirstOrDefault(app =>
+    app.Identity.Equals("msix:OpenAI.Codex_2p2nqsd0c76g0", StringComparison.OrdinalIgnoreCase));
+if (installedChatGpt is not null)
+{
+    Assert(installedChatGpt.DisplayName.Equals("ChatGPT", StringComparison.OrdinalIgnoreCase),
+        $"The OpenAI Store package is still shown as {installedChatGpt.DisplayName} instead of ChatGPT.");
+    var chatGptAssessment = await new MsixStoreUpdateProvider().CheckAsync(installedChatGpt, CancellationToken.None);
+    Assert(chatGptAssessment.ExecutionPlan is { Kind: UpdateExecutionKind.StorePackage } && chatGptAssessment.IsInstallable,
+        "ChatGPT did not receive a Store update action.");
 }
 
 var liveStoreIdentities = 0;
