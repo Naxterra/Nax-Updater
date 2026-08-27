@@ -164,6 +164,35 @@ public sealed partial class FederatedCatalogUpdateProvider(HttpClient httpClient
                 }
             }
 
+            var packageFamily = PackageFamily(application);
+            if (!string.IsNullOrWhiteSpace(packageFamily))
+            {
+                using var familyCommand = connection.CreateCommand();
+                familyCommand.CommandText = """
+                    SELECT p.id, p.name, p.moniker, p.latest_version
+                    FROM pfns2 f
+                    JOIN packages p ON p.rowid = f.package
+                    WHERE lower(f.pfn) = lower($packageFamily)
+                    ORDER BY p.id
+                    """;
+                familyCommand.Parameters.AddWithValue("$packageFamily", packageFamily);
+                using var familyReader = familyCommand.ExecuteReader();
+                CatalogIdentity? familyIdentity = null;
+                while (familyReader.Read())
+                {
+                    if (familyIdentity is not null)
+                    {
+                        familyIdentity = null;
+                        break;
+                    }
+                    familyIdentity = ReadIdentity(familyReader, "MSIX package family");
+                }
+                if (familyIdentity is not null)
+                {
+                    return familyIdentity;
+                }
+            }
+
             var publisher = NormalizeCatalogValue(application.Publisher);
             var names = CatalogNameCandidates(application).ToArray();
             if (publisher.Length == 0 || names.Length == 0)
@@ -532,6 +561,18 @@ public sealed partial class FederatedCatalogUpdateProvider(HttpClient httpClient
             }
         }
         return null;
+    }
+
+    private static string? PackageFamily(InstalledApplication application)
+    {
+        const string prefix = "msix:";
+        if (application.Identity.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+        {
+            return application.Identity[prefix.Length..];
+        }
+        return application.Evidence
+            .FirstOrDefault(static item => item.Label == "MSIX package family")
+            ?.Value;
     }
 
     private static string? CatalogInstalledVersion(InstalledApplication application)

@@ -195,11 +195,14 @@ try
             CREATE TABLE productcodes2(productcode TEXT NOT NULL, package INTEGER NOT NULL);
             CREATE TABLE norm_names2(norm_name TEXT NOT NULL, package INTEGER NOT NULL);
             CREATE TABLE norm_publishers2(norm_publisher TEXT NOT NULL, package INTEGER NOT NULL);
+            CREATE TABLE pfns2(pfn TEXT NOT NULL, package INTEGER NOT NULL);
             INSERT INTO packages(rowid, id, name, moniker, latest_version) VALUES(1, 'Fixture.CatalogApp', 'Catalog App', '', '2.0.0');
             INSERT INTO productcodes2(productcode, package) VALUES('{11111111-2222-3333-4444-555555555555}', 1);
             INSERT INTO packages(rowid, id, name, moniker, latest_version) VALUES(2, 'Fixture.UniqueApp', 'Unique App', '', '3.0.0');
             INSERT INTO norm_names2(norm_name, package) VALUES('uniqueapp', 2);
             INSERT INTO norm_publishers2(norm_publisher, package) VALUES('uniquepublisherllc', 2);
+            INSERT INTO packages(rowid, id, name, moniker, latest_version) VALUES(3, 'Fixture.StoreApp', 'Store App', '', '4.0.0');
+            INSERT INTO pfns2(pfn, package) VALUES('Fixture.StoreApp_1234567890abc', 3);
             """;
         await catalogCommand.ExecuteNonQueryAsync();
     }
@@ -252,6 +255,19 @@ try
     Assert(uniqueCatalogUpdate.Status == UpdateStatus.Available && uniqueCatalogUpdate.AvailableVersion == "3.0.0" && uniqueCatalogUpdate.ExecutionPlan is null,
         "A unique weak catalog match should detect the update but remain non-installable.");
 
+    var storeCatalogApplication = CreateApplication(
+        "msix:Fixture.StoreApp_1234567890abc",
+        "Store App",
+        "Example Store Publisher",
+        "3.0.0",
+        Path.Combine(firefoxFixture, "StoreApp"),
+        InstallScope.CurrentUser,
+        ManagementMode.Msix);
+    Assert(deterministicCatalog.CanHandle(storeCatalogApplication), "Exact MSIX package-family catalog matching failed.");
+    var storeCatalogUpdate = await deterministicCatalog.CheckAsync(storeCatalogApplication, CancellationToken.None);
+    Assert(storeCatalogUpdate.Status == UpdateStatus.Available && storeCatalogUpdate.AvailableVersion == "4.0.0" && storeCatalogUpdate.ExecutionPlan is null,
+        "An exact MSIX package-family match should report the catalog update without inventing a sideload plan.");
+
     var unsupportedApplication = CreateApplication(
         "unsupported-test",
         "Uncatalogued Fixture",
@@ -266,6 +282,14 @@ try
            completeAssessment.Results[0].Status == UpdateStatus.Unsupported &&
            completeAssessment.UnsupportedApplicationCount == 1,
         "The complete assessment omitted an application without a verifiable update source.");
+    var storeAssessment = await new UpdateCheckService(metadataClient, new UpdateProviderCatalog())
+        .CheckAsync(new InventorySnapshot(DateTimeOffset.Now, [storeCatalogApplication with { Identity = "msix:Uncatalogued.StoreApp_abc" }], [], []));
+    Assert(storeAssessment.Results.Count == 1 &&
+           storeAssessment.Results[0].Status == UpdateStatus.ManagedExternally &&
+           storeAssessment.Results[0].ProviderId == "msix-store" &&
+           storeAssessment.Results[0].Language == "application-managed" &&
+           storeAssessment.UnsupportedApplicationCount == 0,
+        "An unmatched MSIX package was incorrectly labelled unknown or unsupported.");
 
     var installerPayload = Encoding.UTF8.GetBytes("verified installer fixture");
     var installerHash = Convert.ToHexString(SHA256.HashData(installerPayload));
