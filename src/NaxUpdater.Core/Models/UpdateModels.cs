@@ -32,7 +32,9 @@ public sealed record UpdateExecutionPlan(
     bool RequireAuthenticode = true,
     bool AllowHashVerifiedRedirects = false,
     string? StoreProductId = null,
-    string? StorePackageFamilyName = null);
+    string? StorePackageFamilyName = null,
+    string? StorePublisher = null,
+    IReadOnlyList<string>? ExpectedSigners = null);
 
 public sealed record UpdateCheckResult(
     string ApplicationIdentity,

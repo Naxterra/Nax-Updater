@@ -23,7 +23,7 @@ public sealed class UpdatePackageDownloader(
         }
         if (plan.DownloadUri is null || plan.DownloadUri.Scheme != Uri.UriSchemeHttps ||
             string.IsNullOrWhiteSpace(plan.FileName) ||
-            (plan.RequireAuthenticode && string.IsNullOrWhiteSpace(plan.ExpectedSigner)))
+            (plan.RequireAuthenticode && ExpectedSigners(plan).Count == 0))
         {
             throw new InvalidOperationException("The update plan is missing its HTTPS URL, filename, hash, or signer policy.");
         }
@@ -281,12 +281,33 @@ public sealed class UpdatePackageDownloader(
         {
             return new FileVerification(true, "Unsigned installer; release hash verified", null);
         }
-        var signature = authenticodeVerifier.Verify(path, plan.ExpectedSigner!);
-        return new FileVerification(signature.IsValid, signature.Signer, signature.Error);
+        var errors = new List<string>();
+        foreach (var expectedSigner in ExpectedSigners(plan))
+        {
+            var signature = authenticodeVerifier.Verify(path, expectedSigner);
+            if (signature.IsValid)
+            {
+                return new FileVerification(true, signature.Signer, null);
+            }
+            if (!string.IsNullOrWhiteSpace(signature.Error))
+            {
+                errors.Add(signature.Error);
+            }
+        }
+        return new FileVerification(false, null, string.Join(" | ", errors));
     }
 
     private static bool IsAllowedHost(string host, IReadOnlyList<string> allowedHosts) =>
         allowedHosts.Any(allowed => host.Equals(allowed, StringComparison.OrdinalIgnoreCase));
+
+    private static IReadOnlyList<string> ExpectedSigners(UpdateExecutionPlan plan)
+    {
+        if (plan.ExpectedSigners is { Count: > 0 })
+        {
+            return plan.ExpectedSigners.Where(static signer => !string.IsNullOrWhiteSpace(signer)).ToArray();
+        }
+        return string.IsNullOrWhiteSpace(plan.ExpectedSigner) ? [] : [plan.ExpectedSigner];
+    }
 
     private static HashPolicy ResolveHashPolicy(UpdateExecutionPlan plan)
     {

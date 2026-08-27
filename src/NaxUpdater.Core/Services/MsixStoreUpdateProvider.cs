@@ -26,7 +26,8 @@ public sealed class MsixStoreUpdateProvider : IUpdateProvider
                 [],
                 [],
                 StoreProductId: null,
-                StorePackageFamilyName: packageFamily);
+                StorePackageFamilyName: packageFamily,
+                StorePublisher: application.Publisher);
         return Task.FromResult(new UpdateCheckResult(
             application.Identity,
             application.DisplayName,

@@ -30,7 +30,7 @@ The inventory engine:
 
 ## Update providers
 
-Version 0.10.0 includes:
+Version 0.11.0 includes:
 
 - Mozilla Firefox releases from Mozilla's official product-details and release archive, preserving the effective Firefox profile language, architecture, channel, scope, and installation directory;
 - Nextcloud releases from the official `nextcloud-releases/desktop` GitHub repository using its release-asset SHA-256 digest and a multi-language MSI;
@@ -54,7 +54,11 @@ Version 0.10.0 includes:
 - installed PFN to Store Product ID resolution with exact package-family revalidation before silent install/update submission;
 - a **Store update** row action for MSIX packages, with Store handling licensing, applicability, download, staging, and idempotent current-version behavior;
 - launchable MSIX app-entry naming ahead of package identities, so Store packages such as `OpenAI.Codex` are presented by their user-facing app name, `ChatGPT`;
-- six-way parallel ranged downloads for installers of at least 64 MB when the server advertises byte-range support, followed by complete reconstruction and whole-file hash verification.
+- six-way parallel ranged downloads for installers of at least 64 MB when the server advertises byte-range support, followed by complete reconstruction and whole-file hash verification;
+- a sequential **Update all** queue containing only applications with a proven newer version and a verified execution plan, followed by one final inventory/update rescan;
+- honest Store action wording: Store-managed rows use **Check Store** and remain outside the available-update/mass-update count when Store exposes no comparable version;
+- multi-signer Authenticode policies from installed updater metadata, accepting any explicitly declared trusted publisher identity;
+- Store package migration matching through a unique exact product-name and publisher pair when the Store product intentionally publishes a replacement PFN.
 
 Catalogs provide candidates, never installed state. NaxUpdater still decides the installed version, location, architecture, channel, and scope from its independent inventory. A package-manager match is accepted only through a stable identifier such as an exact MSI product code; name-only search results are not installable.
 
@@ -100,7 +104,7 @@ From this directory:
 dotnet build NaxUpdater.slnx
 dotnet run --project tests/NaxUpdater.Core.SmokeTests/NaxUpdater.Core.SmokeTests.csproj
 dotnet publish src/NaxUpdater/NaxUpdater.csproj -c Release -r win-x64 --self-contained true -o artifacts/NaxUpdater-win-x64
-./scripts/package-release.ps1 -Version 0.10.0
+./scripts/package-release.ps1 -Version 0.11.0
 ```
 
 The desktop project uses .NET 11, WinUI 3, and the Windows App SDK. It is not an Electron or WebView application.

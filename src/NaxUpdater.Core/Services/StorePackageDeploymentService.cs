@@ -12,6 +12,7 @@ public sealed class StorePackageDeploymentService
     public async Task<StoreCatalogIdentity?> ResolveAsync(
         string packageFamilyName,
         string? installedDisplayName,
+        string? installedPublisher,
         CancellationToken cancellationToken)
     {
         if (string.IsNullOrWhiteSpace(packageFamilyName))
@@ -22,6 +23,7 @@ public sealed class StorePackageDeploymentService
         {
             var (_, catalog) = await GetStoreConnectionAsync(cancellationToken);
             CatalogPackage? resolved = null;
+            CatalogPackage? metadataFallback = null;
             var diagnostics = new List<string>();
             foreach (var query in SearchCandidates(packageFamilyName, installedDisplayName))
             {
@@ -38,11 +40,27 @@ public sealed class StorePackageDeploymentService
                     diagnostics.Add($"{query}:{result.Status}");
                     continue;
                 }
+                diagnostics.Add($"{query}:{result.Matches.Count}");
                 for (var index = 0; index < result.Matches.Count; index++)
                 {
                     var package = result.Matches[index].CatalogPackage;
-                    if (!Contains(package.DefaultInstallVersion.PackageFamilyNames, packageFamilyName))
+                    var packageFamilies = package.DefaultInstallVersion.PackageFamilyNames;
+                    if (!Contains(packageFamilies, packageFamilyName))
                     {
+                        diagnostics.Add($"{query}->{package.Id}:{package.Name}:pfns={Join(packageFamilies)}:publisher={CatalogPublisher(package)}");
+                        if (package.Name.Equals(query, StringComparison.OrdinalIgnoreCase) &&
+                            PublisherMatches(package, installedPublisher))
+                        {
+                            if (metadataFallback is not null && !metadataFallback.Id.Equals(package.Id, StringComparison.OrdinalIgnoreCase))
+                            {
+                                metadataFallback = null;
+                                diagnostics.Add($"{query}:ambiguous metadata fallback");
+                            }
+                            else
+                            {
+                                metadataFallback = package;
+                            }
+                        }
                         continue;
                     }
                     if (resolved is not null && !resolved.Id.Equals(package.Id, StringComparison.OrdinalIgnoreCase))
@@ -57,12 +75,17 @@ public sealed class StorePackageDeploymentService
                     break;
                 }
             }
+            resolved ??= metadataFallback;
             if (resolved is null)
             {
                 LastError = $"Store search found no product exposing package family {packageFamilyName}. {string.Join(" | ", diagnostics)}";
                 return null;
             }
-            return new StoreCatalogIdentity(resolved.Id, resolved.Name, packageFamilyName);
+            return new StoreCatalogIdentity(
+                resolved.Id,
+                resolved.Name,
+                packageFamilyName,
+                Contains(resolved.DefaultInstallVersion.PackageFamilyNames, packageFamilyName));
         }
         catch (Exception exception)
         {
@@ -71,9 +94,58 @@ public sealed class StorePackageDeploymentService
         }
     }
 
+    private static bool PublisherMatches(CatalogPackage package, string? installedPublisher)
+    {
+        if (string.IsNullOrWhiteSpace(installedPublisher))
+        {
+            return false;
+        }
+        try
+        {
+            var catalogPublisher = package.DefaultInstallVersion.GetCatalogPackageMetadata().Publisher;
+            var installed = Normalize(installedPublisher);
+            var catalog = Normalize(catalogPublisher);
+            return installed.Length >= 4 && catalog.Length >= 4 &&
+                   (installed.Contains(catalog, StringComparison.Ordinal) || catalog.Contains(installed, StringComparison.Ordinal));
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    private static string? CatalogPublisher(CatalogPackage package)
+    {
+        try
+        {
+            return package.DefaultInstallVersion.GetCatalogPackageMetadata().Publisher;
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    private static string Join(IReadOnlyList<string> values)
+    {
+        var items = new string[values.Count];
+        for (var index = 0; index < values.Count; index++)
+        {
+            items[index] = values[index];
+        }
+        return string.Join(',', items);
+    }
+
+    private static string Normalize(string? value) => string.Concat(
+        (value ?? string.Empty)
+            .Where(char.IsLetterOrDigit)
+            .Select(char.ToLowerInvariant));
+
     public async Task<UpdateExecutionResult> InstallOrUpdateAsync(
         string productId,
         string packageFamilyName,
+        string? installedDisplayName,
+        string? installedPublisher,
         CancellationToken cancellationToken)
     {
         try
@@ -93,8 +165,11 @@ public sealed class StorePackageDeploymentService
                 for (var index = 0; index < find.Matches.Count; index++)
                 {
                     var candidate = find.Matches[index].CatalogPackage;
-                    if (candidate.Id.Equals(productId, StringComparison.OrdinalIgnoreCase) &&
-                        Contains(candidate.DefaultInstallVersion.PackageFamilyNames, packageFamilyName))
+                    var familyMatch = Contains(candidate.DefaultInstallVersion.PackageFamilyNames, packageFamilyName);
+                    var metadataMatch = !string.IsNullOrWhiteSpace(installedDisplayName) &&
+                                        candidate.Name.Equals(installedDisplayName, StringComparison.OrdinalIgnoreCase) &&
+                                        PublisherMatches(candidate, installedPublisher);
+                    if (candidate.Id.Equals(productId, StringComparison.OrdinalIgnoreCase) && (familyMatch || metadataMatch))
                     {
                         if (package is not null)
                         {
@@ -200,4 +275,8 @@ public sealed class StorePackageDeploymentService
     }
 }
 
-public sealed record StoreCatalogIdentity(string ProductId, string Name, string PackageFamilyName);
+public sealed record StoreCatalogIdentity(
+    string ProductId,
+    string Name,
+    string PackageFamilyName,
+    bool PackageFamilyMatched);
