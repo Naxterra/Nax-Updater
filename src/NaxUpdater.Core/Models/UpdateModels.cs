@@ -13,7 +13,8 @@ public enum UpdateExecutionKind
 {
     DownloadedExe,
     DownloadedMsi,
-    NativeCommand
+    NativeCommand,
+    StorePackage
 }
 
 public sealed record UpdateExecutionPlan(
@@ -29,7 +30,9 @@ public sealed record UpdateExecutionPlan(
     IReadOnlyList<string> RunningProcessNames,
     string? Sha512 = null,
     bool RequireAuthenticode = true,
-    bool AllowHashVerifiedRedirects = false);
+    bool AllowHashVerifiedRedirects = false,
+    string? StoreProductId = null,
+    string? StorePackageFamilyName = null);
 
 public sealed record UpdateCheckResult(
     string ApplicationIdentity,
@@ -47,7 +50,9 @@ public sealed record UpdateCheckResult(
     string? Message,
     UpdateExecutionPlan? ExecutionPlan)
 {
-    public bool IsInstallable => Status == UpdateStatus.Available && ExecutionPlan is not null;
+    public bool IsInstallable => ExecutionPlan is not null &&
+                                 (Status == UpdateStatus.Available ||
+                                  (Status == UpdateStatus.ManagedExternally && ExecutionPlan.Kind == UpdateExecutionKind.StorePackage));
 }
 
 public sealed record UpdateCheckSnapshot(

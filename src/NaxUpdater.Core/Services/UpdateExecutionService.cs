@@ -57,6 +57,26 @@ public sealed class UpdateExecutionService
             return new UpdateExecutionResult(query.ExitCode, IsSuccessfulExitCode(query.ExitCode), query.StandardError.Trim());
         }
 
+        if (plan.Kind == UpdateExecutionKind.StorePackage)
+        {
+            if (string.IsNullOrWhiteSpace(plan.StorePackageFamilyName))
+            {
+                return new UpdateExecutionResult(-1, false, "The Microsoft Store product identity is incomplete.");
+            }
+            var store = new StorePackageDeploymentService();
+            var identity = string.IsNullOrWhiteSpace(plan.StoreProductId)
+                ? await store.ResolveAsync(plan.StorePackageFamilyName, update.DisplayName, cancellationToken)
+                : new StoreCatalogIdentity(plan.StoreProductId, update.DisplayName, plan.StorePackageFamilyName);
+            if (identity is null)
+            {
+                return new UpdateExecutionResult(-1, false, store.LastError ?? "No exact Microsoft Store product matched the installed package family.");
+            }
+            return await store.InstallOrUpdateAsync(
+                identity.ProductId,
+                plan.StorePackageFamilyName,
+                cancellationToken);
+        }
+
         if (installer is null || !File.Exists(installer.Path))
         {
             throw new InvalidOperationException("The verified installer is missing.");

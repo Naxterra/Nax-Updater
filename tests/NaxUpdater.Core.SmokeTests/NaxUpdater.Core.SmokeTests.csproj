@@ -6,9 +6,13 @@
     <SupportedOSPlatformVersion>10.0.22000.0</SupportedOSPlatformVersion>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
+    <Platforms>x64</Platforms>
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+    <MicrosoftManagementDeployment-FactoryLinkage>static</MicrosoftManagementDeployment-FactoryLinkage>
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\src\NaxUpdater.Core\NaxUpdater.Core.csproj" />
+    <PackageReference Include="Microsoft.WindowsPackageManager.ComInterop" Version="1.29.290" />
     <Content Include="..\..\src\NaxUpdater\Configuration\application-policies.json" Link="Configuration\application-policies.json" CopyToOutputDirectory="PreserveNewest" />
     <Content Include="..\..\src\NaxUpdater\Configuration\update-providers.json" Link="Configuration\update-providers.json" CopyToOutputDirectory="PreserveNewest" />
     <Content Include="..\..\src\NaxUpdater\Strings\en-US\Resources.resw" Link="Localization\en-US.resw" CopyToOutputDirectory="PreserveNewest" />

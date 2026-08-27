@@ -163,6 +163,8 @@ public sealed class UpdateRow
     public string PlatformDetail => LocalizationService.Format("PlatformDetailFormat", LocalizationService.PlatformValue(Source.Architecture), LocalizationService.PlatformValue(Source.Channel));
     public string SecurityDetail => Source.ExecutionPlan is null
         ? LocalizationService.Get("SecurityNoExternalInstaller")
+        : Source.ExecutionPlan.Kind == UpdateExecutionKind.StorePackage
+            ? LocalizationService.Get("SecurityMicrosoftStore")
         : Source.ExecutionPlan.Kind == UpdateExecutionKind.NativeCommand
             ? LocalizationService.Get("SecurityNativeProvider")
             : !Source.ExecutionPlan.RequireAuthenticode
@@ -176,6 +178,8 @@ public sealed class UpdateRow
     public bool CanInstall => Source.IsInstallable;
     public string UpdateActionText => Source.ExecutionPlan?.Kind == UpdateExecutionKind.NativeCommand
         ? LocalizationService.Get("RunUpdateShort")
+        : Source.ExecutionPlan?.Kind == UpdateExecutionKind.StorePackage
+            ? LocalizationService.Get("StoreUpdateShort")
         : LocalizationService.Get("UpdateShort");
     public Visibility UpdateActionVisibility => CanInstall ? Visibility.Visible : Visibility.Collapsed;
     public Brush StatusForeground => PresentationBrushes.Get(Source.Status switch
