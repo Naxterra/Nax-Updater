@@ -30,7 +30,7 @@ The inventory engine:
 
 ## Update providers
 
-Version 0.12.0 includes:
+Version 0.12.1 includes:
 
 - Mozilla Firefox releases from Mozilla's official product-details and release archive, preserving the effective Firefox profile language, architecture, channel, scope, and installation directory;
 - Nextcloud releases from the official `nextcloud-releases/desktop` GitHub repository using its release-asset SHA-256 digest and a multi-language MSI;
@@ -52,11 +52,12 @@ Version 0.12.0 includes:
 - MSI execution without process-name prechecks, preventing unrelated runtimes with the same filename from blocking Windows Installer updates;
 - direct Microsoft Store catalog and deployment integration through the official Windows Package Manager COM API;
 - installed PFN to Store Product ID resolution with exact package-family revalidation before silent install/update submission;
-- a direct **Update** row action for MSIX packages, with Store handling licensing, applicability, download, staging, and idempotent current-version behavior inside NaxUpdater;
+- Store update applicability checks through an exact installed package-family → Store Product ID → composite installed-catalog correlation;
+- a direct **Update** row action only when Microsoft Store reports a real applicable upgrade; current or uncorrelated Store packages remain labelled as Store-managed without a misleading button;
 - launchable MSIX app-entry naming ahead of package identities, so Store packages such as `OpenAI.Codex` are presented by their user-facing app name, `ChatGPT`;
 - six-way parallel ranged downloads for installers of at least 64 MB when the server advertises byte-range support, followed by complete reconstruction and whole-file hash verification;
-- a sequential **Update all** queue containing verified conventional updates followed by direct Store/MSIX deployment actions, with one shared Store connection and one final inventory/update rescan;
-- honest bulk counts that keep proven newer versions separate from idempotent Store actions, for example **2 updates + 24 Store apps**;
+- a sequential **Update all** queue containing verified conventional updates followed only by Store/MSIX packages with a reported applicable upgrade, with shared Store connections and one final inventory/update rescan;
+- honest bulk counts that keep proven newer conventional versions separate from confirmed Store updates;
 - multi-signer Authenticode policies from installed updater metadata, accepting any explicitly declared trusted publisher identity;
 - Store package migration matching through a unique exact product-name and publisher pair when the Store product intentionally publishes a replacement PFN;
 - MSI upgrade-family correlation that collapses side-by-side product generations and retains the newest registered version, preventing a successful MSI install from being offered repeatedly because the vendor left an older product registration behind.
@@ -106,7 +107,7 @@ From this directory:
 dotnet build NaxUpdater.slnx
 dotnet run --project tests/NaxUpdater.Core.SmokeTests/NaxUpdater.Core.SmokeTests.csproj
 dotnet publish src/NaxUpdater/NaxUpdater.csproj -c Release -r win-x64 --self-contained true -o artifacts/NaxUpdater-win-x64
-./scripts/package-release.ps1 -Version 0.12.0
+./scripts/package-release.ps1 -Version 0.12.1
 ```
 
 The desktop project uses .NET 11, WinUI 3, and the Windows App SDK. It is not an Electron or WebView application.
