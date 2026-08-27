@@ -30,7 +30,7 @@ The inventory engine:
 
 ## Update providers
 
-Version 0.12.1 includes:
+Version 0.13.0 includes:
 
 - Mozilla Firefox releases from Mozilla's official product-details and release archive, preserving the effective Firefox profile language, architecture, channel, scope, and installation directory;
 - Nextcloud releases from the official `nextcloud-releases/desktop` GitHub repository using its release-asset SHA-256 digest and a multi-language MSI;
@@ -39,6 +39,7 @@ Version 0.12.1 includes:
 - capability-based discovery of standard `app-update.yml` metadata shipped with installed applications, supporting generic HTTPS and GitHub feeds without application-name recipes;
 - SHA-512 verification from those installed update feeds in addition to SHA-256 and Authenticode verification;
 - exact MSI product-code correlation against WinGet's signed local catalog index without using WinGet's installed-version or path detection;
+- exact MSI UpgradeCode plus exact normalized product-name correlation when a vendor rotates its ProductCode between releases;
 - fresher-version comparison with Scoop manifests, with official same-host installer derivation allowed only when a vendor publishes a matching `SHASUMS256.txt`;
 - trusted signer inheritance from already-installed, validly signed executables when an installed updater configuration omits its publisher;
 - unique normalized name-and-publisher catalog correlation when no stable package identifier is available; ambiguous matches are rejected and weak matches never produce an install button;
@@ -56,6 +57,7 @@ Version 0.12.1 includes:
 - a direct **Update** row action only when Microsoft Store reports a real applicable upgrade; current or uncorrelated Store packages remain labelled as Store-managed without a misleading button;
 - launchable MSIX app-entry naming ahead of package identities, so Store packages such as `OpenAI.Codex` are presented by their user-facing app name, `ChatGPT`;
 - six-way parallel ranged downloads for installers of at least 64 MB when the server advertises byte-range support, followed by complete reconstruction and whole-file hash verification;
+- SHA-256-verified ZIP/NuGet packages containing an explicitly declared nested MSI, with exact-entry extraction, traversal rejection, and silent MSI execution;
 - a sequential **Update all** queue containing verified conventional updates followed only by Store/MSIX packages with a reported applicable upgrade, with shared Store connections and one final inventory/update rescan;
 - honest bulk counts that keep proven newer conventional versions separate from confirmed Store updates;
 - multi-signer Authenticode policies from installed updater metadata, accepting any explicitly declared trusted publisher identity;
@@ -107,7 +109,7 @@ From this directory:
 dotnet build NaxUpdater.slnx
 dotnet run --project tests/NaxUpdater.Core.SmokeTests/NaxUpdater.Core.SmokeTests.csproj
 dotnet publish src/NaxUpdater/NaxUpdater.csproj -c Release -r win-x64 --self-contained true -o artifacts/NaxUpdater-win-x64
-./scripts/package-release.ps1 -Version 0.12.1
+./scripts/package-release.ps1 -Version 0.13.0
 ```
 
 The desktop project uses .NET 11, WinUI 3, and the Windows App SDK. It is not an Electron or WebView application.

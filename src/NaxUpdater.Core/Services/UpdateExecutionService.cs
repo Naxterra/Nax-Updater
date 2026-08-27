@@ -1,6 +1,7 @@
 using NaxUpdater.Core.Models;
 using System.ComponentModel;
 using System.Diagnostics;
+using System.IO.Compression;
 
 namespace NaxUpdater.Core.Services;
 
@@ -89,10 +90,27 @@ public sealed class UpdateExecutionService
             throw new InvalidOperationException("The verified installer is missing.");
         }
 
+        string? extractionDirectory = null;
+        var executableInstallerPath = installer.Path;
+        if (plan.Kind == UpdateExecutionKind.DownloadedZipMsi)
+        {
+            if (string.IsNullOrWhiteSpace(plan.NestedInstallerRelativePath))
+            {
+                throw new InvalidOperationException("The verified archive does not identify its nested MSI.");
+            }
+            extractionDirectory = Path.Combine(Path.GetTempPath(), "NaxUpdater", Guid.NewGuid().ToString("N"));
+            Directory.CreateDirectory(extractionDirectory);
+            executableInstallerPath = ExtractNestedInstaller(
+                installer.Path,
+                plan.NestedInstallerRelativePath,
+                extractionDirectory);
+        }
+
         var startInfo = plan.Kind switch
         {
-            UpdateExecutionKind.DownloadedExe => new ProcessStartInfo(installer.Path),
-            UpdateExecutionKind.DownloadedMsi => new ProcessStartInfo(Path.Combine(Environment.SystemDirectory, "msiexec.exe")),
+            UpdateExecutionKind.DownloadedExe => new ProcessStartInfo(executableInstallerPath),
+            UpdateExecutionKind.DownloadedMsi or UpdateExecutionKind.DownloadedZipMsi =>
+                new ProcessStartInfo(Path.Combine(Environment.SystemDirectory, "msiexec.exe")),
             _ => throw new InvalidOperationException($"Unsupported execution kind {plan.Kind}.")
         };
         startInfo.UseShellExecute = true;
@@ -100,10 +118,10 @@ public sealed class UpdateExecutionService
         {
             startInfo.Verb = "runas";
         }
-        if (plan.Kind == UpdateExecutionKind.DownloadedMsi)
+        if (plan.Kind is UpdateExecutionKind.DownloadedMsi or UpdateExecutionKind.DownloadedZipMsi)
         {
             startInfo.ArgumentList.Add("/i");
-            startInfo.ArgumentList.Add(installer.Path);
+            startInfo.ArgumentList.Add(executableInstallerPath);
         }
         foreach (var argument in plan.Arguments)
         {
@@ -120,6 +138,40 @@ public sealed class UpdateExecutionService
         {
             return new UpdateExecutionResult(1223, false, "The Windows elevation prompt was cancelled.");
         }
+        finally
+        {
+            if (!string.IsNullOrWhiteSpace(extractionDirectory) && Directory.Exists(extractionDirectory))
+            {
+                try
+                {
+                    Directory.Delete(extractionDirectory, recursive: true);
+                }
+                catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+                {
+                    // The verified installer result is more important than best-effort temporary cleanup.
+                }
+            }
+        }
+    }
+
+    internal static string ExtractNestedInstaller(string archivePath, string relativePath, string destinationDirectory)
+    {
+        var normalized = relativePath.Replace('\\', '/').TrimStart('/');
+        if (normalized.Length == 0 || normalized.Split('/').Any(static part => part is "" or "." or ".."))
+        {
+            throw new InvalidDataException("The nested installer path is unsafe.");
+        }
+        using var archive = ZipFile.OpenRead(archivePath);
+        var matches = archive.Entries
+            .Where(entry => entry.FullName.Replace('\\', '/').Equals(normalized, StringComparison.OrdinalIgnoreCase))
+            .ToArray();
+        if (matches.Length != 1 || !matches[0].Name.EndsWith(".msi", StringComparison.OrdinalIgnoreCase))
+        {
+            throw new InvalidDataException("The exact nested MSI was not found in the verified archive.");
+        }
+        var destinationPath = Path.Combine(destinationDirectory, Path.GetFileName(matches[0].Name));
+        matches[0].ExtractToFile(destinationPath, overwrite: false);
+        return destinationPath;
     }
 
     public static bool IsSuccessfulExitCode(int exitCode) => exitCode is 0 or 1641 or 3010;
