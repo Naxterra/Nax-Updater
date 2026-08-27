@@ -148,19 +148,6 @@ internal sealed class MsixInventoryScanner
     {
         try
         {
-            var displayName = package.DisplayName;
-            if (IsFriendlyDisplayName(displayName))
-            {
-                return displayName.Trim();
-            }
-        }
-        catch
-        {
-            // Continue through stronger fallbacks below.
-        }
-
-        try
-        {
             foreach (var entry in package.GetAppListEntriesAsync().AsTask().GetAwaiter().GetResult())
             {
                 var displayName = entry.DisplayInfo.DisplayName;
@@ -173,6 +160,25 @@ internal sealed class MsixInventoryScanner
         catch
         {
             // Internal packages can intentionally omit app-list entries.
+        }
+
+        var manifestDisplayName = ReadManifestDisplayName(installedPath);
+        if (IsFriendlyDisplayName(manifestDisplayName))
+        {
+            return manifestDisplayName!.Trim();
+        }
+
+        try
+        {
+            var displayName = package.DisplayName;
+            if (IsFriendlyDisplayName(displayName))
+            {
+                return displayName.Trim();
+            }
+        }
+        catch
+        {
+            // Continue through package-identity fallbacks below.
         }
 
         var identifier = package.Id.Name;
@@ -190,6 +196,33 @@ internal sealed class MsixInventoryScanner
             }
         }
         return HumanizeIdentifier(identifier);
+    }
+
+    private static string? ReadManifestDisplayName(string? installedPath)
+    {
+        if (string.IsNullOrWhiteSpace(installedPath))
+        {
+            return null;
+        }
+        try
+        {
+            var manifestPath = Path.Combine(installedPath, "AppxManifest.xml");
+            if (!File.Exists(manifestPath))
+            {
+                return null;
+            }
+            var document = System.Xml.Linq.XDocument.Load(manifestPath, System.Xml.Linq.LoadOptions.None);
+            return document.Root?
+                .Elements()
+                .FirstOrDefault(static element => element.Name.LocalName == "Properties")?
+                .Elements()
+                .FirstOrDefault(static element => element.Name.LocalName == "DisplayName")?
+                .Value;
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or System.Xml.XmlException)
+        {
+            return null;
+        }
     }
 
     private static bool IsFriendlyDisplayName(string? value) =>
