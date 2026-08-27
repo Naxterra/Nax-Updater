@@ -425,23 +425,40 @@ if (installedChatGpt is not null)
 }
 
 var liveStoreIdentities = 0;
+var storeDeployment = new StorePackageDeploymentService();
 var installedCamera = snapshot.Applications.FirstOrDefault(app =>
     app.Identity.Equals("msix:Microsoft.WindowsCamera_8wekyb3d8bbwe", StringComparison.OrdinalIgnoreCase));
 if (installedCamera is not null)
 {
-    var storeDeployment = new StorePackageDeploymentService();
     var cameraStoreIdentity = await storeDeployment.ResolveAsync(
         "Microsoft.WindowsCamera_8wekyb3d8bbwe",
         installedCamera.DisplayName,
+        installedCamera.Publisher,
         CancellationToken.None);
     if (cameraStoreIdentity is not null)
     {
         liveStoreIdentities++;
         Assert(cameraStoreIdentity.ProductId == "9WZDNCRFJBBG", $"Windows Camera resolved to unexpected Store Product ID {cameraStoreIdentity.ProductId}.");
+        Assert(cameraStoreIdentity.PackageFamilyMatched, "Windows Camera should resolve through its exact Store package family.");
         var cameraAssessment = await new MsixStoreUpdateProvider().CheckAsync(installedCamera, CancellationToken.None);
         Assert(cameraAssessment.ExecutionPlan is { Kind: UpdateExecutionKind.StorePackage } && cameraAssessment.IsInstallable,
             "A Store-resolved MSIX package did not receive an exact Store deployment action.");
     }
+}
+
+var installedOnePassword = snapshot.Applications.FirstOrDefault(app =>
+    app.Identity.Equals("msix:Agilebits.1Password_amwd9z03whsfe", StringComparison.OrdinalIgnoreCase));
+if (installedOnePassword is not null)
+{
+    var onePasswordStoreIdentity = await storeDeployment.ResolveAsync(
+        "Agilebits.1Password_amwd9z03whsfe",
+        installedOnePassword.DisplayName,
+        installedOnePassword.Publisher,
+        CancellationToken.None);
+    Assert(onePasswordStoreIdentity is not null, $"1Password Store identity was not resolved: {storeDeployment.LastError}");
+    liveStoreIdentities++;
+    Assert(onePasswordStoreIdentity!.ProductId == "9NZWS5X28P0J" && !onePasswordStoreIdentity.PackageFamilyMatched,
+        $"1Password did not resolve through its expected Store migration identity: {onePasswordStoreIdentity.ProductId}.");
 }
 
 var installedComfy = snapshot.Applications.FirstOrDefault(app => app.DisplayName.StartsWith("Comfy Desktop", StringComparison.OrdinalIgnoreCase));

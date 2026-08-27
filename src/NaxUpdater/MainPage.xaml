@@ -283,6 +283,7 @@
                             <ColumnDefinition Width="Auto" />
                             <ColumnDefinition Width="*" />
                             <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="Auto" />
                         </Grid.ColumnDefinitions>
                         <Button Padding="10,5" Click="ShowApplicationsButton_Click">
                             <StackPanel Orientation="Horizontal" Spacing="6">
@@ -291,7 +292,8 @@
                             </StackPanel>
                         </Button>
                         <TextBlock x:Uid="UpdateProvidersHeader" Grid.Column="1" Text="Update providers" FontSize="18" FontWeight="SemiBold" Foreground="{StaticResource NaxPurpleBrush}" VerticalAlignment="Center" />
-                        <TextBlock x:Name="UpdateCountText" x:Uid="UpdateCountText" Grid.Column="2" Text="Not checked" Style="{StaticResource MutedTextStyle}" VerticalAlignment="Center" />
+                        <Button x:Name="UpdateAllButton" x:Uid="UpdateAllButton" Grid.Column="2" Content="Update all" Padding="12,5" Click="UpdateAllButton_Click" IsEnabled="False" Style="{StaticResource PurpleActionButtonStyle}" />
+                        <TextBlock x:Name="UpdateCountText" x:Uid="UpdateCountText" Grid.Column="3" Text="Not checked" Style="{StaticResource MutedTextStyle}" VerticalAlignment="Center" />
                     </Grid>
                     <Grid Grid.Row="1" Padding="14,7" ColumnSpacing="10" Background="{ThemeResource SubtleFillColorSecondaryBrush}">
                         <Grid.ColumnDefinitions>

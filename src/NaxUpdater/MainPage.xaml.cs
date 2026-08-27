@@ -20,6 +20,7 @@ public sealed partial class MainPage : Page
     private InventorySnapshot? _snapshot;
     private bool _loaded;
     private bool _updateBusy;
+    private bool _massUpdateBusy;
     private ApplicationSortColumn _sortColumn = ApplicationSortColumn.Name;
     private bool _sortDescending;
 
@@ -351,6 +352,8 @@ public sealed partial class MainPage : Page
             var available = result.Results.Count(static update => update.Status == UpdateStatus.Available);
             var errors = result.Results.Count(static update => update.Status == UpdateStatus.Error);
             UpdateCountText.Text = LocalizationService.Format("UpdateCountFormat", available, _updates.Count);
+            UpdateAllButton.Content = LocalizationService.Format("UpdateAllCount", available);
+            UpdateAllButton.IsEnabled = available > 0;
             ShowUpdatesButton.Content = LocalizationService.Format(
                 "UpdatesNavigationCoverage",
                 available,
@@ -432,12 +435,67 @@ public sealed partial class MainPage : Page
 
     private async void UpdateRowButton_Click(object sender, RoutedEventArgs e)
     {
-        if (_updateBusy || sender is not Button { DataContext: UpdateRow row } button ||
+        if (_updateBusy || _massUpdateBusy || sender is not Button { DataContext: UpdateRow row } button ||
             !row.CanInstall || row.Source.ExecutionPlan is null)
         {
             return;
         }
         UpdatesList.SelectedItem = row;
+        await ExecuteUpdateAsync(row, button, rescanAfterSuccess: true);
+    }
+
+    private async void UpdateAllButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (_updateBusy || _massUpdateBusy)
+        {
+            return;
+        }
+        var queue = _updates
+            .Where(static row => row.Source.Status == UpdateStatus.Available && row.CanInstall)
+            .ToArray();
+        if (queue.Length == 0)
+        {
+            return;
+        }
+
+        _massUpdateBusy = true;
+        var completed = 0;
+        var failed = 0;
+        try
+        {
+            foreach (var row in queue)
+            {
+                UpdatesList.SelectedItem = row;
+                StatusText.Text = LocalizationService.Format("MassUpdateProgress", completed + failed + 1, queue.Length, row.Name);
+                if (await ExecuteUpdateAsync(row, null, rescanAfterSuccess: false))
+                {
+                    completed++;
+                }
+                else
+                {
+                    failed++;
+                }
+            }
+            await ScanAsync();
+            await CheckUpdatesAsync(showWorkspace: true);
+            UpdateBar.Title = LocalizationService.Get("MassUpdateCompleteTitle");
+            UpdateBar.Message = LocalizationService.Format("MassUpdateCompleteMessage", completed, failed);
+            UpdateBar.Severity = failed == 0 ? InfoBarSeverity.Success : InfoBarSeverity.Warning;
+            UpdateBar.IsOpen = true;
+        }
+        finally
+        {
+            _massUpdateBusy = false;
+            UpdateAllButton.IsEnabled = _updates.Any(static row => row.Source.Status == UpdateStatus.Available && row.CanInstall);
+        }
+    }
+
+    private async Task<bool> ExecuteUpdateAsync(UpdateRow row, Button? button, bool rescanAfterSuccess)
+    {
+        if (!row.CanInstall || row.Source.ExecutionPlan is null)
+        {
+            return false;
+        }
 
         var running = _updateExecutionService.FindRunningProcesses(row.Source);
         if (running.Count > 0)
@@ -446,12 +504,15 @@ public sealed partial class MainPage : Page
             UpdateBar.Message = LocalizationService.Format("CloseProcessesMessage", string.Join(", ", running));
             UpdateBar.Severity = InfoBarSeverity.Warning;
             UpdateBar.IsOpen = true;
-            return;
+            return false;
         }
 
         var plan = row.Source.ExecutionPlan;
         SetUpdateBusy(true, LocalizationService.Format("PreparingUpdate", row.Name));
-        button.IsEnabled = false;
+        if (button is not null)
+        {
+            button.IsEnabled = false;
+        }
         UpdateProgress.Visibility = Visibility.Visible;
         UpdateProgress.IsIndeterminate = plan.Kind is UpdateExecutionKind.NativeCommand or UpdateExecutionKind.StorePackage;
         UpdateProgress.Value = 0;
@@ -485,8 +546,12 @@ public sealed partial class MainPage : Page
                 : LocalizationService.Get("UpdateCompletedMessage");
             UpdateBar.Severity = InfoBarSeverity.Success;
             UpdateBar.IsOpen = true;
-            await ScanAsync();
-            await CheckUpdatesAsync(showWorkspace: true);
+            if (rescanAfterSuccess)
+            {
+                await ScanAsync();
+                await CheckUpdatesAsync(showWorkspace: true);
+            }
+            return true;
         }
         catch (ApplicationStillRunningException exception)
         {
@@ -494,6 +559,7 @@ public sealed partial class MainPage : Page
             UpdateBar.Message = LocalizationService.Format("CloseProcessesMessage", string.Join(", ", exception.ProcessNames));
             UpdateBar.Severity = InfoBarSeverity.Warning;
             UpdateBar.IsOpen = true;
+            return false;
         }
         catch (Exception exception)
         {
@@ -501,12 +567,16 @@ public sealed partial class MainPage : Page
             UpdateBar.Message = exception.Message;
             UpdateBar.Severity = InfoBarSeverity.Error;
             UpdateBar.IsOpen = true;
+            return false;
         }
         finally
         {
             UpdateProgress.Visibility = Visibility.Collapsed;
             UpdateProgress.IsIndeterminate = false;
-            button.IsEnabled = row.CanInstall;
+            if (button is not null)
+            {
+                button.IsEnabled = row.CanInstall;
+            }
             SetUpdateBusy(false, null);
         }
     }
@@ -516,7 +586,8 @@ public sealed partial class MainPage : Page
         _updateBusy = busy;
         ScanButton.IsEnabled = !busy;
         ShowUpdatesButton.IsEnabled = !busy && _updates.Count > 0;
-        UpdatesList.IsEnabled = !busy;
+        UpdateAllButton.IsEnabled = !busy && !_massUpdateBusy &&
+                                    _updates.Any(static row => row.Source.Status == UpdateStatus.Available && row.CanInstall);
         ScanProgress.IsActive = busy;
         ScanProgress.Visibility = busy ? Visibility.Visible : Visibility.Collapsed;
         if (!string.IsNullOrWhiteSpace(message))

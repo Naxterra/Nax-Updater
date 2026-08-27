@@ -68,6 +68,7 @@ public sealed partial class ElectronBuilderUpdateProvider(HttpClient httpClient)
                 AllowedHosts(configuration.MetadataUri, downloadUri),
                 RunningProcesses(application),
                 artifact.Sha512)
+                with { ExpectedSigners = configuration.PublisherNames.Count > 0 ? configuration.PublisherNames : null }
             : null;
 
         return new UpdateCheckResult(

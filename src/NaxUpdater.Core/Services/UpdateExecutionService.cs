@@ -65,8 +65,12 @@ public sealed class UpdateExecutionService
             }
             var store = new StorePackageDeploymentService();
             var identity = string.IsNullOrWhiteSpace(plan.StoreProductId)
-                ? await store.ResolveAsync(plan.StorePackageFamilyName, update.DisplayName, cancellationToken)
-                : new StoreCatalogIdentity(plan.StoreProductId, update.DisplayName, plan.StorePackageFamilyName);
+                ? await store.ResolveAsync(
+                    plan.StorePackageFamilyName,
+                    update.DisplayName,
+                    plan.StorePublisher,
+                    cancellationToken)
+                : new StoreCatalogIdentity(plan.StoreProductId, update.DisplayName, plan.StorePackageFamilyName, true);
             if (identity is null)
             {
                 return new UpdateExecutionResult(-1, false, store.LastError ?? "No exact Microsoft Store product matched the installed package family.");
@@ -74,6 +78,8 @@ public sealed class UpdateExecutionService
             return await store.InstallOrUpdateAsync(
                 identity.ProductId,
                 plan.StorePackageFamilyName,
+                update.DisplayName,
+                plan.StorePublisher,
                 cancellationToken);
         }
 

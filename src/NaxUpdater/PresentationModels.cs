@@ -164,7 +164,7 @@ public sealed class UpdateRow
     public string SecurityDetail => Source.ExecutionPlan is null
         ? LocalizationService.Get("SecurityNoExternalInstaller")
         : Source.ExecutionPlan.Kind == UpdateExecutionKind.StorePackage
-            ? LocalizationService.Get("SecurityMicrosoftStore")
+            ? LocalizationService.Get("SecurityMicrosoftStoreIdentity")
         : Source.ExecutionPlan.Kind == UpdateExecutionKind.NativeCommand
             ? LocalizationService.Get("SecurityNativeProvider")
             : !Source.ExecutionPlan.RequireAuthenticode
@@ -172,7 +172,9 @@ public sealed class UpdateRow
                 : LocalizationService.Format(
                     "SecurityHashSigner",
                     Source.ExecutionPlan.Sha512 is null ? "SHA-256" : "SHA-512",
-                    Source.ExecutionPlan.ExpectedSigner);
+                    Source.ExecutionPlan.ExpectedSigners is { Count: > 0 }
+                        ? string.Join(" / ", Source.ExecutionPlan.ExpectedSigners)
+                        : Source.ExecutionPlan.ExpectedSigner);
     public string Message => LocalizationService.ProviderMessage(Source);
     public string ReleaseNotes => Source.ReleaseNotesUrl ?? LocalizationService.Get("NotProvided");
     public bool CanInstall => Source.IsInstallable;
