@@ -599,9 +599,11 @@ public sealed partial class MainPage : Page
     private void RefreshMassUpdateButton()
     {
         var verifiedUpdates = _updates.Count(static row =>
-            row.CanInstall && row.Source.Status == UpdateStatus.Available);
+            row.CanInstall && row.Source.Status == UpdateStatus.Available &&
+            row.Source.ExecutionPlan?.Kind != UpdateExecutionKind.StorePackage);
         var storeActions = _updates.Count(static row =>
-            row.CanInstall && row.Source.ExecutionPlan?.Kind == UpdateExecutionKind.StorePackage);
+            row.CanInstall && row.Source.Status == UpdateStatus.Available &&
+            row.Source.ExecutionPlan?.Kind == UpdateExecutionKind.StorePackage);
         UpdateAllButton.Content = storeActions > 0
             ? LocalizationService.Format("UpdateAllCountWithStore", verifiedUpdates, storeActions)
             : LocalizationService.Format("UpdateAllCount", verifiedUpdates);

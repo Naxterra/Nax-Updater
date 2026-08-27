@@ -291,8 +291,10 @@ try
            storeAssessment.Results[0].Status == UpdateStatus.ManagedExternally &&
            storeAssessment.Results[0].ProviderId == "msix-store" &&
            storeAssessment.Results[0].Language == "application-managed" &&
+           !storeAssessment.Results[0].IsInstallable &&
+           storeAssessment.Results[0].ExecutionPlan is null &&
            storeAssessment.UnsupportedApplicationCount == 0,
-        "An unmatched MSIX package was incorrectly labelled unknown or unsupported.");
+        "An unmatched MSIX package was incorrectly labelled actionable, unknown, or unsupported.");
 
     var installerPayload = Encoding.UTF8.GetBytes("verified installer fixture");
     var installerHash = Convert.ToHexString(SHA256.HashData(installerPayload));
@@ -420,8 +422,14 @@ if (installedChatGpt is not null)
     Assert(installedChatGpt.DisplayName.Equals("ChatGPT", StringComparison.OrdinalIgnoreCase),
         $"The OpenAI Store package is still shown as {installedChatGpt.DisplayName} instead of ChatGPT.");
     var chatGptAssessment = await new MsixStoreUpdateProvider().CheckAsync(installedChatGpt, CancellationToken.None);
-    Assert(chatGptAssessment.ExecutionPlan is { Kind: UpdateExecutionKind.StorePackage } && chatGptAssessment.IsInstallable,
-        "ChatGPT did not receive a Store update action.");
+    Assert(chatGptAssessment.Status is UpdateStatus.Current or UpdateStatus.Available or UpdateStatus.ManagedExternally,
+        $"ChatGPT Store assessment failed: {chatGptAssessment.Status} · {chatGptAssessment.Message}");
+    Assert(chatGptAssessment.Status != UpdateStatus.Available ||
+           (chatGptAssessment.ExecutionPlan is { Kind: UpdateExecutionKind.StorePackage } && chatGptAssessment.IsInstallable),
+        "ChatGPT reports an update without an executable Store update plan.");
+    Assert(chatGptAssessment.Status == UpdateStatus.Available ||
+           (chatGptAssessment.ExecutionPlan is null && !chatGptAssessment.IsInstallable),
+        "ChatGPT received a Store action even though no applicable update was reported.");
 }
 
 var liveStoreIdentities = 0;
@@ -441,8 +449,12 @@ if (installedCamera is not null)
         Assert(cameraStoreIdentity.ProductId == "9WZDNCRFJBBG", $"Windows Camera resolved to unexpected Store Product ID {cameraStoreIdentity.ProductId}.");
         Assert(cameraStoreIdentity.PackageFamilyMatched, "Windows Camera should resolve through its exact Store package family.");
         var cameraAssessment = await new MsixStoreUpdateProvider().CheckAsync(installedCamera, CancellationToken.None);
-        Assert(cameraAssessment.ExecutionPlan is { Kind: UpdateExecutionKind.StorePackage } && cameraAssessment.IsInstallable,
-            "A Store-resolved MSIX package did not receive an exact Store deployment action.");
+        Assert(cameraAssessment.Status != UpdateStatus.Available ||
+               (cameraAssessment.ExecutionPlan is { Kind: UpdateExecutionKind.StorePackage } && cameraAssessment.IsInstallable),
+            "Windows Camera reports an update without an executable Store update plan.");
+        Assert(cameraAssessment.Status == UpdateStatus.Available ||
+               (cameraAssessment.ExecutionPlan is null && !cameraAssessment.IsInstallable),
+            "Windows Camera received an update button without a reported applicable Store update.");
     }
 }
 

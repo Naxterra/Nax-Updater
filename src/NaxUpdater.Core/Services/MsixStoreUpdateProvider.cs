@@ -4,17 +4,38 @@ namespace NaxUpdater.Core.Services;
 
 public sealed class MsixStoreUpdateProvider : IUpdateProvider
 {
+    private readonly StorePackageDeploymentService _store = new();
+
     public string Id => "msix-store";
 
     public bool CanHandle(InstalledApplication application) => application.ManagementMode == ManagementMode.Msix;
 
-    public Task<UpdateCheckResult> CheckAsync(InstalledApplication application, CancellationToken cancellationToken)
+    public async Task<UpdateCheckResult> CheckAsync(InstalledApplication application, CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
         var packageFamily = PackageFamily(application);
-        var plan = packageFamily is null
-            ? null
-            : new UpdateExecutionPlan(
+        if (packageFamily is null)
+        {
+            return Result(application, null, UpdateStatus.ManagedExternally, null, null,
+                "The installed MSIX package family could not be read.");
+        }
+
+        var availability = await _store.CheckForUpdateAsync(
+            packageFamily,
+            application.DisplayName,
+            application.Publisher,
+            cancellationToken);
+        if (!availability.IsResolved)
+        {
+            return Result(application, null, UpdateStatus.ManagedExternally, null, null, availability.Error);
+        }
+        if (!availability.IsUpdateAvailable || string.IsNullOrWhiteSpace(availability.ProductId))
+        {
+            return Result(application, null, UpdateStatus.Current, null, availability.ProductId,
+                "Microsoft Store reports no applicable update for the installed package.");
+        }
+
+        var plan = new UpdateExecutionPlan(
                 UpdateExecutionKind.StorePackage,
                 null,
                 null,
@@ -25,25 +46,34 @@ public sealed class MsixStoreUpdateProvider : IUpdateProvider
                 false,
                 [],
                 [],
-                StoreProductId: null,
+                StoreProductId: availability.ProductId,
                 StorePackageFamilyName: packageFamily,
                 StorePublisher: application.Publisher);
-        return Task.FromResult(new UpdateCheckResult(
+        return Result(application, plan, UpdateStatus.Available, availability.AvailableVersion, availability.ProductId,
+            "Microsoft Store reports an applicable update for the exact installed package family.");
+    }
+
+    private UpdateCheckResult Result(
+        InstalledApplication application,
+        UpdateExecutionPlan? plan,
+        UpdateStatus status,
+        string? availableVersion,
+        string? productId,
+        string? message) => new(
             application.Identity,
             application.DisplayName,
             application.NormalizedVersion,
-            null,
-            UpdateStatus.ManagedExternally,
+            availableVersion,
+            status,
             Id,
             "Microsoft Store / MSIX",
             "application-managed",
             "Preserved by Microsoft Store/MSIX package",
             "provider-selected",
             "stable",
-            "ms-windows-store://downloadsandupdates",
-            "The installed package family will be resolved to an exact Microsoft Store Product ID when Store update is selected.",
-            plan));
-    }
+            string.IsNullOrWhiteSpace(productId) ? null : $"ms-windows-store://pdp/?ProductId={productId}",
+            message,
+            plan);
 
     private static string? PackageFamily(InstalledApplication application)
     {

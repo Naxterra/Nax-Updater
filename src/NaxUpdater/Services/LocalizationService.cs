@@ -46,7 +46,12 @@ public static partial class LocalizationService
     {
         if (update.ProviderId == "native-updater") return Get("ProviderNativeNote");
         if (update.ProviderId == "unverified") return Get("ProviderUnverifiedNote");
-        if (update.ProviderId == "msix-store") return Get("ProviderMsixStoreNote");
+        if (update.ProviderId == "msix-store") return update.Status switch
+        {
+            UpdateStatus.Available => Get("ProviderMsixStoreAvailable"),
+            UpdateStatus.Current => Get("ProviderMsixStoreCurrent"),
+            _ => Get("ProviderMsixStoreNote")
+        };
         if (update.ProviderId == "installed-updater-metadata") return Get("ProviderInstalledMetadataNote");
         if (update.ProviderId == "federated-public-catalogs")
         {

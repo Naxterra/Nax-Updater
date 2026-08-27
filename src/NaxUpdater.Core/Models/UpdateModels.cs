@@ -52,9 +52,7 @@ public sealed record UpdateCheckResult(
     string? Message,
     UpdateExecutionPlan? ExecutionPlan)
 {
-    public bool IsInstallable => ExecutionPlan is not null &&
-                                 (Status == UpdateStatus.Available ||
-                                  (Status == UpdateStatus.ManagedExternally && ExecutionPlan.Kind == UpdateExecutionKind.StorePackage));
+    public bool IsInstallable => ExecutionPlan is not null && Status == UpdateStatus.Available;
 }
 
 public sealed record UpdateCheckSnapshot(

@@ -5,9 +5,92 @@ namespace NaxUpdater.Core.Services;
 public sealed class StorePackageDeploymentService
 {
     private readonly object _connectionLock = new();
+    private readonly SemaphoreSlim _catalogQuerySlots = new(6, 6);
     private Task<(PackageManager Manager, PackageCatalog Catalog)>? _storeConnection;
+    private Task<(PackageManager Manager, PackageCatalog Catalog)>? _storeUpdateConnection;
 
     public string? LastError { get; private set; }
+
+    public async Task<StoreUpdateAvailability> CheckForUpdateAsync(
+        string packageFamilyName,
+        string? installedDisplayName,
+        string? installedPublisher,
+        CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(packageFamilyName))
+        {
+            return new StoreUpdateAvailability(false, false, null, null, "The installed package family is missing.");
+        }
+
+        await _catalogQuerySlots.WaitAsync(cancellationToken);
+        try
+        {
+            var identity = await ResolveAsync(
+                packageFamilyName,
+                installedDisplayName,
+                installedPublisher,
+                cancellationToken);
+            if (identity is null)
+            {
+                return new StoreUpdateAvailability(false, false, null, null,
+                    LastError ?? "No exact Microsoft Store product matched the installed package family.");
+            }
+
+            var (_, catalog) = await GetStoreUpdateConnectionAsync(cancellationToken);
+            var options = new FindPackagesOptions { ResultLimit = 5 };
+            options.Selectors.Add(new PackageMatchFilter
+            {
+                Field = PackageMatchField.Id,
+                Option = PackageFieldMatchOption.EqualsCaseInsensitive,
+                Value = identity.ProductId
+            });
+            var result = await catalog.FindPackagesAsync(options).AsTask(cancellationToken);
+            if (result.Status != FindPackagesResultStatus.Ok)
+            {
+                return new StoreUpdateAvailability(false, false, null, null,
+                    $"Microsoft Store catalog lookup returned {result.Status}: {result.ExtendedErrorCode?.Message}");
+            }
+
+            CatalogPackage? package = null;
+            for (var index = 0; index < result.Matches.Count; index++)
+            {
+                var candidate = result.Matches[index].CatalogPackage;
+                if (!candidate.Id.Equals(identity.ProductId, StringComparison.OrdinalIgnoreCase) ||
+                    candidate.InstalledVersion is null ||
+                    !Contains(candidate.InstalledVersion.PackageFamilyNames, packageFamilyName))
+                {
+                    continue;
+                }
+                if (package is not null && !package.Id.Equals(candidate.Id, StringComparison.OrdinalIgnoreCase))
+                {
+                    return new StoreUpdateAvailability(false, false, null, null,
+                        $"Multiple Store products matched installed package family {packageFamilyName}.");
+                }
+                package = candidate;
+            }
+            if (package is null)
+            {
+                return new StoreUpdateAvailability(false, false, null, null,
+                    "No exact Store catalog product was correlated with the installed package family.");
+            }
+
+            var availableVersion = package.IsUpdateAvailable ? StoreVersion(package) : null;
+            return new StoreUpdateAvailability(
+                true,
+                package.IsUpdateAvailable,
+                identity.ProductId,
+                availableVersion,
+                null);
+        }
+        catch (Exception exception)
+        {
+            return new StoreUpdateAvailability(false, false, null, null, exception.Message);
+        }
+        finally
+        {
+            _catalogQuerySlots.Release();
+        }
+    }
 
     public async Task<StoreCatalogIdentity?> ResolveAsync(
         string packageFamilyName,
@@ -25,8 +108,32 @@ public sealed class StorePackageDeploymentService
             CatalogPackage? resolved = null;
             CatalogPackage? metadataFallback = null;
             var diagnostics = new List<string>();
+            var familyOptions = new FindPackagesOptions { ResultLimit = 5 };
+            familyOptions.Selectors.Add(new PackageMatchFilter
+            {
+                Field = PackageMatchField.PackageFamilyName,
+                Option = PackageFieldMatchOption.EqualsCaseInsensitive,
+                Value = packageFamilyName
+            });
+            var familyResult = await catalog.FindPackagesAsync(familyOptions).AsTask(cancellationToken);
+            if (familyResult.Status == FindPackagesResultStatus.Ok)
+            {
+                for (var index = 0; index < familyResult.Matches.Count; index++)
+                {
+                    var candidate = familyResult.Matches[index].CatalogPackage;
+                    if (Contains(candidate.DefaultInstallVersion.PackageFamilyNames, packageFamilyName))
+                    {
+                        resolved = candidate;
+                        break;
+                    }
+                }
+            }
             foreach (var query in SearchCandidates(packageFamilyName, installedDisplayName))
             {
+                if (resolved is not null)
+                {
+                    break;
+                }
                 var options = new FindPackagesOptions { ResultLimit = 25 };
                 options.Selectors.Add(new PackageMatchFilter
                 {
@@ -150,7 +257,7 @@ public sealed class StorePackageDeploymentService
     {
         try
         {
-            var (manager, catalog) = await GetStoreConnectionAsync(cancellationToken);
+            var (manager, catalog) = await GetStoreUpdateConnectionAsync(cancellationToken);
             var options = new FindPackagesOptions { ResultLimit = 5 };
             options.Selectors.Add(new PackageMatchFilter
             {
@@ -165,11 +272,14 @@ public sealed class StorePackageDeploymentService
                 for (var index = 0; index < find.Matches.Count; index++)
                 {
                     var candidate = find.Matches[index].CatalogPackage;
-                    var familyMatch = Contains(candidate.DefaultInstallVersion.PackageFamilyNames, packageFamilyName);
+                    var familyMatch = candidate.InstalledVersion is not null &&
+                                      Contains(candidate.InstalledVersion.PackageFamilyNames, packageFamilyName);
                     var metadataMatch = !string.IsNullOrWhiteSpace(installedDisplayName) &&
                                         candidate.Name.Equals(installedDisplayName, StringComparison.OrdinalIgnoreCase) &&
                                         PublisherMatches(candidate, installedPublisher);
-                    if (candidate.Id.Equals(productId, StringComparison.OrdinalIgnoreCase) && (familyMatch || metadataMatch))
+                    if (candidate.Id.Equals(productId, StringComparison.OrdinalIgnoreCase) &&
+                        candidate.IsUpdateAvailable &&
+                        (familyMatch || metadataMatch))
                     {
                         if (package is not null)
                         {
@@ -182,7 +292,7 @@ public sealed class StorePackageDeploymentService
             }
             if (package is null)
             {
-                return new UpdateExecutionResult(-1, false, "The exact Microsoft Store product could not be resolved from its package family.");
+                return new UpdateExecutionResult(-1, false, "Microsoft Store no longer reports an applicable update for this package.");
             }
 
             var installOptions = new InstallOptions
@@ -193,7 +303,7 @@ public sealed class StorePackageDeploymentService
                 PackageInstallScope = PackageInstallScope.Any,
                 CorrelationData = "{\"caller\":\"NaxUpdater\"}"
             };
-            var result = await manager.InstallPackageAsync(package, installOptions).AsTask(cancellationToken);
+            var result = await manager.UpgradePackageAsync(package, installOptions).AsTask(cancellationToken);
             var success = result.Status is InstallResultStatus.Ok or InstallResultStatus.NoApplicableUpgrade;
             var error = success
                 ? null
@@ -220,6 +330,17 @@ public sealed class StorePackageDeploymentService
         return await connection.WaitAsync(cancellationToken);
     }
 
+    private async Task<(PackageManager Manager, PackageCatalog Catalog)> GetStoreUpdateConnectionAsync(CancellationToken cancellationToken)
+    {
+        Task<(PackageManager Manager, PackageCatalog Catalog)> connection;
+        lock (_connectionLock)
+        {
+            _storeUpdateConnection ??= ConnectStoreUpdateCoreAsync();
+            connection = _storeUpdateConnection;
+        }
+        return await connection.WaitAsync(cancellationToken);
+    }
+
     private static async Task<(PackageManager Manager, PackageCatalog Catalog)> ConnectStoreCoreAsync()
     {
         var manager = new PackageManager();
@@ -231,6 +352,41 @@ public sealed class StorePackageDeploymentService
             throw new InvalidOperationException($"Microsoft Store catalog connection failed: {connection.Status} {connection.ExtendedErrorCode?.Message}");
         }
         return (manager, connection.PackageCatalog);
+    }
+
+    private static async Task<(PackageManager Manager, PackageCatalog Catalog)> ConnectStoreUpdateCoreAsync()
+    {
+        var manager = new PackageManager();
+        var store = manager.GetPredefinedPackageCatalog(PredefinedPackageCatalog.MicrosoftStore);
+        store.AcceptSourceAgreements = true;
+        var options = new CreateCompositePackageCatalogOptions
+        {
+            CompositeSearchBehavior = CompositeSearchBehavior.RemotePackagesFromAllCatalogs,
+            InstalledScope = PackageInstallScope.Any
+        };
+        options.Catalogs.Add(store);
+        var reference = manager.CreateCompositePackageCatalog(options);
+        var connection = await reference.ConnectAsync().AsTask();
+        if (connection.Status != ConnectResultStatus.Ok || connection.PackageCatalog is null)
+        {
+            throw new InvalidOperationException($"Microsoft Store update catalog connection failed: {connection.Status} {connection.ExtendedErrorCode?.Message}");
+        }
+        return (manager, connection.PackageCatalog);
+    }
+
+    private static string? StoreVersion(CatalogPackage package)
+    {
+        try
+        {
+            var version = package.DefaultInstallVersion.Version;
+            return string.IsNullOrWhiteSpace(version) || version.Equals("Unknown", StringComparison.OrdinalIgnoreCase)
+                ? null
+                : version;
+        }
+        catch
+        {
+            return null;
+        }
     }
 
     private static IEnumerable<string> SearchCandidates(string packageFamilyName, string? displayName)
@@ -280,3 +436,10 @@ public sealed record StoreCatalogIdentity(
     string Name,
     string PackageFamilyName,
     bool PackageFamilyMatched);
+
+public sealed record StoreUpdateAvailability(
+    bool IsResolved,
+    bool IsUpdateAvailable,
+    string? ProductId,
+    string? AvailableVersion,
+    string? Error);
