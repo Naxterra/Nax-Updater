@@ -15,8 +15,8 @@ public sealed class UpdateCheckService
             new ElectronBuilderUpdateProvider(httpClient)
         };
         providers.AddRange(catalog.GitHub.Select(recipe => new GitHubReleaseUpdateProvider(httpClient, recipe)));
-        providers.Add(new FederatedCatalogUpdateProvider(httpClient));
         providers.Add(new MsixStoreUpdateProvider());
+        providers.Add(new FederatedCatalogUpdateProvider(httpClient));
         _providers = providers;
     }
 

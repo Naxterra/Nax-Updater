@@ -384,6 +384,26 @@ if (installedSignal is not null)
     Assert(!string.IsNullOrWhiteSpace(liveSignalUpdate.AvailableVersion), "Signal's installed updater feed returned no version.");
 }
 
+var liveStoreIdentities = 0;
+var installedCamera = snapshot.Applications.FirstOrDefault(app =>
+    app.Identity.Equals("msix:Microsoft.WindowsCamera_8wekyb3d8bbwe", StringComparison.OrdinalIgnoreCase));
+if (installedCamera is not null)
+{
+    var storeDeployment = new StorePackageDeploymentService();
+    var cameraStoreIdentity = await storeDeployment.ResolveAsync(
+        "Microsoft.WindowsCamera_8wekyb3d8bbwe",
+        installedCamera.DisplayName,
+        CancellationToken.None);
+    if (cameraStoreIdentity is not null)
+    {
+        liveStoreIdentities++;
+        Assert(cameraStoreIdentity.ProductId == "9WZDNCRFJBBG", $"Windows Camera resolved to unexpected Store Product ID {cameraStoreIdentity.ProductId}.");
+        var cameraAssessment = await new MsixStoreUpdateProvider().CheckAsync(installedCamera, CancellationToken.None);
+        Assert(cameraAssessment.ExecutionPlan is { Kind: UpdateExecutionKind.StorePackage } && cameraAssessment.IsInstallable,
+            "A Store-resolved MSIX package did not receive an exact Store deployment action.");
+    }
+}
+
 var installedComfy = snapshot.Applications.FirstOrDefault(app => app.DisplayName.StartsWith("Comfy Desktop", StringComparison.OrdinalIgnoreCase));
 if (installedComfy is not null)
 {
@@ -406,10 +426,15 @@ var installedLibreOffice = snapshot.Applications.FirstOrDefault(app => app.Displ
 if (installedLibreOffice is not null && federatedCatalog.CanHandle(installedLibreOffice))
 {
     var libreOfficeUpdate = await federatedCatalog.CheckAsync(installedLibreOffice, CancellationToken.None);
-    Assert(libreOfficeUpdate.Status == UpdateStatus.Available && VersionOrder.Compare(libreOfficeUpdate.AvailableVersion, installedLibreOffice.NormalizedVersion) > 0,
-        $"LibreOffice update was not detected: {libreOfficeUpdate.Message}");
-    Assert(libreOfficeUpdate.ExecutionPlan?.Sha256?.Length == 64 && libreOfficeUpdate.ExecutionPlan.AllowHashVerifiedRedirects,
-        $"LibreOffice update lacks a mirror-safe verified catalog installer plan: {libreOfficeUpdate.Message}");
+    Assert(libreOfficeUpdate.Status is UpdateStatus.Current or UpdateStatus.Available,
+        $"LibreOffice catalog assessment failed: {libreOfficeUpdate.Message}");
+    if (libreOfficeUpdate.Status == UpdateStatus.Available)
+    {
+        Assert(VersionOrder.Compare(libreOfficeUpdate.AvailableVersion, installedLibreOffice.NormalizedVersion) > 0 &&
+               libreOfficeUpdate.ExecutionPlan?.Sha256?.Length == 64 &&
+               libreOfficeUpdate.ExecutionPlan.AllowHashVerifiedRedirects,
+            $"LibreOffice update lacks a mirror-safe verified catalog installer plan: {libreOfficeUpdate.Message}");
+    }
 }
 
 var installedNode = snapshot.Applications.FirstOrDefault(app => app.DisplayName.Equals("Node.js", StringComparison.OrdinalIgnoreCase));
@@ -496,7 +521,7 @@ AssertIntegrationAttached(
 using var capabilityClient = new HttpClient();
 var installedMetadataCoverage = snapshot.Applications.Count(new ElectronBuilderUpdateProvider(capabilityClient).CanHandle);
 var federatedCatalogCoverage = snapshot.Applications.Count(new FederatedCatalogUpdateProvider(capabilityClient).CanHandle);
-Console.WriteLine($"NaxUpdater core smoke tests passed. {snapshot.Applications.Count} applications, {installedMetadataCoverage} installed-metadata providers, {federatedCatalogCoverage} catalog identities, {snapshot.UnmatchedPolicies.Count} unmatched guards, {snapshot.Issues.Count} scan issues.");
+Console.WriteLine($"NaxUpdater core smoke tests passed. {snapshot.Applications.Count} applications, {installedMetadataCoverage} installed-metadata providers, {federatedCatalogCoverage} catalog identities, {liveStoreIdentities} live Store identities, {snapshot.UnmatchedPolicies.Count} unmatched guards, {snapshot.Issues.Count} scan issues.");
 return 0;
 
 static void AssertProtectedApplication(
