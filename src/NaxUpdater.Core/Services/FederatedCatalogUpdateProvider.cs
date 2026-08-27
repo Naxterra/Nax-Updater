@@ -97,9 +97,10 @@ public sealed partial class FederatedCatalogUpdateProvider(HttpClient httpClient
             installer.Arguments,
             application.Scope == InstallScope.Machine,
             AllowedHosts(installer.Uri),
-            RunningProcesses(application),
+            installer.Kind == UpdateExecutionKind.DownloadedMsi ? [] : RunningProcesses(application),
             null,
-            !string.IsNullOrWhiteSpace(signer));
+            !string.IsNullOrWhiteSpace(signer),
+            true);
         return Result(
             application,
             identity,

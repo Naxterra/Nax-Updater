@@ -58,7 +58,8 @@ public sealed class UpdatePackageDownloader(
             using var response = await httpClient.GetAsync(plan.DownloadUri, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
             response.EnsureSuccessStatusCode();
             var finalUri = response.RequestMessage?.RequestUri ?? plan.DownloadUri;
-            if (!IsAllowedHost(finalUri.Host, plan.AllowedDownloadHosts))
+            if (finalUri.Scheme != Uri.UriSchemeHttps ||
+                (!plan.AllowHashVerifiedRedirects && !IsAllowedHost(finalUri.Host, plan.AllowedDownloadHosts)))
             {
                 throw new InvalidOperationException($"The download redirected to untrusted host '{finalUri.Host}'.");
             }

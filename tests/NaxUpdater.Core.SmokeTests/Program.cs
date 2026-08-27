@@ -240,8 +240,10 @@ try
         "Deterministic catalog update detection failed.");
     Assert(catalogUpdate.ExecutionPlan?.Sha256 == catalogHash &&
            catalogUpdate.ExecutionPlan.Kind == UpdateExecutionKind.DownloadedMsi &&
-           catalogUpdate.ExecutionPlan.Arguments.Contains("/qn"),
-        "Deterministic catalog update plan lost its installer hash, type, or silent-install policy.");
+           catalogUpdate.ExecutionPlan.Arguments.Contains("/qn") &&
+           catalogUpdate.ExecutionPlan.RunningProcessNames.Count == 0 &&
+           catalogUpdate.ExecutionPlan.AllowHashVerifiedRedirects,
+        "Deterministic catalog update plan lost its hash, MSI policy, or verified-redirect policy.");
     var uniqueCatalogApplication = CreateApplication(
         "unique-catalog-test",
         "Unique App 1.0.0",
@@ -316,6 +318,15 @@ try
     var hashOnlyInstaller = await new UpdatePackageDownloader(downloadClient, new ThrowingAuthenticodeVerifier())
         .DownloadAndVerifyAsync(hashOnlyUpdate, Path.Combine(firefoxFixture, "hash-only-cache"));
     Assert(File.Exists(hashOnlyInstaller.Path), "Hash-only update verification failed for an explicitly unsigned exact-match installer.");
+    using var redirectClient = new HttpClient(new StubHttpMessageHandler(_ => new HttpResponseMessage(HttpStatusCode.OK)
+    {
+        RequestMessage = new HttpRequestMessage(HttpMethod.Get, "https://mirror.example.test/fixture.msi"),
+        Content = new ByteArrayContent(installerPayload)
+    }));
+    var redirectPlan = downloadPlan with { AllowHashVerifiedRedirects = true };
+    var redirectedInstaller = await new UpdatePackageDownloader(redirectClient, new StubAuthenticodeVerifier("Fixture Signer"))
+        .DownloadAndVerifyAsync(downloadUpdate with { ExecutionPlan = redirectPlan }, Path.Combine(firefoxFixture, "redirect-cache"));
+    Assert(File.Exists(redirectedInstaller.Path), "Hash-verified HTTPS mirror redirect was rejected.");
 
     var installedFirefox = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "Mozilla Firefox", "firefox.exe");
     if (File.Exists(installedFirefox))
@@ -397,7 +408,8 @@ if (installedLibreOffice is not null && federatedCatalog.CanHandle(installedLibr
     var libreOfficeUpdate = await federatedCatalog.CheckAsync(installedLibreOffice, CancellationToken.None);
     Assert(libreOfficeUpdate.Status == UpdateStatus.Available && VersionOrder.Compare(libreOfficeUpdate.AvailableVersion, installedLibreOffice.NormalizedVersion) > 0,
         $"LibreOffice update was not detected: {libreOfficeUpdate.Message}");
-    Assert(libreOfficeUpdate.ExecutionPlan?.Sha256?.Length == 64, $"LibreOffice update lacks a verified catalog installer plan: {libreOfficeUpdate.Message}");
+    Assert(libreOfficeUpdate.ExecutionPlan?.Sha256?.Length == 64 && libreOfficeUpdate.ExecutionPlan.AllowHashVerifiedRedirects,
+        $"LibreOffice update lacks a mirror-safe verified catalog installer plan: {libreOfficeUpdate.Message}");
 }
 
 var installedNode = snapshot.Applications.FirstOrDefault(app => app.DisplayName.Equals("Node.js", StringComparison.OrdinalIgnoreCase));
@@ -406,7 +418,8 @@ if (installedNode is not null && federatedCatalog.CanHandle(installedNode))
     var nodeUpdate = await federatedCatalog.CheckAsync(installedNode, CancellationToken.None);
     Assert(nodeUpdate.Status == UpdateStatus.Available && VersionOrder.Compare(nodeUpdate.AvailableVersion, installedNode.NormalizedVersion) > 0,
         $"The fresher Node.js catalog update was not detected: {nodeUpdate.Message}");
-    Assert(nodeUpdate.ExecutionPlan?.Sha256?.Length == 64, $"Node.js update lacks an official checksum-backed MSI plan: {nodeUpdate.Message}");
+    Assert(nodeUpdate.ExecutionPlan?.Sha256?.Length == 64 && nodeUpdate.ExecutionPlan.RunningProcessNames.Count == 0,
+        $"Node.js update lacks an official checksum-backed non-blocking MSI plan: {nodeUpdate.Message}");
 }
 
 var installedGog = snapshot.Applications.FirstOrDefault(app => app.DisplayName.Equals("GOG GALAXY", StringComparison.OrdinalIgnoreCase));
