@@ -629,7 +629,7 @@ public sealed partial class MainPage : Page
         var content = new StackPanel
         {
             Spacing = 10,
-            MinWidth = 320,
+            MinWidth = 360,
             Children =
             {
                 languageBox,
@@ -638,6 +638,50 @@ public sealed partial class MainPage : Page
                 {
                     Text = LocalizationService.Get("SettingsRestartHint"),
                     TextWrapping = TextWrapping.Wrap,
+                    Foreground = PresentationBrushes.Get("NaxBlueBrush")
+                },
+                new Border
+                {
+                    Height = 1,
+                    Margin = new Thickness(0, 8, 0, 6),
+                    Background = PresentationBrushes.Get("NaxBlueBrush"),
+                    Opacity = 0.3
+                },
+                new TextBlock
+                {
+                    Text = LocalizationService.Get("AboutTitle"),
+                    FontSize = 18,
+                    FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
+                    Foreground = PresentationBrushes.Get("NaxPurpleBrush")
+                },
+                new TextBlock
+                {
+                    Text = "NaxUpdater",
+                    FontSize = 20,
+                    FontWeight = Microsoft.UI.Text.FontWeights.SemiBold
+                },
+                new TextBlock
+                {
+                    Text = LocalizationService.Format("AboutVersion", GetApplicationVersion()),
+                    IsTextSelectionEnabled = true,
+                    Foreground = PresentationBrushes.Get("NaxGreenBrush")
+                },
+                new TextBlock
+                {
+                    Text = LocalizationService.Get("AboutDescription"),
+                    TextWrapping = TextWrapping.Wrap
+                },
+                new HyperlinkButton
+                {
+                    Content = LocalizationService.Get("AboutRepository"),
+                    NavigateUri = new Uri("https://github.com/Naxterra/Nax-Updater"),
+                    Padding = new Thickness(0, 4, 0, 4),
+                    HorizontalAlignment = HorizontalAlignment.Left
+                },
+                new TextBlock
+                {
+                    Text = LocalizationService.Get("AboutCopyright"),
+                    FontSize = 11,
                     Foreground = PresentationBrushes.Get("NaxBlueBrush")
                 }
             }
@@ -655,8 +699,18 @@ public sealed partial class MainPage : Page
         {
             App.SetShowSafetyInformation(safetyInformationToggle.IsOn);
             MainInfo.IsOpen = safetyInformationToggle.IsOn;
-            App.RestartWithLanguage(languageBox.SelectedIndex == 1 ? "de-DE" : "en-US");
+            var selectedLanguage = languageBox.SelectedIndex == 1 ? "de-DE" : "en-US";
+            if (!selectedLanguage.Equals(App.CurrentLanguage, StringComparison.OrdinalIgnoreCase))
+            {
+                App.RestartWithLanguage(selectedLanguage);
+            }
         }
+    }
+
+    private static string GetApplicationVersion()
+    {
+        var version = typeof(MainPage).Assembly.GetName().Version;
+        return version is null ? "—" : version.ToString(3);
     }
 
     private ContentDialog CreateDialog(

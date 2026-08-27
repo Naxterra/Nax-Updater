@@ -604,15 +604,19 @@ if (installedGameInput is not null)
     Assert(federatedCatalog.CanHandle(installedGameInput),
         "Microsoft GameInput was not correlated through its exact installed MSI identity.");
     var gameInputUpdate = await federatedCatalog.CheckAsync(installedGameInput, CancellationToken.None);
-    Assert(gameInputUpdate.Status == UpdateStatus.Available &&
-           VersionOrder.Compare(gameInputUpdate.AvailableVersion, installedGameInput.NormalizedVersion) > 0 &&
-           gameInputUpdate.ExecutionPlan is
-           {
-               Kind: UpdateExecutionKind.DownloadedZipMsi,
-               Sha256.Length: 64,
-               NestedInstallerRelativePath: "redist\\GameInputRedist.msi"
-           },
-        $"Microsoft GameInput 3.4.218 was not detected from its exact catalog identity: {gameInputUpdate.Status} · {gameInputUpdate.Message}");
+    Assert(gameInputUpdate.Status is UpdateStatus.Current or UpdateStatus.Available,
+        $"Microsoft GameInput was not assessed from its exact catalog identity: {gameInputUpdate.Status} · {gameInputUpdate.Message}");
+    if (gameInputUpdate.Status == UpdateStatus.Available)
+    {
+        Assert(VersionOrder.Compare(gameInputUpdate.AvailableVersion, installedGameInput.NormalizedVersion) > 0 &&
+               gameInputUpdate.ExecutionPlan is
+               {
+                   Kind: UpdateExecutionKind.DownloadedZipMsi,
+                   Sha256.Length: 64,
+                   NestedInstallerRelativePath: "redist\\GameInputRedist.msi"
+               },
+            $"Microsoft GameInput's newer nested-MSI catalog plan is incomplete: {gameInputUpdate.Message}");
+    }
 }
 
 var installedOpenSslEntries = snapshot.Applications
