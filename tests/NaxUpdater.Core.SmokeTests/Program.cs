@@ -512,12 +512,28 @@ if (installedGog is not null && federatedCatalog.CanHandle(installedGog))
         $"GOG GALAXY should use its newer registered package version instead of an older executable version: {gogUpdate.Message}");
 }
 
-var installedOpenSsl = snapshot.Applications.FirstOrDefault(app => app.DisplayName.StartsWith("OpenSSL ", StringComparison.OrdinalIgnoreCase));
+var installedOpenSslEntries = snapshot.Applications
+    .Where(app => app.DisplayName.StartsWith("OpenSSL ", StringComparison.OrdinalIgnoreCase))
+    .ToArray();
+Assert(installedOpenSslEntries.Length <= 1,
+    $"Multiple installed versions from one OpenSSL MSI upgrade family were not collapsed: {string.Join(", ", installedOpenSslEntries.Select(static app => app.InstalledVersion))}");
+var installedOpenSsl = installedOpenSslEntries.FirstOrDefault();
 if (installedOpenSsl is not null && federatedCatalog.CanHandle(installedOpenSsl))
 {
     var openSslUpdate = await federatedCatalog.CheckAsync(installedOpenSsl, CancellationToken.None);
-    Assert(openSslUpdate.Status == UpdateStatus.Available && openSslUpdate.ExecutionPlan is { RequireAuthenticode: false },
-        $"Unsigned OpenSSL update did not receive an exact-product-code hash-only plan: {openSslUpdate.Message}");
+    Assert(openSslUpdate.Status == UpdateStatus.Current ||
+           (openSslUpdate.Status == UpdateStatus.Available && openSslUpdate.ExecutionPlan is { RequireAuthenticode: false }),
+        $"OpenSSL was neither current nor supplied with an exact-product-code hash-only plan: {openSslUpdate.Message}");
+    if (installedOpenSsl.Evidence.Count(static evidence => evidence.Label == "Registry version") > 1)
+    {
+        var highestRegisteredVersion = installedOpenSsl.Evidence
+            .Where(static evidence => evidence.Label == "Registry version")
+            .Select(static evidence => evidence.Value)
+            .OrderByDescending(static version => version, Comparer<string>.Create(VersionOrder.Compare))
+            .First();
+        Assert(VersionOrder.Compare(installedOpenSsl.NormalizedVersion, highestRegisteredVersion) >= 0,
+            $"OpenSSL retained an older MSI product generation instead of {highestRegisteredVersion}.");
+    }
 }
 
 var doom = snapshot.Applications.FirstOrDefault(app => app.DisplayName.Equals("DOOM The Dark Ages", StringComparison.OrdinalIgnoreCase));

@@ -8,14 +8,17 @@ namespace NaxUpdater.Core.Services;
 internal sealed partial class RegistryInventoryScanner
 {
     private const string UninstallPath = @"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall";
+    private const string InstallerUpgradeCodesPath = @"SOFTWARE\Microsoft\Windows\CurrentVersion\Installer\UpgradeCodes";
+    internal const string InstallerUpgradeFamilyEvidenceLabel = "Windows Installer upgrade family";
 
     public IReadOnlyList<ApplicationCandidate> Scan(ICollection<InventoryIssue> issues)
     {
         var results = new List<ApplicationCandidate>();
-        ScanHive(RegistryHive.LocalMachine, RegistryView.Registry64, InstallScope.Machine, results, issues);
-        ScanHive(RegistryHive.LocalMachine, RegistryView.Registry32, InstallScope.Machine, results, issues);
-        ScanHive(RegistryHive.CurrentUser, RegistryView.Registry64, InstallScope.CurrentUser, results, issues);
-        ScanHive(RegistryHive.CurrentUser, RegistryView.Registry32, InstallScope.CurrentUser, results, issues);
+        var installerUpgradeFamilies = ReadInstallerUpgradeFamilies(issues);
+        ScanHive(RegistryHive.LocalMachine, RegistryView.Registry64, InstallScope.Machine, installerUpgradeFamilies, results, issues);
+        ScanHive(RegistryHive.LocalMachine, RegistryView.Registry32, InstallScope.Machine, installerUpgradeFamilies, results, issues);
+        ScanHive(RegistryHive.CurrentUser, RegistryView.Registry64, InstallScope.CurrentUser, installerUpgradeFamilies, results, issues);
+        ScanHive(RegistryHive.CurrentUser, RegistryView.Registry32, InstallScope.CurrentUser, installerUpgradeFamilies, results, issues);
         return results;
     }
 
@@ -23,6 +26,7 @@ internal sealed partial class RegistryInventoryScanner
         RegistryHive hive,
         RegistryView view,
         InstallScope scope,
+        IReadOnlyDictionary<string, string> installerUpgradeFamilies,
         ICollection<ApplicationCandidate> results,
         ICollection<InventoryIssue> issues)
     {
@@ -144,6 +148,15 @@ internal sealed partial class RegistryInventoryScanner
                             "Installer technology",
                             "Windows Installer (MSI)",
                             true));
+                        if (TryPackGuid(subKeyName, out var packedProductCode) &&
+                            installerUpgradeFamilies.TryGetValue(packedProductCode, out var upgradeFamily))
+                        {
+                            candidate.Evidence.Add(new ApplicationEvidence(
+                                EvidenceKind.Registry,
+                                InstallerUpgradeFamilyEvidenceLabel,
+                                upgradeFamily,
+                                true));
+                        }
                     }
                     if (removalPlan is not null)
                     {
@@ -165,6 +178,81 @@ internal sealed partial class RegistryInventoryScanner
         {
             issues.Add(new InventoryIssue(sourceName, exception.Message, exception.GetType().Name));
         }
+    }
+
+    private static IReadOnlyDictionary<string, string> ReadInstallerUpgradeFamilies(ICollection<InventoryIssue> issues)
+    {
+        var results = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var view in new[] { RegistryView.Registry64, RegistryView.Registry32 })
+        {
+            try
+            {
+                using var baseKey = RegistryKey.OpenBaseKey(RegistryHive.LocalMachine, view);
+                using var upgradeCodes = baseKey.OpenSubKey(InstallerUpgradeCodesPath);
+                if (upgradeCodes is null)
+                {
+                    continue;
+                }
+                foreach (var packedUpgradeCode in upgradeCodes.GetSubKeyNames())
+                {
+                    using var familyKey = upgradeCodes.OpenSubKey(packedUpgradeCode);
+                    if (familyKey is null)
+                    {
+                        continue;
+                    }
+                    var family = TryUnpackGuid(packedUpgradeCode, out var upgradeCode)
+                        ? upgradeCode
+                        : packedUpgradeCode;
+                    foreach (var packedProductCode in familyKey.GetValueNames())
+                    {
+                        results.TryAdd(packedProductCode, family);
+                    }
+                }
+            }
+            catch (Exception exception) when (exception is UnauthorizedAccessException or IOException)
+            {
+                issues.Add(new InventoryIssue($"Windows Installer upgrade families {view}", exception.Message, exception.GetType().Name));
+            }
+        }
+        return results;
+    }
+
+    private static bool TryPackGuid(string value, out string packed)
+    {
+        packed = string.Empty;
+        if (!Guid.TryParse(value, out var guid))
+        {
+            return false;
+        }
+        packed = TransformInstallerGuid(guid.ToString("N").ToUpperInvariant());
+        return true;
+    }
+
+    private static bool TryUnpackGuid(string value, out string unpacked)
+    {
+        unpacked = string.Empty;
+        if (value.Length != 32 || value.Any(static character => !Uri.IsHexDigit(character)))
+        {
+            return false;
+        }
+        var hex = TransformInstallerGuid(value);
+        if (!Guid.TryParseExact(hex, "N", out var guid))
+        {
+            return false;
+        }
+        unpacked = guid.ToString("B").ToUpperInvariant();
+        return true;
+    }
+
+    private static string TransformInstallerGuid(string value)
+    {
+        static string Reverse(string text) => string.Concat(text.Reverse());
+        var tail = string.Concat(Enumerable.Range(0, 8).Select(index =>
+        {
+            var offset = 16 + (index * 2);
+            return $"{value[offset + 1]}{value[offset]}";
+        }));
+        return Reverse(value[..8]) + Reverse(value[8..12]) + Reverse(value[12..16]) + tail;
     }
 
     private static string? GetString(RegistryKey key, string name) => key.GetValue(name)?.ToString()?.Trim() is { Length: > 0 } value ? value : null;

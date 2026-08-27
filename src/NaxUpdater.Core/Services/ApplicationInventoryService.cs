@@ -66,7 +66,7 @@ public sealed class ApplicationInventoryService
             .OrderBy(static policy => policy.DisplayName, StringComparer.CurrentCultureIgnoreCase)
             .ToArray();
 
-        var mergedApplications = MergeExactDuplicates(applications);
+        var mergedApplications = MergeMsiUpgradeFamilies(MergeExactDuplicates(applications));
         return new InventorySnapshot(
             DateTimeOffset.Now,
             mergedApplications
@@ -134,6 +134,56 @@ public sealed class ApplicationInventoryService
         var version = application.InstalledVersion?.Trim() ?? string.Empty;
         var path = application.PrimaryInstallPath.Trim().TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
         return $"facts:{name}|{publisher}|{version}|{path}";
+    }
+
+    private static IReadOnlyList<InstalledApplication> MergeMsiUpgradeFamilies(IReadOnlyList<InstalledApplication> applications)
+    {
+        var results = new List<InstalledApplication>(applications.Count);
+        foreach (var group in applications.GroupBy(MsiUpgradeFamilyKey, StringComparer.OrdinalIgnoreCase))
+        {
+            var items = group.ToArray();
+            if (group.Key.StartsWith("identity:", StringComparison.Ordinal) || items.Length == 1)
+            {
+                results.AddRange(items);
+                continue;
+            }
+
+            var primary = items.Aggregate((current, candidate) =>
+                VersionOrder.Compare(candidate.NormalizedVersion, current.NormalizedVersion) > 0
+                    ? candidate
+                    : current);
+            var evidence = items
+                .SelectMany(static application => application.Evidence)
+                .Distinct()
+                .ToArray();
+            var blockedProviders = items
+                .SelectMany(static application => application.BlockedProviders)
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .Order(StringComparer.OrdinalIgnoreCase)
+                .ToArray();
+            var datedItem = items
+                .Where(static application => application.InstalledOn.HasValue)
+                .OrderByDescending(static application => application.InstalledOn)
+                .FirstOrDefault();
+            results.Add(primary with
+            {
+                InstalledOn = primary.InstalledOn ?? datedItem?.InstalledOn,
+                InstallDateSource = primary.InstallDateSource ?? datedItem?.InstallDateSource,
+                Confidence = items.Max(static application => application.Confidence),
+                BlockedProviders = blockedProviders,
+                Evidence = evidence
+            });
+        }
+        return results;
+    }
+
+    private static string MsiUpgradeFamilyKey(InstalledApplication application)
+    {
+        var family = application.Evidence.FirstOrDefault(static evidence =>
+            evidence.Label == RegistryInventoryScanner.InstallerUpgradeFamilyEvidenceLabel)?.Value;
+        return string.IsNullOrWhiteSpace(family)
+            ? $"identity:{application.Identity}"
+            : $"msi-upgrade:{family}";
     }
 
     private static void ApplyPolicy(

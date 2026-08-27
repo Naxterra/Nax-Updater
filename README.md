@@ -30,7 +30,7 @@ The inventory engine:
 
 ## Update providers
 
-Version 0.11.0 includes:
+Version 0.12.0 includes:
 
 - Mozilla Firefox releases from Mozilla's official product-details and release archive, preserving the effective Firefox profile language, architecture, channel, scope, and installation directory;
 - Nextcloud releases from the official `nextcloud-releases/desktop` GitHub repository using its release-asset SHA-256 digest and a multi-language MSI;
@@ -52,13 +52,14 @@ Version 0.11.0 includes:
 - MSI execution without process-name prechecks, preventing unrelated runtimes with the same filename from blocking Windows Installer updates;
 - direct Microsoft Store catalog and deployment integration through the official Windows Package Manager COM API;
 - installed PFN to Store Product ID resolution with exact package-family revalidation before silent install/update submission;
-- a **Store update** row action for MSIX packages, with Store handling licensing, applicability, download, staging, and idempotent current-version behavior;
+- a direct **Update** row action for MSIX packages, with Store handling licensing, applicability, download, staging, and idempotent current-version behavior inside NaxUpdater;
 - launchable MSIX app-entry naming ahead of package identities, so Store packages such as `OpenAI.Codex` are presented by their user-facing app name, `ChatGPT`;
 - six-way parallel ranged downloads for installers of at least 64 MB when the server advertises byte-range support, followed by complete reconstruction and whole-file hash verification;
-- a sequential **Update all** queue containing only applications with a proven newer version and a verified execution plan, followed by one final inventory/update rescan;
-- honest Store action wording: Store-managed rows use **Check Store** and remain outside the available-update/mass-update count when Store exposes no comparable version;
+- a sequential **Update all** queue containing verified conventional updates followed by direct Store/MSIX deployment actions, with one shared Store connection and one final inventory/update rescan;
+- honest bulk counts that keep proven newer versions separate from idempotent Store actions, for example **2 updates + 24 Store apps**;
 - multi-signer Authenticode policies from installed updater metadata, accepting any explicitly declared trusted publisher identity;
-- Store package migration matching through a unique exact product-name and publisher pair when the Store product intentionally publishes a replacement PFN.
+- Store package migration matching through a unique exact product-name and publisher pair when the Store product intentionally publishes a replacement PFN;
+- MSI upgrade-family correlation that collapses side-by-side product generations and retains the newest registered version, preventing a successful MSI install from being offered repeatedly because the vendor left an older product registration behind.
 
 Catalogs provide candidates, never installed state. NaxUpdater still decides the installed version, location, architecture, channel, and scope from its independent inventory. A package-manager match is accepted only through a stable identifier such as an exact MSI product code; name-only search results are not installable.
 
@@ -74,6 +75,7 @@ The single **Scan and check updates** action rebuilds the installed-application 
 - The former confidence/safety summary and list column are intentionally omitted from the user interface.
 - Installable updates expose a compact **Update** button directly in their list row; clicking it immediately downloads, verifies, and starts the update without a duplicate confirmation dialog.
 - Running-application warnings use the non-modal status bar. Supported MSI and installed-metadata installers run silently after the explicit row-button click; Windows UAC remains available when elevation is required.
+- Details panes are width-capped so ultrawide windows devote their extra space to the application list instead of an empty details column.
 
 MSIX app-list resources and package-directory identities are used to replace opaque package GUIDs with meaningful names. Dates are labelled **Installed / updated** because Windows and MSI can replace the original installation date during servicing; when no reported date exists, NaxUpdater can show the installation folder's modification date as an explicitly identified fallback.
 
@@ -104,7 +106,7 @@ From this directory:
 dotnet build NaxUpdater.slnx
 dotnet run --project tests/NaxUpdater.Core.SmokeTests/NaxUpdater.Core.SmokeTests.csproj
 dotnet publish src/NaxUpdater/NaxUpdater.csproj -c Release -r win-x64 --self-contained true -o artifacts/NaxUpdater-win-x64
-./scripts/package-release.ps1 -Version 0.11.0
+./scripts/package-release.ps1 -Version 0.12.0
 ```
 
 The desktop project uses .NET 11, WinUI 3, and the Windows App SDK. It is not an Electron or WebView application.

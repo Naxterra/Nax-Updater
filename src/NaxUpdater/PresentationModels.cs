@@ -180,8 +180,6 @@ public sealed class UpdateRow
     public bool CanInstall => Source.IsInstallable;
     public string UpdateActionText => Source.ExecutionPlan?.Kind == UpdateExecutionKind.NativeCommand
         ? LocalizationService.Get("RunUpdateShort")
-        : Source.ExecutionPlan?.Kind == UpdateExecutionKind.StorePackage
-            ? LocalizationService.Get("StoreUpdateShort")
         : LocalizationService.Get("UpdateShort");
     public Visibility UpdateActionVisibility => CanInstall ? Visibility.Visible : Visibility.Collapsed;
     public Brush StatusForeground => PresentationBrushes.Get(Source.Status switch
