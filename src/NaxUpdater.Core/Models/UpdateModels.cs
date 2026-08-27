@@ -27,7 +27,8 @@ public sealed record UpdateExecutionPlan(
     bool RequiresElevation,
     IReadOnlyList<string> AllowedDownloadHosts,
     IReadOnlyList<string> RunningProcessNames,
-    string? Sha512 = null);
+    string? Sha512 = null,
+    bool RequireAuthenticode = true);
 
 public sealed record UpdateCheckResult(
     string ApplicationIdentity,

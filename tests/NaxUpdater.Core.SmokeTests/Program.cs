@@ -285,6 +285,13 @@ try
         .DownloadAndVerifyAsync(downloadUpdate, Path.Combine(firefoxFixture, "cache"));
     Assert(File.Exists(verifiedInstaller.Path) && File.ReadAllBytes(verifiedInstaller.Path).SequenceEqual(installerPayload),
         "Verified update package download failed.");
+    var hashOnlyUpdate = downloadUpdate with
+    {
+        ExecutionPlan = downloadPlan with { ExpectedSigner = null, RequireAuthenticode = false }
+    };
+    var hashOnlyInstaller = await new UpdatePackageDownloader(downloadClient, new ThrowingAuthenticodeVerifier())
+        .DownloadAndVerifyAsync(hashOnlyUpdate, Path.Combine(firefoxFixture, "hash-only-cache"));
+    Assert(File.Exists(hashOnlyInstaller.Path), "Hash-only update verification failed for an explicitly unsigned exact-match installer.");
 
     var installedFirefox = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "Mozilla Firefox", "firefox.exe");
     if (File.Exists(installedFirefox))
@@ -376,6 +383,22 @@ if (installedNode is not null && federatedCatalog.CanHandle(installedNode))
     Assert(nodeUpdate.Status == UpdateStatus.Available && VersionOrder.Compare(nodeUpdate.AvailableVersion, installedNode.NormalizedVersion) > 0,
         $"The fresher Node.js catalog update was not detected: {nodeUpdate.Message}");
     Assert(nodeUpdate.ExecutionPlan?.Sha256?.Length == 64, $"Node.js update lacks an official checksum-backed MSI plan: {nodeUpdate.Message}");
+}
+
+var installedGog = snapshot.Applications.FirstOrDefault(app => app.DisplayName.Equals("GOG GALAXY", StringComparison.OrdinalIgnoreCase));
+if (installedGog is not null && federatedCatalog.CanHandle(installedGog))
+{
+    var gogUpdate = await federatedCatalog.CheckAsync(installedGog, CancellationToken.None);
+    Assert(gogUpdate.Status == UpdateStatus.Current && gogUpdate.InstalledVersion == "2.1.8.30",
+        $"GOG GALAXY should use its newer registered package version instead of an older executable version: {gogUpdate.Message}");
+}
+
+var installedOpenSsl = snapshot.Applications.FirstOrDefault(app => app.DisplayName.StartsWith("OpenSSL ", StringComparison.OrdinalIgnoreCase));
+if (installedOpenSsl is not null && federatedCatalog.CanHandle(installedOpenSsl))
+{
+    var openSslUpdate = await federatedCatalog.CheckAsync(installedOpenSsl, CancellationToken.None);
+    Assert(openSslUpdate.Status == UpdateStatus.Available && openSslUpdate.ExecutionPlan is { RequireAuthenticode: false },
+        $"Unsigned OpenSSL update did not receive an exact-product-code hash-only plan: {openSslUpdate.Message}");
 }
 
 var doom = snapshot.Applications.FirstOrDefault(app => app.DisplayName.Equals("DOOM The Dark Ages", StringComparison.OrdinalIgnoreCase));
@@ -545,4 +568,10 @@ sealed class StubAuthenticodeVerifier(string signer) : IAuthenticodeVerifier
 {
     public AuthenticodeVerificationResult Verify(string filePath, string expectedSigner) =>
         new(true, signer, null);
+}
+
+sealed class ThrowingAuthenticodeVerifier : IAuthenticodeVerifier
+{
+    public AuthenticodeVerificationResult Verify(string filePath, string expectedSigner) =>
+        throw new InvalidOperationException("Authenticode verification must not run for an explicitly hash-only plan.");
 }
