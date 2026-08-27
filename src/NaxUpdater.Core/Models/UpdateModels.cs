@@ -28,7 +28,8 @@ public sealed record UpdateExecutionPlan(
     IReadOnlyList<string> AllowedDownloadHosts,
     IReadOnlyList<string> RunningProcessNames,
     string? Sha512 = null,
-    bool RequireAuthenticode = true);
+    bool RequireAuthenticode = true,
+    bool AllowHashVerifiedRedirects = false);
 
 public sealed record UpdateCheckResult(
     string ApplicationIdentity,
