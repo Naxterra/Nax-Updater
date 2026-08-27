@@ -6,6 +6,8 @@ namespace NaxUpdater.Core.Services;
 
 public sealed class UpdateExecutionService
 {
+    private readonly StorePackageDeploymentService _storePackageDeploymentService = new();
+
     public IReadOnlyList<string> FindRunningProcesses(UpdateCheckResult update)
     {
         var plan = update.ExecutionPlan;
@@ -63,9 +65,8 @@ public sealed class UpdateExecutionService
             {
                 return new UpdateExecutionResult(-1, false, "The Microsoft Store product identity is incomplete.");
             }
-            var store = new StorePackageDeploymentService();
             var identity = string.IsNullOrWhiteSpace(plan.StoreProductId)
-                ? await store.ResolveAsync(
+                ? await _storePackageDeploymentService.ResolveAsync(
                     plan.StorePackageFamilyName,
                     update.DisplayName,
                     plan.StorePublisher,
@@ -73,9 +74,9 @@ public sealed class UpdateExecutionService
                 : new StoreCatalogIdentity(plan.StoreProductId, update.DisplayName, plan.StorePackageFamilyName, true);
             if (identity is null)
             {
-                return new UpdateExecutionResult(-1, false, store.LastError ?? "No exact Microsoft Store product matched the installed package family.");
+                return new UpdateExecutionResult(-1, false, _storePackageDeploymentService.LastError ?? "No exact Microsoft Store product matched the installed package family.");
             }
-            return await store.InstallOrUpdateAsync(
+            return await _storePackageDeploymentService.InstallOrUpdateAsync(
                 identity.ProductId,
                 plan.StorePackageFamilyName,
                 update.DisplayName,

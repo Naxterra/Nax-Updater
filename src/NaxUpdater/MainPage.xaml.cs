@@ -352,8 +352,7 @@ public sealed partial class MainPage : Page
             var available = result.Results.Count(static update => update.Status == UpdateStatus.Available);
             var errors = result.Results.Count(static update => update.Status == UpdateStatus.Error);
             UpdateCountText.Text = LocalizationService.Format("UpdateCountFormat", available, _updates.Count);
-            UpdateAllButton.Content = LocalizationService.Format("UpdateAllCount", available);
-            UpdateAllButton.IsEnabled = available > 0;
+            RefreshMassUpdateButton();
             ShowUpdatesButton.Content = LocalizationService.Format(
                 "UpdatesNavigationCoverage",
                 available,
@@ -451,7 +450,9 @@ public sealed partial class MainPage : Page
             return;
         }
         var queue = _updates
-            .Where(static row => row.Source.Status == UpdateStatus.Available && row.CanInstall)
+            .Where(static row => row.CanInstall)
+            .OrderBy(static row => row.Source.ExecutionPlan?.Kind == UpdateExecutionKind.StorePackage ? 1 : 0)
+            .ThenBy(static row => row.Name, StringComparer.CurrentCultureIgnoreCase)
             .ToArray();
         if (queue.Length == 0)
         {
@@ -486,7 +487,7 @@ public sealed partial class MainPage : Page
         finally
         {
             _massUpdateBusy = false;
-            UpdateAllButton.IsEnabled = _updates.Any(static row => row.Source.Status == UpdateStatus.Available && row.CanInstall);
+            RefreshMassUpdateButton();
         }
     }
 
@@ -586,14 +587,25 @@ public sealed partial class MainPage : Page
         _updateBusy = busy;
         ScanButton.IsEnabled = !busy;
         ShowUpdatesButton.IsEnabled = !busy && _updates.Count > 0;
-        UpdateAllButton.IsEnabled = !busy && !_massUpdateBusy &&
-                                    _updates.Any(static row => row.Source.Status == UpdateStatus.Available && row.CanInstall);
+        RefreshMassUpdateButton();
         ScanProgress.IsActive = busy;
         ScanProgress.Visibility = busy ? Visibility.Visible : Visibility.Collapsed;
         if (!string.IsNullOrWhiteSpace(message))
         {
             StatusText.Text = message;
         }
+    }
+
+    private void RefreshMassUpdateButton()
+    {
+        var verifiedUpdates = _updates.Count(static row =>
+            row.CanInstall && row.Source.Status == UpdateStatus.Available);
+        var storeActions = _updates.Count(static row =>
+            row.CanInstall && row.Source.ExecutionPlan?.Kind == UpdateExecutionKind.StorePackage);
+        UpdateAllButton.Content = storeActions > 0
+            ? LocalizationService.Format("UpdateAllCountWithStore", verifiedUpdates, storeActions)
+            : LocalizationService.Format("UpdateAllCount", verifiedUpdates);
+        UpdateAllButton.IsEnabled = !_updateBusy && !_massUpdateBusy && verifiedUpdates + storeActions > 0;
     }
 
     private async void LanguageButton_Click(object sender, RoutedEventArgs e)

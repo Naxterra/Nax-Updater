@@ -102,9 +102,9 @@
 
         <Grid x:Name="InventoryWorkspace" Grid.Row="3" ColumnSpacing="12">
             <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="2*" MinWidth="650" />
+                <ColumnDefinition Width="*" MinWidth="650" />
                 <ColumnDefinition Width="1" />
-                <ColumnDefinition Width="*" MinWidth="360" />
+                <ColumnDefinition Width="420" MinWidth="360" MaxWidth="460" />
             </Grid.ColumnDefinitions>
 
             <Border Style="{StaticResource SectionCardStyle}">
@@ -266,9 +266,9 @@
 
         <Grid x:Name="UpdatesWorkspace" Grid.Row="3" ColumnSpacing="12" Visibility="Collapsed">
             <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="2*" MinWidth="650" />
+                <ColumnDefinition Width="*" MinWidth="650" />
                 <ColumnDefinition Width="1" />
-                <ColumnDefinition Width="*" MinWidth="360" />
+                <ColumnDefinition Width="420" MinWidth="360" MaxWidth="460" />
             </Grid.ColumnDefinitions>
 
             <Border Style="{StaticResource SectionCardStyle}">
