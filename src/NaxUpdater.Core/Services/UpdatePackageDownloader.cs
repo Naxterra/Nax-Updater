@@ -19,7 +19,8 @@ public sealed class UpdatePackageDownloader(
             throw new InvalidOperationException("Native-provider updates do not download an installer.");
         }
         if (plan.DownloadUri is null || plan.DownloadUri.Scheme != Uri.UriSchemeHttps ||
-            string.IsNullOrWhiteSpace(plan.FileName) || string.IsNullOrWhiteSpace(plan.ExpectedSigner))
+            string.IsNullOrWhiteSpace(plan.FileName) ||
+            (plan.RequireAuthenticode && string.IsNullOrWhiteSpace(plan.ExpectedSigner)))
         {
             throw new InvalidOperationException("The update plan is missing its HTTPS URL, filename, hash, or signer policy.");
         }
@@ -133,6 +134,10 @@ public sealed class UpdatePackageDownloader(
         if (!actualHash.Equals(hashPolicy.ExpectedHash, StringComparison.OrdinalIgnoreCase))
         {
             return new FileVerification(false, null, $"The cached installer {hashPolicy.DisplayName} does not match the release.");
+        }
+        if (!plan.RequireAuthenticode)
+        {
+            return new FileVerification(true, "Unsigned installer; release hash verified", null);
         }
         var signature = authenticodeVerifier.Verify(path, plan.ExpectedSigner!);
         return new FileVerification(signature.IsValid, signature.Signer, signature.Error);

@@ -36,12 +36,13 @@ public sealed partial class FederatedCatalogUpdateProvider(HttpClient httpClient
             source = "Scoop catalog";
         }
 
-        if (VersionOrder.Compare(availableVersion, application.NormalizedVersion) <= 0)
+        var installedVersion = CatalogInstalledVersion(application);
+        if (VersionOrder.Compare(availableVersion, installedVersion) <= 0)
         {
             return Result(application, identity, availableVersion, UpdateStatus.Current, source, null, null);
         }
 
-        if (!identity.MatchKind.Equals("MSI product code", StringComparison.Ordinal))
+        if (!identity.MatchKind.EndsWith("product code", StringComparison.Ordinal))
         {
             return Result(
                 application,
@@ -85,17 +86,6 @@ public sealed partial class FederatedCatalogUpdateProvider(HttpClient httpClient
         }
 
         var signer = ResolveInstalledSigner(application, identity);
-        if (string.IsNullOrWhiteSpace(signer))
-        {
-            return Result(
-                application,
-                identity,
-                availableVersion,
-                UpdateStatus.Available,
-                source,
-                "The update is detected, but the installed application's trusted signer could not be established.",
-                null);
-        }
 
         var plan = new UpdateExecutionPlan(
             installer.Kind,
@@ -104,13 +94,12 @@ public sealed partial class FederatedCatalogUpdateProvider(HttpClient httpClient
             installer.Sha256,
             signer,
             null,
-            installer.Kind == UpdateExecutionKind.DownloadedMsi
-                ? ["/qn", "/norestart"]
-                : ["/S"],
+            installer.Arguments,
             application.Scope == InstallScope.Machine,
             AllowedHosts(installer.Uri),
             RunningProcesses(application),
-            null);
+            null,
+            !string.IsNullOrWhiteSpace(signer));
         return Result(
             application,
             identity,
@@ -171,7 +160,7 @@ public sealed partial class FederatedCatalogUpdateProvider(HttpClient httpClient
                 using var productReader = productCommand.ExecuteReader();
                 if (productReader.Read())
                 {
-                    return ReadIdentity(productReader, "MSI product code");
+                    return ReadIdentity(productReader, "registered product code");
                 }
             }
 
@@ -340,7 +329,14 @@ public sealed partial class FederatedCatalogUpdateProvider(HttpClient httpClient
                 };
                 if (kind.HasValue)
                 {
-                    installers.Add(new CatalogInstaller(architecture ?? "neutral", kind.Value, uri, hash));
+                    var arguments = installerType?.ToLowerInvariant() switch
+                    {
+                        "msi" or "wix" => new[] { "/qn", "/norestart" },
+                        "inno" => new[] { "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART" },
+                        "nullsoft" => new[] { "/S" },
+                        _ => []
+                    };
+                    installers.Add(new CatalogInstaller(architecture ?? "neutral", kind.Value, uri, hash, arguments));
                 }
             }
             architecture = type = url = hash = null;
@@ -499,7 +495,7 @@ public sealed partial class FederatedCatalogUpdateProvider(HttpClient httpClient
         UpdateExecutionPlan? plan) => new(
             application.Identity,
             application.DisplayName,
-            application.NormalizedVersion,
+            CatalogInstalledVersion(application),
             version,
             status,
             Id,
@@ -518,12 +514,37 @@ public sealed partial class FederatedCatalogUpdateProvider(HttpClient httpClient
 
     private static string? ProductCode(InstalledApplication application)
     {
-        if (application.RemovalPlan?.Kind != RemovalKind.WindowsInstaller)
+        if (application.RemovalPlan?.Kind == RemovalKind.WindowsInstaller)
         {
-            return null;
+            var msiMatch = ProductCodeRegex().Match(application.RemovalPlan.Arguments ?? string.Empty);
+            if (msiMatch.Success)
+            {
+                return msiMatch.Value;
+            }
         }
-        var match = ProductCodeRegex().Match(application.RemovalPlan.Arguments ?? string.Empty);
-        return match.Success ? match.Value : null;
+        foreach (var evidence in application.Evidence.Where(static item => item.Label == "Uninstall registry"))
+        {
+            var separator = evidence.Value.LastIndexOf(" · ", StringComparison.Ordinal);
+            var key = separator >= 0 ? evidence.Value[(separator + 3)..].Trim() : evidence.Value.Trim();
+            if (key.EndsWith("_is1", StringComparison.OrdinalIgnoreCase) || ProductCodeRegex().IsMatch(key))
+            {
+                return key;
+            }
+        }
+        return null;
+    }
+
+    private static string? CatalogInstalledVersion(InstalledApplication application)
+    {
+        var versions = new List<string>();
+        if (!string.IsNullOrWhiteSpace(application.NormalizedVersion))
+        {
+            versions.Add(application.NormalizedVersion);
+        }
+        versions.AddRange(application.Evidence
+            .Where(static item => item.Label == "Registry version" && !string.IsNullOrWhiteSpace(item.Value))
+            .Select(static item => item.Value.Trim()));
+        return versions.OrderByDescending(static version => version, Comparer<string>.Create(VersionOrder.Compare)).FirstOrDefault();
     }
 
     private static IReadOnlyList<string> AllowedHosts(Uri uri) =>
@@ -552,5 +573,10 @@ public sealed partial class FederatedCatalogUpdateProvider(HttpClient httpClient
 
     private sealed record CatalogIdentity(string Id, string Name, string Moniker, string LatestVersion, string MatchKind);
     private sealed record ScoopCandidate(string Version, string? Homepage);
-    private sealed record CatalogInstaller(string Architecture, UpdateExecutionKind Kind, Uri Uri, string Sha256);
+    private sealed record CatalogInstaller(
+        string Architecture,
+        UpdateExecutionKind Kind,
+        Uri Uri,
+        string Sha256,
+        IReadOnlyList<string> Arguments);
 }

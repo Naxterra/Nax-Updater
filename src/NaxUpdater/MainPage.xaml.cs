@@ -468,7 +468,9 @@ public sealed partial class MainPage : Page
                 installer = await new UpdatePackageDownloader(_httpClient, new NativeAuthenticodeVerifier())
                     .DownloadAndVerifyAsync(row.Source, cacheRoot, progress);
                 UpdateProgress.IsIndeterminate = true;
-                StatusText.Text = LocalizationService.Format("VerifiedInstallerStarting", Path.GetFileName(installer.Path), installer.Signer);
+                StatusText.Text = plan.RequireAuthenticode
+                    ? LocalizationService.Format("VerifiedInstallerStarting", Path.GetFileName(installer.Path), installer.Signer)
+                    : LocalizationService.Format("HashVerifiedInstallerStarting", Path.GetFileName(installer.Path));
             }
 
             var result = await _updateExecutionService.ExecuteAsync(row.Source, installer);
