@@ -53,8 +53,13 @@
   <data name="DriverStatusAvailable"><value>Update verfügbar</value></data>
   <data name="DriverStatusCurrent"><value>Aktuell</value></data>
   <data name="DriverStatusManufacturer"><value>Vom Hersteller verwaltet</value></data>
+  <data name="DriverStatusNoUpdateRequired"><value>Kein Herstellerupdate erforderlich</value></data>
+  <data name="DriverStatusNoCatalog"><value>Kein verifizierter Katalog</value></data>
   <data name="DriverStatusError"><value>Prüfung fehlgeschlagen</value></data>
   <data name="OpenManufacturer"><value>Hersteller öffnen</value></data>
+  <data name="OpenExactSource"><value>Exakte Quelle öffnen</value></data>
+  <data name="DriverDeviceCount"><value>{0} Geräte</value></data>
+  <data name="DriverNotConnected"><value>Derzeit nicht verbunden</value></data>
   <data name="DriverCountFormat"><value>{0} verfügbar · {1} inventarisiert</value></data>
   <data name="FilteredDriverCountFormat"><value>{0} verfügbar · {1} angezeigt / {2} inventarisiert</value></data>
   <data name="CheckingManufacturerDrivers"><value>Offizielle Treiberquellen der Hersteller werden geprüft…</value></data>

@@ -14,6 +14,10 @@ Assert(VersionOrder.Compare("154.0.1", "154.0") > 0, "Numeric update ordering fa
 Assert(VersionOrder.Compare("155.0b5", "155.0") < 0, "Prerelease ordering failed.");
 Assert(ManufacturerDriverService.NormalizeNvidiaVersion("32.0.16.1088") == "610.88",
     "NVIDIA Windows driver version normalization failed.");
+Assert(ManufacturerDriverService.NormalizeTpLinkVersion("5102.24.126.4") == "24.126.4",
+    "TP-Link platform-prefix normalization failed.");
+Assert(ManufacturerDriverService.RealtekCatalogIsNewer("10.80.50.407", "2026-07-04", "10.80.50", "2026-08-28"),
+    "Realtek catalog date comparison failed for a refreshed same-branch package.");
 
 var manufacturerHash = new string('e', 64);
 using (var manufacturerClient = new HttpClient(new StubHttpMessageHandler(request =>
@@ -756,6 +760,38 @@ if (liveNvidiaDriver is not null)
            liveNvidiaDriver.ExecutableUpdate?.ExecutionPlan is { Sha256.Length: 64, ExpectedSigner: "NVIDIA Corporation" },
         "The live NVIDIA update lacks a verified manufacturer execution plan.");
 }
+var liveRealtek = liveManufacturerDrivers.Results.FirstOrDefault(static result =>
+    result.Driver.HardwareId?.Contains("VEN_10EC&DEV_8125", StringComparison.OrdinalIgnoreCase) == true);
+Assert(liveRealtek is not null &&
+       liveRealtek.SourceName.Contains("Realtek", StringComparison.OrdinalIgnoreCase) &&
+       liveRealtek.SourceUri?.Host.Equals("www.realtek.com", StringComparison.OrdinalIgnoreCase) == true,
+    "The RTL8125 Ethernet driver was not checked against Realtek's exact official catalog.");
+var liveTpLink = liveManufacturerDrivers.Results.FirstOrDefault(static result =>
+    result.Driver.HardwareId?.Contains("VID_3625&PID_010A", StringComparison.OrdinalIgnoreCase) == true);
+Assert(liveTpLink is not null &&
+       liveTpLink.SourceName.Contains("TBE400UH", StringComparison.OrdinalIgnoreCase) &&
+       liveTpLink.SourceUri?.AbsoluteUri.Contains("archer-tbe400uh", StringComparison.OrdinalIgnoreCase) == true,
+    "The disconnected TP-Link Archer TBE400UH driver registration was not matched to its exact manufacturer page.");
+var liveIntelEthernet = liveManufacturerDrivers.Results.FirstOrDefault(static result =>
+    result.Driver.HardwareId?.Contains("VEN_8086&DEV_15BC", StringComparison.OrdinalIgnoreCase) == true);
+Assert(liveIntelEthernet is not null &&
+       liveIntelEthernet.Status is ManufacturerDriverStatus.Current or ManufacturerDriverStatus.Available &&
+       liveIntelEthernet.SourceName.Contains("I219", StringComparison.OrdinalIgnoreCase) &&
+       liveIntelEthernet.SourceUri?.Host.Contains("intel.com", StringComparison.OrdinalIgnoreCase) == true,
+    "The Intel I219-V driver was not checked against Intel's exact supported Ethernet release.");
+var liveDellMonitor = liveManufacturerDrivers.Results.FirstOrDefault(static result =>
+    result.Driver.HardwareId?.Contains("DELA1E4", StringComparison.OrdinalIgnoreCase) == true);
+Assert(liveDellMonitor is not null &&
+       liveDellMonitor.SourceUri?.Query.Contains("driverid=m46j9", StringComparison.OrdinalIgnoreCase) == true,
+    "The Dell AW3423DW monitor driver did not receive its exact Dell driver page.");
+var liveWdDrive = liveManufacturerDrivers.Results.FirstOrDefault(static result =>
+    result.SourceName.Equals("Western Digital", StringComparison.OrdinalIgnoreCase));
+Assert(liveWdDrive is not null && liveWdDrive.Status == ManufacturerDriverStatus.NoUpdateRequired &&
+       liveWdDrive.Driver.DeviceName.Contains("WD Elements", StringComparison.OrdinalIgnoreCase),
+    "The present WD Elements external drive was omitted or misclassified.");
+var razerRows = liveManufacturerDrivers.Results.Count(static result =>
+    result.Driver.Provider.Contains("Razer", StringComparison.OrdinalIgnoreCase));
+Assert(razerRows <= 8, $"Razer interface drivers were not collapsed into physical-device packages: {razerRows} rows.");
 
 using var capabilityClient = new HttpClient();
 var installedMetadataCoverage = snapshot.Applications.Count(new ElectronBuilderUpdateProvider(capabilityClient).CanHandle);

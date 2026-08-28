@@ -272,7 +272,7 @@ public sealed partial class MainPage : Page
         {
             _drivers.Add(row);
         }
-        var available = _allDrivers.Count(static row => row.CanUpdate);
+        var available = _allDrivers.Count(static row => row.Source.Status == ManufacturerDriverStatus.Available);
         DriverCountText.Text = string.IsNullOrWhiteSpace(filter)
             ? LocalizationService.Format("DriverCountFormat", available, _allDrivers.Count)
             : LocalizationService.Format("FilteredDriverCountFormat", available, _drivers.Count, _allDrivers.Count);
