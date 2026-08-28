@@ -5,6 +5,8 @@ public enum ManufacturerDriverStatus
     Current,
     Available,
     ManufacturerManaged,
+    NoUpdateRequired,
+    NoVerifiedCatalog,
     Error
 }
 
@@ -17,7 +19,9 @@ public sealed record InstalledHardwareDriver(
     string InstalledVersion,
     string? DriverDate,
     string? HardwareId,
-    string? InfName);
+    string? InfName,
+    bool IsPresent = true,
+    int DeviceCount = 1);
 
 public sealed record ManufacturerDriverResult(
     InstalledHardwareDriver Driver,

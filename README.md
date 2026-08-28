@@ -30,7 +30,7 @@ The inventory engine:
 
 ## Update providers
 
-Version 0.14.0 includes:
+Version 0.15.0 includes:
 
 - Mozilla Firefox releases from Mozilla's official product-details and release archive, preserving the effective Firefox profile language, architecture, channel, scope, and installation directory;
 - Nextcloud releases from the official `nextcloud-releases/desktop` GitHub repository using its release-asset SHA-256 digest and a multi-language MSI;
@@ -66,12 +66,17 @@ Version 0.14.0 includes:
 
 ## Manufacturer drivers
 
-The native **Drivers / Treiber** view does not use Windows Update. It inventories installed non-Microsoft signed-driver registrations and routes them through manufacturer-owned sources.
+The native **Drivers / Treiber** view does not use Windows Update. It correlates present PnP hardware with signed-driver data and retained installed INF registrations, then groups interface records into physical-device or driver-package rows.
 
 - NVIDIA GeForce RTX 50-series desktop drivers are checked directly against NVIDIA's official WHQL Game Ready catalog.
 - A newer NVIDIA driver receives an install button only after NaxUpdater obtains NVIDIA's official installer URL and published SHA-256 sidecar; the downloaded package must also carry the `NVIDIA Corporation` Authenticode publisher.
 - The manufacturer installer remains visible so component choices stay under user control. NaxUpdater handles download verification, elevation, exit codes, restart reporting, and the post-install rescan.
-- Intel, MSI/Realtek, Razer, Dell, and Alienware devices are inventoried and linked to their official manufacturer update channels. They do not receive a direct install button until the vendor exposes a catalog with equivalent identity and verification guarantees.
+- Realtek RTL8125 Ethernet is checked against Realtek's live PCIe controller catalog and routed to the exact Realtek licensed download, never to the motherboard page.
+- Intel I219-V is checked against Intel's current Ethernet release metadata only after Intel explicitly confirms I219-family and Windows 11 support.
+- TP-Link hardware ID `USB\VID_3625&PID_010A` is retained when disconnected, mapped to Archer TBE400UH, and compared with its exact TP-Link hardware-version page.
+- Dell hardware ID `MONITOR\DELA1E4` maps to the exact AW3423DW `M46J9` monitor-driver page rather than generic Dell support.
+- Present WD Elements hardware is shown even though it uses Microsoft's inbox USB-storage driver; Western Digital's official policy is reported instead of inventing a missing driver update.
+- Razer's repeated HID/interface records are collapsed by physical product ID. Intel chipset packages are collapsed by installed INF. Rows without a verified exact catalog have no action button.
 - BIOS, UEFI, device firmware, beta drivers, and Windows Update driver packages are excluded.
 
 Catalogs provide candidates, never installed state. NaxUpdater still decides the installed version, location, architecture, channel, and scope from its independent inventory. A package-manager match is accepted only through a stable identifier such as an exact MSI product code; name-only search results are not installable.
@@ -123,7 +128,7 @@ From this directory:
 dotnet build NaxUpdater.slnx
 dotnet run --project tests/NaxUpdater.Core.SmokeTests/NaxUpdater.Core.SmokeTests.csproj
 dotnet publish src/NaxUpdater/NaxUpdater.csproj -c Release -r win-x64 --self-contained true -o artifacts/NaxUpdater-win-x64
-./scripts/package-release.ps1 -Version 0.14.0
+./scripts/package-release.ps1 -Version 0.15.0
 ```
 
 The desktop project uses .NET 11, WinUI 3, and the Windows App SDK. It is not an Electron or WebView application.

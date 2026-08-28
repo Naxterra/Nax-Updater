@@ -53,8 +53,13 @@
   <data name="DriverStatusAvailable"><value>Update available</value></data>
   <data name="DriverStatusCurrent"><value>Current</value></data>
   <data name="DriverStatusManufacturer"><value>Manufacturer-managed</value></data>
+  <data name="DriverStatusNoUpdateRequired"><value>No vendor update required</value></data>
+  <data name="DriverStatusNoCatalog"><value>No verified catalog</value></data>
   <data name="DriverStatusError"><value>Check failed</value></data>
   <data name="OpenManufacturer"><value>Open manufacturer</value></data>
+  <data name="OpenExactSource"><value>Open exact source</value></data>
+  <data name="DriverDeviceCount"><value>{0} devices</value></data>
+  <data name="DriverNotConnected"><value>Not currently connected</value></data>
   <data name="DriverCountFormat"><value>{0} available · {1} inventoried</value></data>
   <data name="FilteredDriverCountFormat"><value>{0} available · {1} shown / {2} inventoried</value></data>
   <data name="CheckingManufacturerDrivers"><value>Checking official manufacturer driver sources…</value></data>

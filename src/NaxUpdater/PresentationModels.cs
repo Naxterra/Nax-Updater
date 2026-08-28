@@ -204,7 +204,13 @@ public sealed class ManufacturerDriverRow(ManufacturerDriverResult source)
 {
     public ManufacturerDriverResult Source { get; } = source;
     public string Name => Source.Driver.DeviceName;
-    public string Detail => $"{Source.Driver.DeviceClass} · {Source.Driver.Provider}";
+    public string Detail => string.Join(" · ", new[]
+    {
+        Source.Driver.DeviceClass,
+        Source.Driver.Provider,
+        Source.Driver.DeviceCount > 1 ? LocalizationService.Format("DriverDeviceCount", Source.Driver.DeviceCount) : null,
+        !Source.Driver.IsPresent ? LocalizationService.Get("DriverNotConnected") : null
+    }.Where(static value => !string.IsNullOrWhiteSpace(value)));
     public string Installed => Source.Driver.InstalledVersion;
     public string Available => Source.AvailableVersion ?? "—";
     public string Provider => Source.SourceName;
@@ -213,27 +219,34 @@ public sealed class ManufacturerDriverRow(ManufacturerDriverResult source)
         ManufacturerDriverStatus.Available => LocalizationService.Get("DriverStatusAvailable"),
         ManufacturerDriverStatus.Current => LocalizationService.Get("DriverStatusCurrent"),
         ManufacturerDriverStatus.ManufacturerManaged => LocalizationService.Get("DriverStatusManufacturer"),
+        ManufacturerDriverStatus.NoUpdateRequired => LocalizationService.Get("DriverStatusNoUpdateRequired"),
+        ManufacturerDriverStatus.NoVerifiedCatalog => LocalizationService.Get("DriverStatusNoCatalog"),
         _ => LocalizationService.Get("DriverStatusError")
     };
     public bool CanUpdate => Source.ExecutableUpdate?.IsInstallable == true;
-    public bool CanOpenSource => Source.SourceUri is not null;
+    public bool CanOpenSource => Source.SourceUri is not null &&
+        Source.Status is ManufacturerDriverStatus.Available or ManufacturerDriverStatus.Current or ManufacturerDriverStatus.NoUpdateRequired;
     public bool HasAction => CanUpdate || CanOpenSource;
     public Visibility ActionVisibility => HasAction ? Visibility.Visible : Visibility.Collapsed;
     public string ActionText => CanUpdate
         ? LocalizationService.Get("UpdateShort")
-        : LocalizationService.Get("OpenManufacturer");
+        : LocalizationService.Get("OpenExactSource");
     public Brush StatusForeground => PresentationBrushes.Get(Source.Status switch
     {
         ManufacturerDriverStatus.Available => "NaxOrangeBrush",
         ManufacturerDriverStatus.Current => "NaxGreenBrush",
+        ManufacturerDriverStatus.NoUpdateRequired => "NaxGreenBrush",
         ManufacturerDriverStatus.ManufacturerManaged => "NaxBlueBrush",
+        ManufacturerDriverStatus.NoVerifiedCatalog => "NaxPurpleBrush",
         _ => "NaxPinkBrush"
     });
     public Brush StatusBackground => PresentationBrushes.Get(Source.Status switch
     {
         ManufacturerDriverStatus.Available => "NaxOrangeCardBrush",
         ManufacturerDriverStatus.Current => "NaxGreenCardBrush",
+        ManufacturerDriverStatus.NoUpdateRequired => "NaxGreenCardBrush",
         ManufacturerDriverStatus.ManufacturerManaged => "NaxBlueCardBrush",
+        ManufacturerDriverStatus.NoVerifiedCatalog => "NaxPurpleCardBrush",
         _ => "NaxPinkCardBrush"
     });
 }
