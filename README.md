@@ -30,7 +30,7 @@ The inventory engine:
 
 ## Update providers
 
-Version 0.15.0 includes:
+Version 0.15.1 includes:
 
 - Mozilla Firefox releases from Mozilla's official product-details and release archive, preserving the effective Firefox profile language, architecture, channel, scope, and installation directory;
 - Nextcloud releases from the official `nextcloud-releases/desktop` GitHub repository using its release-asset SHA-256 digest and a multi-language MSI;
@@ -74,10 +74,13 @@ The native **Drivers / Treiber** view does not use Windows Update. It correlates
 - Realtek RTL8125 Ethernet is checked against Realtek's live PCIe controller catalog and routed to the exact Realtek licensed download, never to the motherboard page.
 - Intel I219-V is checked against Intel's current Ethernet release metadata only after Intel explicitly confirms I219-family and Windows 11 support.
 - TP-Link hardware ID `USB\VID_3625&PID_010A` is retained when disconnected, mapped to Archer TBE400UH, and compared with its exact TP-Link hardware-version page.
+- TP-Link's public `5002` package version is projected to the installed Windows 11 `5102` INF branch before comparison, avoiding a false downgrade display.
 - Dell hardware ID `MONITOR\DELA1E4` maps to the exact AW3423DW `M46J9` monitor-driver page rather than generic Dell support.
+- Dell's `A00-00` package label is kept separate from its installed `1.1.0.0` INF version.
 - Present WD Elements hardware is shown even though it uses Microsoft's inbox USB-storage driver; Western Digital's official policy is reported instead of inventing a missing driver update.
 - Razer's repeated HID/interface records are collapsed by physical product ID. Intel chipset packages are collapsed by installed INF. Rows without a verified exact catalog have no action button.
 - BIOS, UEFI, device firmware, beta drivers, and Windows Update driver packages are excluded.
+- Large segmented downloads are resumable. Completed segments survive interruption, merge progress is displayed separately from download progress, and a freshly downloaded file is not hashed twice before signature verification.
 
 Catalogs provide candidates, never installed state. NaxUpdater still decides the installed version, location, architecture, channel, and scope from its independent inventory. A package-manager match is accepted only through a stable identifier such as an exact MSI product code; name-only search results are not installable.
 
@@ -128,7 +131,7 @@ From this directory:
 dotnet build NaxUpdater.slnx
 dotnet run --project tests/NaxUpdater.Core.SmokeTests/NaxUpdater.Core.SmokeTests.csproj
 dotnet publish src/NaxUpdater/NaxUpdater.csproj -c Release -r win-x64 --self-contained true -o artifacts/NaxUpdater-win-x64
-./scripts/package-release.ps1 -Version 0.15.0
+./scripts/package-release.ps1 -Version 0.15.1
 ```
 
 The desktop project uses .NET 11, WinUI 3, and the Windows App SDK. It is not an Electron or WebView application.

@@ -222,17 +222,18 @@ public sealed partial class ManufacturerDriverService(HttpClient httpClient)
             var available = versions[0];
             var current = NormalizeTpLinkVersion(driver.InstalledVersion);
             var newer = VersionOrder.Compare(NormalizeTpLinkVersion(available), current) > 0;
+            var comparableAvailable = ProjectTpLinkVersion(available, driver.InstalledVersion);
             return newer
                 ? new ManufacturerDriverResult(
                     driver,
                     ManufacturerDriverStatus.Available,
-                    available,
+                    comparableAvailable,
                     "TP-Link Archer TBE400UH",
                     TpLinkTbe400Uh,
                     "The exact TP-Link hardware-ID catalog page reports a newer stable Windows driver.",
                     null)
-                : Current(driver, available, "TP-Link Archer TBE400UH", TpLinkTbe400Uh,
-                    "The exact TP-Link hardware-ID catalog page reports the installed driver family as current.");
+                : Current(driver, comparableAvailable, "TP-Link Archer TBE400UH", TpLinkTbe400Uh,
+                    $"The exact TP-Link hardware-ID catalog page publishes package branch {available}; its Windows 11 branch corresponds to installed {driver.InstalledVersion}.");
         }
         catch (Exception exception)
         {
@@ -279,8 +280,8 @@ public sealed partial class ManufacturerDriverService(HttpClient httpClient)
     {
         if (driver.DeviceClass.Equals("Monitor", StringComparison.OrdinalIgnoreCase))
         {
-            return Current(driver, "A00-00", "Dell AW3423DW", DellAw3423DwDriver,
-                "Dell's exact AW3423DW monitor-driver package is the installed A00 generation. Monitor firmware is a separate, deliberately excluded workflow.");
+            return Current(driver, driver.InstalledVersion, "Dell AW3423DW (M46J9)", DellAw3423DwDriver,
+                "Dell's exact M46J9 AW3423DW monitor INF is the installed 1.1.0.0 generation. Dell's A00-00 label is the package release label, not the INF driver version. Monitor firmware is a separate workflow.");
         }
         return new ManufacturerDriverResult(
             driver,
@@ -470,11 +471,7 @@ public sealed partial class ManufacturerDriverService(HttpClient httpClient)
             var distinctNames = items.Select(static item => item.DeviceName)
                 .Distinct(StringComparer.CurrentCultureIgnoreCase)
                 .ToArray();
-            var name = group.Key.Equals("western-digital:elements", StringComparison.OrdinalIgnoreCase)
-                ? "WD Elements 25A3"
-                : distinctNames.Length > 1
-                ? $"{representative.Provider} — {representative.InfName ?? representative.DeviceClass} ({distinctNames.Length} devices)"
-                : representative.DeviceName;
+            var name = FriendlyPackageName(group.Key, representative, distinctNames);
             var hardwareId = items.Select(static item => item.HardwareId)
                 .FirstOrDefault(static value => !string.IsNullOrWhiteSpace(value));
             results.Add(representative with
@@ -487,6 +484,44 @@ public sealed partial class ManufacturerDriverService(HttpClient httpClient)
             });
         }
         return results;
+    }
+
+    private static string FriendlyPackageName(
+        string key,
+        InstalledHardwareDriver representative,
+        IReadOnlyList<string> distinctNames)
+    {
+        if (key.Equals("western-digital:elements", StringComparison.OrdinalIgnoreCase)) return "WD Elements 25A3";
+        if (key.StartsWith("razer:", StringComparison.OrdinalIgnoreCase))
+        {
+            return key[6..].ToUpperInvariant() switch
+            {
+                "0067" => "Razer Naga Trinity",
+                "026C" => "Razer Huntsman V2",
+                "02CF" => "Razer Huntsman V3 Pro 8KHz",
+                "0518" => "Razer Nommo Pro",
+                "0C04" => "Razer Firefly V2",
+                "0E05" => "Razer Kiyo Pro",
+                var product => $"Razer device {product}"
+            };
+        }
+        if (representative.InfName?.Equals("iastorav.inf", StringComparison.OrdinalIgnoreCase) == true)
+        {
+            return "Intel Rapid Storage Technology";
+        }
+        if (representative.Provider.Contains("Intel", StringComparison.OrdinalIgnoreCase) &&
+            representative.DeviceClass.Equals("System", StringComparison.OrdinalIgnoreCase) &&
+            distinctNames.Count > 1)
+        {
+            return "Intel Z490 Chipset Device Software";
+        }
+        if (distinctNames.All(static name => name.Contains("VMware", StringComparison.OrdinalIgnoreCase)))
+        {
+            return "VMware virtual network driver";
+        }
+        return distinctNames.Count > 1
+            ? $"{representative.Provider} driver package ({distinctNames.Count} devices)"
+            : representative.DeviceName;
     }
 
     private static string DriverPackageKey(InstalledHardwareDriver driver)
@@ -573,6 +608,20 @@ public sealed partial class ManufacturerDriverService(HttpClient httpClient)
     {
         var parts = version.Split('.', StringSplitOptions.RemoveEmptyEntries);
         return parts.Length >= 4 ? string.Join('.', parts.Skip(1)) : version;
+    }
+
+    internal static string ProjectTpLinkVersion(string catalogVersion, string installedVersion)
+    {
+        var catalogParts = catalogVersion.Split('.', StringSplitOptions.RemoveEmptyEntries);
+        var installedParts = installedVersion.Split('.', StringSplitOptions.RemoveEmptyEntries);
+        if (catalogParts.Length >= 4 && installedParts.Length >= 4 &&
+            catalogParts[0].StartsWith("50", StringComparison.Ordinal) &&
+            installedParts[0].StartsWith("51", StringComparison.Ordinal))
+        {
+            catalogParts[0] = installedParts[0];
+            return string.Join('.', catalogParts);
+        }
+        return catalogVersion;
     }
 
     internal static bool RealtekCatalogIsNewer(string installedVersion, string? installedDate, string catalogVersion, string? catalogDate)
