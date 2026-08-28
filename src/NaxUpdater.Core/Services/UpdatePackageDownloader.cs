@@ -99,7 +99,8 @@ public sealed class UpdatePackageDownloader(
             }
             File.Move(partialPath, destinationPath, overwrite: true);
 
-            var verified = await VerifyFileAsync(destinationPath, plan, cancellationToken);
+            progress?.Report(0.97);
+            var verified = VerifySignature(destinationPath, plan);
             if (!verified.IsValid)
             {
                 File.Delete(destinationPath);
@@ -170,10 +171,31 @@ public sealed class UpdatePackageDownloader(
             .Select(index => $"{partialPath}.segment{index}")
             .ToArray();
         long receivedTotal = 0;
+        var mergeCompleted = false;
         try
         {
             var segmentSize = (contentLength + segmentCount - 1) / segmentCount;
-            var downloads = Enumerable.Range(0, segmentCount).Select(async index =>
+            var pendingSegments = new List<int>();
+            for (var index = 0; index < segmentCount; index++)
+            {
+                var start = index * segmentSize;
+                var end = Math.Min(contentLength - 1, start + segmentSize - 1);
+                var expectedLength = end - start + 1;
+                if (File.Exists(segmentPaths[index]) && new FileInfo(segmentPaths[index]).Length == expectedLength)
+                {
+                    receivedTotal += expectedLength;
+                }
+                else
+                {
+                    if (File.Exists(segmentPaths[index]))
+                    {
+                        File.Delete(segmentPaths[index]);
+                    }
+                    pendingSegments.Add(index);
+                }
+            }
+            progress?.Report(0.85 * Math.Clamp((double)receivedTotal / contentLength, 0, 1));
+            var downloads = pendingSegments.Select(async index =>
             {
                 var start = index * segmentSize;
                 var end = Math.Min(contentLength - 1, start + segmentSize - 1);
@@ -210,7 +232,7 @@ public sealed class UpdatePackageDownloader(
                     }
                     await output.WriteAsync(buffer.AsMemory(0, read), cancellationToken);
                     var received = Interlocked.Add(ref receivedTotal, read);
-                    progress?.Report(Math.Clamp((double)received / contentLength, 0, 1));
+                    progress?.Report(0.85 * Math.Clamp((double)received / contentLength, 0, 1));
                 }
                 await output.FlushAsync(cancellationToken);
                 if (output.Length != end - start + 1)
@@ -223,12 +245,13 @@ public sealed class UpdatePackageDownloader(
             using var hash = IncrementalHash.CreateHash(hashPolicy.Algorithm);
             await using var combined = new FileStream(
                 partialPath,
-                FileMode.CreateNew,
+                FileMode.Create,
                 FileAccess.Write,
                 FileShare.None,
                 1024 * 128,
                 FileOptions.Asynchronous | FileOptions.SequentialScan);
             var mergeBuffer = new byte[1024 * 128];
+            long mergedTotal = 0;
             foreach (var segmentPath in segmentPaths)
             {
                 await using var segment = File.OpenRead(segmentPath);
@@ -241,6 +264,8 @@ public sealed class UpdatePackageDownloader(
                     }
                     await combined.WriteAsync(mergeBuffer.AsMemory(0, read), cancellationToken);
                     hash.AppendData(mergeBuffer, 0, read);
+                    mergedTotal += read;
+                    progress?.Report(0.85 + (0.10 * Math.Clamp((double)mergedTotal / contentLength, 0, 1)));
                 }
             }
             await combined.FlushAsync(cancellationToken);
@@ -248,15 +273,19 @@ public sealed class UpdatePackageDownloader(
             {
                 throw new InvalidDataException($"Combined download length was {combined.Length}; expected {contentLength}.");
             }
+            mergeCompleted = true;
             return Convert.ToHexString(hash.GetHashAndReset());
         }
         finally
         {
-            foreach (var segmentPath in segmentPaths)
+            if (mergeCompleted)
             {
-                if (File.Exists(segmentPath))
+                foreach (var segmentPath in segmentPaths)
                 {
-                    File.Delete(segmentPath);
+                    if (File.Exists(segmentPath))
+                    {
+                        File.Delete(segmentPath);
+                    }
                 }
             }
         }
@@ -277,6 +306,11 @@ public sealed class UpdatePackageDownloader(
         {
             return new FileVerification(false, null, $"The cached installer {hashPolicy.DisplayName} does not match the release.");
         }
+        return VerifySignature(path, plan);
+    }
+
+    private FileVerification VerifySignature(string path, UpdateExecutionPlan plan)
+    {
         if (!plan.RequireAuthenticode)
         {
             return new FileVerification(true, "Unsigned installer; release hash verified", null);

@@ -51,6 +51,7 @@
   <data name="DriverDeviceHeader.Text"><value>Device</value></data>
   <data name="DriverSourceHeader.Text"><value>Manufacturer source</value></data>
   <data name="DriverStatusAvailable"><value>Update available</value></data>
+  <data name="DriverStatusManufacturerPackage"><value>New manufacturer package</value></data>
   <data name="DriverStatusCurrent"><value>Current</value></data>
   <data name="DriverStatusManufacturer"><value>Manufacturer-managed</value></data>
   <data name="DriverStatusNoUpdateRequired"><value>No vendor update required</value></data>
@@ -58,13 +59,14 @@
   <data name="DriverStatusError"><value>Check failed</value></data>
   <data name="OpenManufacturer"><value>Open manufacturer</value></data>
   <data name="OpenExactSource"><value>Open exact source</value></data>
+  <data name="OpenExactDownload"><value>Open exact download</value></data>
   <data name="DriverDeviceCount"><value>{0} devices</value></data>
   <data name="DriverNotConnected"><value>Not currently connected</value></data>
-  <data name="DriverCountFormat"><value>{0} available · {1} inventoried</value></data>
-  <data name="FilteredDriverCountFormat"><value>{0} available · {1} shown / {2} inventoried</value></data>
+  <data name="DriverCountFormat"><value>{0} direct · {1} manufacturer downloads · {2} inventoried</value></data>
+  <data name="FilteredDriverCountFormat"><value>{0} direct · {1} manufacturer downloads · {2} shown / {3} inventoried</value></data>
   <data name="CheckingManufacturerDrivers"><value>Checking official manufacturer driver sources…</value></data>
   <data name="DriversCurrent"><value>Manufacturer drivers are current</value></data>
-  <data name="DriverUpdatesAvailable"><value>{0} manufacturer driver update(s) available</value></data>
+  <data name="DriverUpdatesAvailable"><value>{0} direct driver update(s) · {1} newer manufacturer package(s)</value></data>
   <data name="ManufacturerDriverSafety"><value>Windows Update is not used. Direct updates require the manufacturer's HTTPS source, published release hash, and trusted Authenticode publisher.</value></data>
   <data name="DriverScanIssues"><value>{0} driver inventory source(s) reported a problem.</value></data>
   <data name="DriverCheckFailed"><value>Manufacturer driver check failed</value></data>

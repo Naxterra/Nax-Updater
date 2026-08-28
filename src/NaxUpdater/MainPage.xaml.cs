@@ -272,10 +272,12 @@ public sealed partial class MainPage : Page
         {
             _drivers.Add(row);
         }
-        var available = _allDrivers.Count(static row => row.Source.Status == ManufacturerDriverStatus.Available);
+        var direct = _allDrivers.Count(static row => row.CanUpdate);
+        var manufacturerDownloads = _allDrivers.Count(static row =>
+            row.Source.Status == ManufacturerDriverStatus.Available && !row.CanUpdate);
         DriverCountText.Text = string.IsNullOrWhiteSpace(filter)
-            ? LocalizationService.Format("DriverCountFormat", available, _allDrivers.Count)
-            : LocalizationService.Format("FilteredDriverCountFormat", available, _drivers.Count, _allDrivers.Count);
+            ? LocalizationService.Format("DriverCountFormat", direct, manufacturerDownloads, _allDrivers.Count)
+            : LocalizationService.Format("FilteredDriverCountFormat", direct, manufacturerDownloads, _drivers.Count, _allDrivers.Count);
         var restored = selectedIdentity is null
             ? null
             : _drivers.FirstOrDefault(row => row.Source.Driver.Identity == selectedIdentity);
@@ -522,10 +524,13 @@ public sealed partial class MainPage : Page
             var snapshot = await _manufacturerDriverService.CheckAsync();
             _allDrivers = snapshot.Results.Select(static result => new ManufacturerDriverRow(result)).ToArray();
             ApplyDriverFilter();
-            var available = snapshot.Results.Count(static result => result.Status == ManufacturerDriverStatus.Available);
+            var direct = snapshot.Results.Count(static result => result.ExecutableUpdate?.IsInstallable == true);
+            var manufacturerDownloads = snapshot.Results.Count(static result =>
+                result.Status == ManufacturerDriverStatus.Available && result.ExecutableUpdate is null);
+            var available = direct + manufacturerDownloads;
             UpdateBar.Title = available == 0
                 ? LocalizationService.Get("DriversCurrent")
-                : LocalizationService.Format("DriverUpdatesAvailable", available);
+                : LocalizationService.Format("DriverUpdatesAvailable", direct, manufacturerDownloads);
             UpdateBar.Message = snapshot.Issues.Count == 0
                 ? LocalizationService.Get("ManufacturerDriverSafety")
                 : LocalizationService.Format("DriverScanIssues", snapshot.Issues.Count);

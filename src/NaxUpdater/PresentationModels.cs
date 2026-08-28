@@ -216,7 +216,8 @@ public sealed class ManufacturerDriverRow(ManufacturerDriverResult source)
     public string Provider => Source.SourceName;
     public string Status => Source.Status switch
     {
-        ManufacturerDriverStatus.Available => LocalizationService.Get("DriverStatusAvailable"),
+        ManufacturerDriverStatus.Available when CanUpdate => LocalizationService.Get("DriverStatusAvailable"),
+        ManufacturerDriverStatus.Available => LocalizationService.Get("DriverStatusManufacturerPackage"),
         ManufacturerDriverStatus.Current => LocalizationService.Get("DriverStatusCurrent"),
         ManufacturerDriverStatus.ManufacturerManaged => LocalizationService.Get("DriverStatusManufacturer"),
         ManufacturerDriverStatus.NoUpdateRequired => LocalizationService.Get("DriverStatusNoUpdateRequired"),
@@ -230,7 +231,9 @@ public sealed class ManufacturerDriverRow(ManufacturerDriverResult source)
     public Visibility ActionVisibility => HasAction ? Visibility.Visible : Visibility.Collapsed;
     public string ActionText => CanUpdate
         ? LocalizationService.Get("UpdateShort")
-        : LocalizationService.Get("OpenExactSource");
+        : Source.Status == ManufacturerDriverStatus.Available
+            ? LocalizationService.Get("OpenExactDownload")
+            : LocalizationService.Get("OpenExactSource");
     public Brush StatusForeground => PresentationBrushes.Get(Source.Status switch
     {
         ManufacturerDriverStatus.Available => "NaxOrangeBrush",

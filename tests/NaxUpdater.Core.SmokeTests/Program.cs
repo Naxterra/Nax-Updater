@@ -18,6 +18,8 @@ Assert(ManufacturerDriverService.NormalizeNvidiaVersion("32.0.16.1088") == "610.
     "NVIDIA Windows driver version normalization failed.");
 Assert(ManufacturerDriverService.NormalizeTpLinkVersion("5102.24.126.4") == "24.126.4",
     "TP-Link platform-prefix normalization failed.");
+Assert(ManufacturerDriverService.ProjectTpLinkVersion("5002.24.126.4", "5102.24.126.4") == "5102.24.126.4",
+    "TP-Link Windows 11 branch projection failed.");
 Assert(ManufacturerDriverService.RealtekCatalogIsNewer("10.80.50.407", "2026-07-04", "10.80.50", "2026-08-28"),
     "Realtek catalog date comparison failed for a refreshed same-branch package.");
 
@@ -483,6 +485,39 @@ try
         .DownloadAndVerifyAsync(downloadUpdate, Path.Combine(firefoxFixture, "segmented-cache"));
     Assert(File.ReadAllBytes(segmentedInstaller.Path).SequenceEqual(installerPayload),
         "Parallel ranged download did not reconstruct the verified installer exactly.");
+    var resumeUpdate = downloadUpdate with { ProviderId = "resume-test" };
+    var resumeCache = Path.Combine(firefoxFixture, "resume-cache");
+    var resumeDirectory = Directory.CreateDirectory(Path.Combine(resumeCache, "resume-test", resumeUpdate.AvailableVersion!));
+    var resumePartial = Path.Combine(resumeDirectory.FullName, downloadPlan.FileName + ".partial");
+    await File.WriteAllBytesAsync(resumePartial, []);
+    var resumeSegmentSize = (installerPayload.Length + 5) / 6;
+    for (var index = 0; index < 6; index++)
+    {
+        var start = index * resumeSegmentSize;
+        var end = Math.Min(installerPayload.Length, start + resumeSegmentSize);
+        await File.WriteAllBytesAsync($"{resumePartial}.segment{index}", installerPayload[start..end]);
+    }
+    var resumedRangeRequests = 0;
+    using var resumeClient = new HttpClient(new StubHttpMessageHandler(request =>
+    {
+        if (request.Headers.Range is not null)
+        {
+            Interlocked.Increment(ref resumedRangeRequests);
+        }
+        var initialResponse = new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new ByteArrayContent(installerPayload)
+        };
+        initialResponse.Headers.AcceptRanges.Add("bytes");
+        return initialResponse;
+    }));
+    var resumedInstaller = await new UpdatePackageDownloader(
+            resumeClient,
+            new StubAuthenticodeVerifier("Fixture Signer"),
+            segmentedDownloadThresholdBytes: 1)
+        .DownloadAndVerifyAsync(resumeUpdate, resumeCache);
+    Assert(resumedRangeRequests == 0 && File.ReadAllBytes(resumedInstaller.Path).SequenceEqual(installerPayload),
+        "A complete interrupted segmented download was not resumed during merge.");
 
     var installedFirefox = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "Mozilla Firefox", "firefox.exe");
     if (File.Exists(installedFirefox))
