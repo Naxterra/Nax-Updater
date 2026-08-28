@@ -12,6 +12,52 @@ Assert(VersionNormalizer.Normalize("34.0.3.20260826", "FirstThreeNumericComponen
 Assert(VersionNormalizer.Normalize("26.8.2.20990", null) == "26.8.2.20990", "Unconfigured versions must remain unchanged.");
 Assert(VersionOrder.Compare("154.0.1", "154.0") > 0, "Numeric update ordering failed.");
 Assert(VersionOrder.Compare("155.0b5", "155.0") < 0, "Prerelease ordering failed.");
+Assert(ManufacturerDriverService.NormalizeNvidiaVersion("32.0.16.1088") == "610.88",
+    "NVIDIA Windows driver version normalization failed.");
+
+var manufacturerHash = new string('e', 64);
+using (var manufacturerClient = new HttpClient(new StubHttpMessageHandler(request =>
+{
+    if (request.RequestUri?.AbsoluteUri.EndsWith(".sha256", StringComparison.OrdinalIgnoreCase) == true)
+    {
+        return new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent($"{manufacturerHash} 999.99-desktop-win10-win11-64bit-international-dch-whql.exe")
+        };
+    }
+    return new HttpResponseMessage(HttpStatusCode.OK)
+    {
+        Content = new StringContent("""
+            <tr id="driverList">
+              <td><a href='//www.nvidia.com/download/driverResults.aspx/123456/en-us'>GeForce Game Ready Driver</a></td>
+              <td class="gridItem">999.99</td>
+            </tr>
+            """, Encoding.UTF8, "text/html")
+    };
+})))
+{
+    var driverFixture = new InstalledHardwareDriver(
+        "driver-fixture",
+        "NVIDIA GeForce RTX 5080",
+        "Display",
+        "NVIDIA",
+        "NVIDIA",
+        "32.0.16.1088",
+        "20260722",
+        "pci\\ven_10de&dev_2c02",
+        "oem20.inf");
+    var driverUpdate = await new ManufacturerDriverService(manufacturerClient)
+        .CheckNvidiaAsync(driverFixture, CancellationToken.None);
+    Assert(driverUpdate.Status == ManufacturerDriverStatus.Available &&
+           driverUpdate.AvailableVersion == "999.99" &&
+           driverUpdate.ExecutableUpdate?.ExecutionPlan is
+           {
+               Sha256: var parsedManufacturerHash,
+               ExpectedSigner: "NVIDIA Corporation",
+               RequiresElevation: true
+           } && parsedManufacturerHash == manufacturerHash,
+        "Verified NVIDIA manufacturer-driver discovery failed.");
+}
 
 var englishResources = LoadResources(Path.Combine(AppContext.BaseDirectory, "Localization", "en-US.resw"));
 var germanResources = LoadResources(Path.Combine(AppContext.BaseDirectory, "Localization", "de-DE.resw"));
@@ -698,10 +744,23 @@ AssertIntegrationAttached(
     expectedMainVersionPrefix: "4.",
     expectedPackageFamily: "RazerDynamicLighting_qemfkr3nbbywc");
 
+using var liveManufacturerClient = new HttpClient { Timeout = TimeSpan.FromSeconds(30) };
+var liveManufacturerDrivers = await new ManufacturerDriverService(liveManufacturerClient).CheckAsync();
+var liveNvidiaDriver = liveManufacturerDrivers.Results.FirstOrDefault(static result =>
+    result.Driver.DeviceName.Contains("NVIDIA GeForce", StringComparison.OrdinalIgnoreCase));
+if (liveNvidiaDriver is not null)
+{
+    Assert(liveNvidiaDriver.Status is ManufacturerDriverStatus.Current or ManufacturerDriverStatus.Available,
+        $"The installed NVIDIA GPU was not checked against NVIDIA's manufacturer catalog: {liveNvidiaDriver.Message}");
+    Assert(liveNvidiaDriver.Status != ManufacturerDriverStatus.Available ||
+           liveNvidiaDriver.ExecutableUpdate?.ExecutionPlan is { Sha256.Length: 64, ExpectedSigner: "NVIDIA Corporation" },
+        "The live NVIDIA update lacks a verified manufacturer execution plan.");
+}
+
 using var capabilityClient = new HttpClient();
 var installedMetadataCoverage = snapshot.Applications.Count(new ElectronBuilderUpdateProvider(capabilityClient).CanHandle);
 var federatedCatalogCoverage = snapshot.Applications.Count(new FederatedCatalogUpdateProvider(capabilityClient).CanHandle);
-Console.WriteLine($"NaxUpdater core smoke tests passed. {snapshot.Applications.Count} applications, {installedMetadataCoverage} installed-metadata providers, {federatedCatalogCoverage} catalog identities, {liveStoreIdentities} live Store identities, {snapshot.UnmatchedPolicies.Count} unmatched guards, {snapshot.Issues.Count} scan issues.");
+Console.WriteLine($"NaxUpdater core smoke tests passed. {snapshot.Applications.Count} applications, {liveManufacturerDrivers.Results.Count} manufacturer drivers, {liveManufacturerDrivers.Results.Count(static result => result.Status == ManufacturerDriverStatus.Available)} driver updates, {installedMetadataCoverage} installed-metadata providers, {federatedCatalogCoverage} catalog identities, {liveStoreIdentities} live Store identities, {snapshot.UnmatchedPolicies.Count} unmatched guards, {snapshot.Issues.Count} scan issues.");
 return 0;
 
 static void AssertProtectedApplication(

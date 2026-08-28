@@ -5,6 +5,7 @@ using NaxUpdater.Core.Services;
 using NaxUpdater.Services;
 using System.Collections.ObjectModel;
 using System.Diagnostics;
+using Windows.System;
 
 namespace NaxUpdater;
 
@@ -12,12 +13,15 @@ public sealed partial class MainPage : Page
 {
     private readonly ObservableCollection<ApplicationRow> _visibleApplications = [];
     private readonly ObservableCollection<UpdateRow> _updates = [];
+    private readonly ObservableCollection<ManufacturerDriverRow> _drivers = [];
     private readonly ApplicationInventoryService _inventoryService;
     private readonly HttpClient _httpClient = new();
     private readonly UpdateExecutionService _updateExecutionService = new();
     private readonly ApplicationRemovalService _applicationRemovalService = new();
+    private readonly ManufacturerDriverService _manufacturerDriverService;
     private IReadOnlyList<ApplicationRow> _allApplications = [];
     private IReadOnlyList<UpdateRow> _allUpdates = [];
+    private IReadOnlyList<ManufacturerDriverRow> _allDrivers = [];
     private InventorySnapshot? _snapshot;
     private int _availableUpdateCount;
     private bool _loaded;
@@ -31,10 +35,12 @@ public sealed partial class MainPage : Page
         InitializeComponent();
         ApplicationsList.ItemsSource = _visibleApplications;
         UpdatesList.ItemsSource = _updates;
+        DriversList.ItemsSource = _drivers;
         _inventoryService = new ApplicationInventoryService(Path.Combine(
             AppContext.BaseDirectory,
             "Configuration",
             "application-policies.json"));
+        _manufacturerDriverService = new ManufacturerDriverService(_httpClient);
         MainInfo.IsOpen = App.ShowSafetyInformation;
         UpdateSortHeaders();
     }
@@ -57,6 +63,7 @@ public sealed partial class MainPage : Page
     {
         InventoryWorkspace.Visibility = Visibility.Visible;
         UpdatesWorkspace.Visibility = Visibility.Collapsed;
+        DriversWorkspace.Visibility = Visibility.Collapsed;
         FilterBox.IsEnabled = true;
         ShowSystemComponentsCheckBox.IsEnabled = true;
         _updates.Clear();
@@ -114,7 +121,11 @@ public sealed partial class MainPage : Page
 
     private void FilterBox_TextChanged(object sender, TextChangedEventArgs e)
     {
-        if (UpdatesWorkspace is { Visibility: Visibility.Visible })
+        if (DriversWorkspace is { Visibility: Visibility.Visible })
+        {
+            ApplyDriverFilter();
+        }
+        else if (UpdatesWorkspace is { Visibility: Visibility.Visible })
         {
             ApplyUpdateFilter();
         }
@@ -248,6 +259,37 @@ public sealed partial class MainPage : Page
         row.Language.Contains(filter, StringComparison.OrdinalIgnoreCase) ||
         row.Status.Contains(filter, StringComparison.OrdinalIgnoreCase) ||
         row.Message.Contains(filter, StringComparison.OrdinalIgnoreCase);
+
+    private void ApplyDriverFilter()
+    {
+        var selectedIdentity = (DriversList.SelectedItem as ManufacturerDriverRow)?.Source.Driver.Identity;
+        var filter = FilterBox.Text.Trim();
+        var filtered = string.IsNullOrWhiteSpace(filter)
+            ? _allDrivers
+            : _allDrivers.Where(row => MatchesDriverFilter(row, filter)).ToArray();
+        _drivers.Clear();
+        foreach (var row in filtered)
+        {
+            _drivers.Add(row);
+        }
+        var available = _allDrivers.Count(static row => row.CanUpdate);
+        DriverCountText.Text = string.IsNullOrWhiteSpace(filter)
+            ? LocalizationService.Format("DriverCountFormat", available, _allDrivers.Count)
+            : LocalizationService.Format("FilteredDriverCountFormat", available, _drivers.Count, _allDrivers.Count);
+        var restored = selectedIdentity is null
+            ? null
+            : _drivers.FirstOrDefault(row => row.Source.Driver.Identity == selectedIdentity);
+        DriversList.SelectedItem = restored ?? _drivers.FirstOrDefault();
+    }
+
+    private static bool MatchesDriverFilter(ManufacturerDriverRow row, string filter) =>
+        row.Name.Contains(filter, StringComparison.OrdinalIgnoreCase) ||
+        row.Detail.Contains(filter, StringComparison.OrdinalIgnoreCase) ||
+        row.Installed.Contains(filter, StringComparison.OrdinalIgnoreCase) ||
+        row.Available.Contains(filter, StringComparison.OrdinalIgnoreCase) ||
+        row.Provider.Contains(filter, StringComparison.OrdinalIgnoreCase) ||
+        row.Status.Contains(filter, StringComparison.OrdinalIgnoreCase) ||
+        row.Source.Message.Contains(filter, StringComparison.OrdinalIgnoreCase);
 
     private void ApplicationsList_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
@@ -439,6 +481,7 @@ public sealed partial class MainPage : Page
     {
         InventoryWorkspace.Visibility = Visibility.Visible;
         UpdatesWorkspace.Visibility = Visibility.Collapsed;
+        DriversWorkspace.Visibility = Visibility.Collapsed;
         FilterBox.IsEnabled = true;
         ShowSystemComponentsCheckBox.IsEnabled = true;
         ApplyFilter();
@@ -450,9 +493,124 @@ public sealed partial class MainPage : Page
     {
         InventoryWorkspace.Visibility = Visibility.Collapsed;
         UpdatesWorkspace.Visibility = Visibility.Visible;
+        DriversWorkspace.Visibility = Visibility.Collapsed;
         FilterBox.IsEnabled = true;
         ShowSystemComponentsCheckBox.IsEnabled = false;
         ApplyUpdateFilter();
+    }
+
+    private async void DriversButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (_updateBusy || _massUpdateBusy)
+        {
+            return;
+        }
+        InventoryWorkspace.Visibility = Visibility.Collapsed;
+        UpdatesWorkspace.Visibility = Visibility.Collapsed;
+        DriversWorkspace.Visibility = Visibility.Visible;
+        FilterBox.IsEnabled = true;
+        ShowSystemComponentsCheckBox.IsEnabled = false;
+        await CheckManufacturerDriversAsync();
+    }
+
+    private async Task CheckManufacturerDriversAsync()
+    {
+        SetUpdateBusy(true, LocalizationService.Get("CheckingManufacturerDrivers"));
+        UpdateBar.IsOpen = false;
+        try
+        {
+            var snapshot = await _manufacturerDriverService.CheckAsync();
+            _allDrivers = snapshot.Results.Select(static result => new ManufacturerDriverRow(result)).ToArray();
+            ApplyDriverFilter();
+            var available = snapshot.Results.Count(static result => result.Status == ManufacturerDriverStatus.Available);
+            UpdateBar.Title = available == 0
+                ? LocalizationService.Get("DriversCurrent")
+                : LocalizationService.Format("DriverUpdatesAvailable", available);
+            UpdateBar.Message = snapshot.Issues.Count == 0
+                ? LocalizationService.Get("ManufacturerDriverSafety")
+                : LocalizationService.Format("DriverScanIssues", snapshot.Issues.Count);
+            UpdateBar.Severity = snapshot.Issues.Count > 0
+                ? InfoBarSeverity.Warning
+                : available > 0 ? InfoBarSeverity.Success : InfoBarSeverity.Informational;
+            UpdateBar.IsOpen = true;
+        }
+        catch (Exception exception)
+        {
+            UpdateBar.Title = LocalizationService.Get("DriverCheckFailed");
+            UpdateBar.Message = exception.Message;
+            UpdateBar.Severity = InfoBarSeverity.Error;
+            UpdateBar.IsOpen = true;
+        }
+        finally
+        {
+            SetUpdateBusy(false, null);
+        }
+    }
+
+    private async void DriverRowButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (_updateBusy || _massUpdateBusy || sender is not Button { DataContext: ManufacturerDriverRow row })
+        {
+            return;
+        }
+        DriversList.SelectedItem = row;
+        if (!row.CanUpdate)
+        {
+            if (row.Source.SourceUri is not null)
+            {
+                await Launcher.LaunchUriAsync(row.Source.SourceUri);
+            }
+            return;
+        }
+
+        var update = row.Source.ExecutableUpdate!;
+        SetUpdateBusy(true, LocalizationService.Format("PreparingDriverUpdate", row.Name));
+        DriverProgress.Visibility = Visibility.Visible;
+        DriverProgress.IsIndeterminate = false;
+        DriverProgress.Value = 0;
+        var succeeded = false;
+        try
+        {
+            var cacheRoot = Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                "NaxUpdater",
+                "DriverDownloads");
+            var progress = new Progress<double>(value => DriverProgress.Value = value * 100);
+            var installer = await new UpdatePackageDownloader(_httpClient, new NativeAuthenticodeVerifier())
+                .DownloadAndVerifyAsync(update, cacheRoot, progress);
+            DriverProgress.IsIndeterminate = true;
+            var result = await _updateExecutionService.ExecuteAsync(update, installer);
+            var success = result.IsSuccess ||
+                          (update.ProviderId == "manufacturer-driver:nvidia" && result.ExitCode == 1);
+            if (!success)
+            {
+                throw new InvalidOperationException(result.Error ?? $"Driver installer exited with code {result.ExitCode}.");
+            }
+            succeeded = true;
+            UpdateBar.Title = LocalizationService.Format("DriverUpdatedTitle", row.Name);
+            UpdateBar.Message = result.ExitCode is 1 or 1641 or 3010
+                ? LocalizationService.Get("RestartRequired")
+                : LocalizationService.Get("DriverUpdateCompleted");
+            UpdateBar.Severity = InfoBarSeverity.Success;
+            UpdateBar.IsOpen = true;
+        }
+        catch (Exception exception)
+        {
+            UpdateBar.Title = LocalizationService.Format("DriverNotUpdatedTitle", row.Name);
+            UpdateBar.Message = exception.Message;
+            UpdateBar.Severity = InfoBarSeverity.Error;
+            UpdateBar.IsOpen = true;
+        }
+        finally
+        {
+            DriverProgress.Visibility = Visibility.Collapsed;
+            DriverProgress.IsIndeterminate = false;
+            SetUpdateBusy(false, null);
+        }
+        if (succeeded)
+        {
+            await CheckManufacturerDriversAsync();
+        }
     }
 
     private void UpdatesList_SelectionChanged(object sender, SelectionChangedEventArgs e)
@@ -630,6 +788,7 @@ public sealed partial class MainPage : Page
     {
         _updateBusy = busy;
         ScanButton.IsEnabled = !busy;
+        DriversButton.IsEnabled = !busy;
         ShowUpdatesButton.IsEnabled = !busy && _allUpdates.Count > 0;
         RefreshMassUpdateButton();
         ScanProgress.IsActive = busy;

@@ -200,6 +200,44 @@ public sealed class UpdateRow
     });
 }
 
+public sealed class ManufacturerDriverRow(ManufacturerDriverResult source)
+{
+    public ManufacturerDriverResult Source { get; } = source;
+    public string Name => Source.Driver.DeviceName;
+    public string Detail => $"{Source.Driver.DeviceClass} · {Source.Driver.Provider}";
+    public string Installed => Source.Driver.InstalledVersion;
+    public string Available => Source.AvailableVersion ?? "—";
+    public string Provider => Source.SourceName;
+    public string Status => Source.Status switch
+    {
+        ManufacturerDriverStatus.Available => LocalizationService.Get("DriverStatusAvailable"),
+        ManufacturerDriverStatus.Current => LocalizationService.Get("DriverStatusCurrent"),
+        ManufacturerDriverStatus.ManufacturerManaged => LocalizationService.Get("DriverStatusManufacturer"),
+        _ => LocalizationService.Get("DriverStatusError")
+    };
+    public bool CanUpdate => Source.ExecutableUpdate?.IsInstallable == true;
+    public bool CanOpenSource => Source.SourceUri is not null;
+    public bool HasAction => CanUpdate || CanOpenSource;
+    public Visibility ActionVisibility => HasAction ? Visibility.Visible : Visibility.Collapsed;
+    public string ActionText => CanUpdate
+        ? LocalizationService.Get("UpdateShort")
+        : LocalizationService.Get("OpenManufacturer");
+    public Brush StatusForeground => PresentationBrushes.Get(Source.Status switch
+    {
+        ManufacturerDriverStatus.Available => "NaxOrangeBrush",
+        ManufacturerDriverStatus.Current => "NaxGreenBrush",
+        ManufacturerDriverStatus.ManufacturerManaged => "NaxBlueBrush",
+        _ => "NaxPinkBrush"
+    });
+    public Brush StatusBackground => PresentationBrushes.Get(Source.Status switch
+    {
+        ManufacturerDriverStatus.Available => "NaxOrangeCardBrush",
+        ManufacturerDriverStatus.Current => "NaxGreenCardBrush",
+        ManufacturerDriverStatus.ManufacturerManaged => "NaxBlueCardBrush",
+        _ => "NaxPinkCardBrush"
+    });
+}
+
 internal static class PresentationBrushes
 {
     public static Brush Get(string key) => (Brush)Application.Current.Resources[key];
