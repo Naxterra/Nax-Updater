@@ -17,7 +17,9 @@ public sealed partial class MainPage : Page
     private readonly UpdateExecutionService _updateExecutionService = new();
     private readonly ApplicationRemovalService _applicationRemovalService = new();
     private IReadOnlyList<ApplicationRow> _allApplications = [];
+    private IReadOnlyList<UpdateRow> _allUpdates = [];
     private InventorySnapshot? _snapshot;
+    private int _availableUpdateCount;
     private bool _loaded;
     private bool _updateBusy;
     private bool _massUpdateBusy;
@@ -58,6 +60,8 @@ public sealed partial class MainPage : Page
         FilterBox.IsEnabled = true;
         ShowSystemComponentsCheckBox.IsEnabled = true;
         _updates.Clear();
+        _allUpdates = [];
+        _availableUpdateCount = 0;
         _snapshot = null;
         UpdateBar.IsOpen = false;
         ShowUpdatesButton.IsEnabled = false;
@@ -108,7 +112,17 @@ public sealed partial class MainPage : Page
         }
     }
 
-    private void FilterBox_TextChanged(object sender, TextChangedEventArgs e) => ApplyFilter();
+    private void FilterBox_TextChanged(object sender, TextChangedEventArgs e)
+    {
+        if (UpdatesWorkspace is { Visibility: Visibility.Visible })
+        {
+            ApplyUpdateFilter();
+        }
+        else
+        {
+            ApplyFilter();
+        }
+    }
 
     private void ShowSystemComponentsCheckBox_Changed(object sender, RoutedEventArgs e)
     {
@@ -202,6 +216,38 @@ public sealed partial class MainPage : Page
                row.Path.Contains(filter, StringComparison.OrdinalIgnoreCase) ||
                row.BlockedProviders.Contains(filter, StringComparison.OrdinalIgnoreCase);
     }
+
+    private void ApplyUpdateFilter()
+    {
+        var selectedIdentity = (UpdatesList.SelectedItem as UpdateRow)?.Source.ApplicationIdentity;
+        var filter = FilterBox.Text.Trim();
+        var filtered = string.IsNullOrWhiteSpace(filter)
+            ? _allUpdates
+            : _allUpdates.Where(row => MatchesUpdateFilter(row, filter)).ToArray();
+
+        _updates.Clear();
+        foreach (var row in filtered)
+        {
+            _updates.Add(row);
+        }
+
+        UpdateCountText.Text = string.IsNullOrWhiteSpace(filter)
+            ? LocalizationService.Format("UpdateCountFormat", _availableUpdateCount, _allUpdates.Count)
+            : LocalizationService.Format("FilteredUpdateCountFormat", _availableUpdateCount, _updates.Count, _allUpdates.Count);
+        var restored = selectedIdentity is null
+            ? null
+            : _updates.FirstOrDefault(row => row.Source.ApplicationIdentity == selectedIdentity);
+        UpdatesList.SelectedItem = restored ?? _updates.FirstOrDefault();
+    }
+
+    private static bool MatchesUpdateFilter(UpdateRow row, string filter) =>
+        row.Name.Contains(filter, StringComparison.OrdinalIgnoreCase) ||
+        row.Installed.Contains(filter, StringComparison.OrdinalIgnoreCase) ||
+        row.Available.Contains(filter, StringComparison.OrdinalIgnoreCase) ||
+        row.Provider.Contains(filter, StringComparison.OrdinalIgnoreCase) ||
+        row.Language.Contains(filter, StringComparison.OrdinalIgnoreCase) ||
+        row.Status.Contains(filter, StringComparison.OrdinalIgnoreCase) ||
+        row.Message.Contains(filter, StringComparison.OrdinalIgnoreCase);
 
     private void ApplicationsList_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
@@ -344,22 +390,18 @@ public sealed partial class MainPage : Page
             var service = new UpdateCheckService(_httpClient, catalog);
             var result = await service.CheckAsync(_snapshot);
 
-            _updates.Clear();
-            foreach (var update in result.Results)
-            {
-                _updates.Add(new UpdateRow(update));
-            }
+            _allUpdates = result.Results.Select(static update => new UpdateRow(update)).ToArray();
             var available = result.Results.Count(static update => update.Status == UpdateStatus.Available);
+            _availableUpdateCount = available;
             var errors = result.Results.Count(static update => update.Status == UpdateStatus.Error);
-            UpdateCountText.Text = LocalizationService.Format("UpdateCountFormat", available, _updates.Count);
+            ApplyUpdateFilter();
             RefreshMassUpdateButton();
             ShowUpdatesButton.Content = LocalizationService.Format(
                 "UpdatesNavigationCoverage",
                 available,
                 result.Results.Count - result.UnsupportedApplicationCount,
                 result.Results.Count);
-            ShowUpdatesButton.IsEnabled = _updates.Count > 0;
-            UpdatesList.SelectedItem = _updates.FirstOrDefault();
+            ShowUpdatesButton.IsEnabled = _allUpdates.Count > 0;
             if (showWorkspace)
             {
                 ShowUpdatesWorkspace();
@@ -399,6 +441,7 @@ public sealed partial class MainPage : Page
         UpdatesWorkspace.Visibility = Visibility.Collapsed;
         FilterBox.IsEnabled = true;
         ShowSystemComponentsCheckBox.IsEnabled = true;
+        ApplyFilter();
     }
 
     private void ShowUpdatesButton_Click(object sender, RoutedEventArgs e) => ShowUpdatesWorkspace();
@@ -407,8 +450,9 @@ public sealed partial class MainPage : Page
     {
         InventoryWorkspace.Visibility = Visibility.Collapsed;
         UpdatesWorkspace.Visibility = Visibility.Visible;
-        FilterBox.IsEnabled = false;
+        FilterBox.IsEnabled = true;
         ShowSystemComponentsCheckBox.IsEnabled = false;
+        ApplyUpdateFilter();
     }
 
     private void UpdatesList_SelectionChanged(object sender, SelectionChangedEventArgs e)
@@ -449,7 +493,7 @@ public sealed partial class MainPage : Page
         {
             return;
         }
-        var queue = _updates
+        var queue = _allUpdates
             .Where(static row => row.CanInstall)
             .OrderBy(static row => row.Source.ExecutionPlan?.Kind == UpdateExecutionKind.StorePackage ? 1 : 0)
             .ThenBy(static row => row.Name, StringComparer.CurrentCultureIgnoreCase)
@@ -586,7 +630,7 @@ public sealed partial class MainPage : Page
     {
         _updateBusy = busy;
         ScanButton.IsEnabled = !busy;
-        ShowUpdatesButton.IsEnabled = !busy && _updates.Count > 0;
+        ShowUpdatesButton.IsEnabled = !busy && _allUpdates.Count > 0;
         RefreshMassUpdateButton();
         ScanProgress.IsActive = busy;
         ScanProgress.Visibility = busy ? Visibility.Visible : Visibility.Collapsed;
@@ -598,10 +642,10 @@ public sealed partial class MainPage : Page
 
     private void RefreshMassUpdateButton()
     {
-        var verifiedUpdates = _updates.Count(static row =>
+        var verifiedUpdates = _allUpdates.Count(static row =>
             row.CanInstall && row.Source.Status == UpdateStatus.Available &&
             row.Source.ExecutionPlan?.Kind != UpdateExecutionKind.StorePackage);
-        var storeActions = _updates.Count(static row =>
+        var storeActions = _allUpdates.Count(static row =>
             row.CanInstall && row.Source.Status == UpdateStatus.Available &&
             row.Source.ExecutionPlan?.Kind == UpdateExecutionKind.StorePackage);
         UpdateAllButton.Content = storeActions > 0
