@@ -1,7 +1,9 @@
 using NaxUpdater.Core.Models;
 using NaxUpdater.Core.Services;
 using Microsoft.Data.Sqlite;
+using Microsoft.Win32;
 using System.IO.Compression;
+using System.Management;
 using System.Net;
 using System.Net.Http.Headers;
 using System.Security.Cryptography;
@@ -762,36 +764,54 @@ if (liveNvidiaDriver is not null)
 }
 var liveRealtek = liveManufacturerDrivers.Results.FirstOrDefault(static result =>
     result.Driver.HardwareId?.Contains("VEN_10EC&DEV_8125", StringComparison.OrdinalIgnoreCase) == true);
-Assert(liveRealtek is not null &&
-       liveRealtek.SourceName.Contains("Realtek", StringComparison.OrdinalIgnoreCase) &&
-       liveRealtek.SourceUri?.Host.Equals("www.realtek.com", StringComparison.OrdinalIgnoreCase) == true,
-    "The RTL8125 Ethernet driver was not checked against Realtek's exact official catalog.");
+if (HasDriverRegistration("VEN_10EC&DEV_8125"))
+{
+    Assert(liveRealtek is not null &&
+           liveRealtek.SourceName.Contains("Realtek", StringComparison.OrdinalIgnoreCase) &&
+           liveRealtek.SourceUri?.Host.Equals("www.realtek.com", StringComparison.OrdinalIgnoreCase) == true,
+        "The RTL8125 Ethernet driver was not checked against Realtek's exact official catalog.");
+}
 var liveTpLink = liveManufacturerDrivers.Results.FirstOrDefault(static result =>
     result.Driver.HardwareId?.Contains("VID_3625&PID_010A", StringComparison.OrdinalIgnoreCase) == true);
-Assert(liveTpLink is not null &&
-       liveTpLink.SourceName.Contains("TBE400UH", StringComparison.OrdinalIgnoreCase) &&
-       liveTpLink.SourceUri?.AbsoluteUri.Contains("archer-tbe400uh", StringComparison.OrdinalIgnoreCase) == true,
-    "The disconnected TP-Link Archer TBE400UH driver registration was not matched to its exact manufacturer page.");
+if (HasDriverRegistration("VID_3625&PID_010A"))
+{
+    Assert(liveTpLink is not null &&
+           liveTpLink.SourceName.Contains("TBE400UH", StringComparison.OrdinalIgnoreCase) &&
+           liveTpLink.SourceUri?.AbsoluteUri.Contains("archer-tbe400uh", StringComparison.OrdinalIgnoreCase) == true,
+        "The disconnected TP-Link Archer TBE400UH driver registration was not matched to its exact manufacturer page.");
+}
 var liveIntelEthernet = liveManufacturerDrivers.Results.FirstOrDefault(static result =>
     result.Driver.HardwareId?.Contains("VEN_8086&DEV_15BC", StringComparison.OrdinalIgnoreCase) == true);
-Assert(liveIntelEthernet is not null &&
-       liveIntelEthernet.Status is ManufacturerDriverStatus.Current or ManufacturerDriverStatus.Available &&
-       liveIntelEthernet.SourceName.Contains("I219", StringComparison.OrdinalIgnoreCase) &&
-       liveIntelEthernet.SourceUri?.Host.Contains("intel.com", StringComparison.OrdinalIgnoreCase) == true,
-    "The Intel I219-V driver was not checked against Intel's exact supported Ethernet release.");
+if (HasDriverRegistration("VEN_8086&DEV_15BC"))
+{
+    Assert(liveIntelEthernet is not null &&
+           liveIntelEthernet.Status is ManufacturerDriverStatus.Current or ManufacturerDriverStatus.Available &&
+           liveIntelEthernet.SourceName.Contains("I219", StringComparison.OrdinalIgnoreCase) &&
+           liveIntelEthernet.SourceUri?.Host.Contains("intel.com", StringComparison.OrdinalIgnoreCase) == true,
+        "The Intel I219-V driver was not checked against Intel's exact supported Ethernet release.");
+}
 var liveDellMonitor = liveManufacturerDrivers.Results.FirstOrDefault(static result =>
     result.Driver.HardwareId?.Contains("DELA1E4", StringComparison.OrdinalIgnoreCase) == true);
-Assert(liveDellMonitor is not null &&
-       liveDellMonitor.SourceUri?.Query.Contains("driverid=m46j9", StringComparison.OrdinalIgnoreCase) == true,
-    "The Dell AW3423DW monitor driver did not receive its exact Dell driver page.");
+if (HasDriverRegistration("DELA1E4"))
+{
+    Assert(liveDellMonitor is not null &&
+           liveDellMonitor.SourceUri?.Query.Contains("driverid=m46j9", StringComparison.OrdinalIgnoreCase) == true,
+        "The Dell AW3423DW monitor driver did not receive its exact Dell driver page.");
+}
 var liveWdDrive = liveManufacturerDrivers.Results.FirstOrDefault(static result =>
     result.SourceName.Equals("Western Digital", StringComparison.OrdinalIgnoreCase));
-Assert(liveWdDrive is not null && liveWdDrive.Status == ManufacturerDriverStatus.NoUpdateRequired &&
-       liveWdDrive.Driver.DeviceName.Contains("WD Elements", StringComparison.OrdinalIgnoreCase),
-    "The present WD Elements external drive was omitted or misclassified.");
+if (HasPresentPnpDevice("VID_1058&PID_25A3", "WD Elements"))
+{
+    Assert(liveWdDrive is not null && liveWdDrive.Status == ManufacturerDriverStatus.NoUpdateRequired &&
+           liveWdDrive.Driver.DeviceName.Contains("WD Elements", StringComparison.OrdinalIgnoreCase),
+        "The present WD Elements external drive was omitted or misclassified.");
+}
 var razerRows = liveManufacturerDrivers.Results.Count(static result =>
     result.Driver.Provider.Contains("Razer", StringComparison.OrdinalIgnoreCase));
-Assert(razerRows <= 8, $"Razer interface drivers were not collapsed into physical-device packages: {razerRows} rows.");
+if (HasDriverRegistration("VID_1532"))
+{
+    Assert(razerRows is > 0 and <= 8, $"Razer interface drivers were not collapsed into physical-device packages: {razerRows} rows.");
+}
 
 using var capabilityClient = new HttpClient();
 var installedMetadataCoverage = snapshot.Applications.Count(new ElectronBuilderUpdateProvider(capabilityClient).CanHandle);
@@ -883,6 +903,57 @@ static HttpResponseMessage JsonResponse(string json) => new(HttpStatusCode.OK)
 {
     Content = new StringContent(json, Encoding.UTF8, "application/json")
 };
+
+static bool HasDriverRegistration(string pattern)
+{
+    try
+    {
+        using var classes = Registry.LocalMachine.OpenSubKey(@"SYSTEM\CurrentControlSet\Control\Class");
+        if (classes is null) return false;
+        foreach (var className in classes.GetSubKeyNames())
+        {
+            using var classKey = classes.OpenSubKey(className);
+            if (classKey is null) continue;
+            foreach (var instanceName in classKey.GetSubKeyNames())
+            {
+                using var instance = classKey.OpenSubKey(instanceName);
+                if (instance?.GetValue("MatchingDeviceId")?.ToString()?.Contains(pattern, StringComparison.OrdinalIgnoreCase) == true)
+                {
+                    return true;
+                }
+            }
+        }
+    }
+    catch
+    {
+        // The corresponding machine-specific assertion is skipped when raw evidence is inaccessible.
+    }
+    return false;
+}
+
+static bool HasPresentPnpDevice(string identityPattern, string namePattern)
+{
+    try
+    {
+        using var searcher = new ManagementObjectSearcher("SELECT Name, PNPDeviceID, HardwareID, Present FROM Win32_PnPEntity");
+        foreach (ManagementObject device in searcher.Get())
+        {
+            if (device["Present"] is not true) continue;
+            var identity = string.Join(';', device["HardwareID"] as string[] ?? []) + ";" + device["PNPDeviceID"];
+            var name = device["Name"]?.ToString() ?? string.Empty;
+            if (identity.Contains(identityPattern, StringComparison.OrdinalIgnoreCase) ||
+                name.Contains(namePattern, StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+        }
+    }
+    catch
+    {
+        // The corresponding machine-specific assertion is skipped when raw evidence is inaccessible.
+    }
+    return false;
+}
 
 static Dictionary<string, string> LoadResources(string path)
 {
