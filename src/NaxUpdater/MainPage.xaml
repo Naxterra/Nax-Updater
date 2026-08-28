@@ -37,6 +37,7 @@
                 <ColumnDefinition Width="*" MinWidth="250" />
                 <ColumnDefinition Width="Auto" />
                 <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="Auto" />
             </Grid.ColumnDefinitions>
             <Button x:Name="ScanButton" Height="36" Padding="14,0" Click="ScanButton_Click" Style="{StaticResource BlueActionButtonStyle}">
                 <StackPanel Orientation="Horizontal" Spacing="8">
@@ -59,7 +60,13 @@
                 VerticalAlignment="Center"
                 Checked="ShowSystemComponentsCheckBox_Changed"
                 Unchecked="ShowSystemComponentsCheckBox_Changed" />
-            <Button x:Name="LanguageButton" Grid.Column="3" Height="36" Padding="11,0" Click="LanguageButton_Click">
+            <Button x:Name="DriversButton" Grid.Column="3" Height="36" Padding="11,0" Click="DriversButton_Click">
+                <StackPanel Orientation="Horizontal" Spacing="6">
+                    <FontIcon Glyph="&#xE950;" FontSize="14" />
+                    <TextBlock x:Uid="DriversButtonText" Text="Drivers" />
+                </StackPanel>
+            </Button>
+            <Button x:Name="LanguageButton" Grid.Column="4" Height="36" Padding="11,0" Click="LanguageButton_Click">
                 <StackPanel Orientation="Horizontal" Spacing="6">
                     <FontIcon Glyph="&#xE713;" FontSize="14" />
                     <TextBlock x:Uid="LanguageButtonText" Text="Settings" />
@@ -390,6 +397,89 @@
                         </StackPanel>
                     </StackPanel>
                 </ScrollViewer>
+            </Border>
+        </Grid>
+
+        <Grid x:Name="DriversWorkspace" Grid.Row="3" Visibility="Collapsed">
+            <Border Style="{StaticResource SectionCardStyle}">
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="*" />
+                    </Grid.RowDefinitions>
+                    <Grid Padding="14,10" ColumnSpacing="10">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <Button Padding="10,5" Click="ShowApplicationsButton_Click">
+                            <StackPanel Orientation="Horizontal" Spacing="6">
+                                <FontIcon Glyph="&#xE72B;" FontSize="13" />
+                                <TextBlock x:Uid="ApplicationsBackText" Text="Applications" />
+                            </StackPanel>
+                        </Button>
+                        <TextBlock x:Uid="ManufacturerDriversHeader" Grid.Column="1" Text="Manufacturer drivers" FontSize="18" FontWeight="SemiBold" Foreground="{StaticResource NaxPurpleBrush}" VerticalAlignment="Center" />
+                        <TextBlock x:Name="DriverCountText" x:Uid="DriverCountText" Grid.Column="2" Text="Not checked" Style="{StaticResource MutedTextStyle}" VerticalAlignment="Center" />
+                    </Grid>
+                    <Grid Grid.Row="1" Padding="14,7" ColumnSpacing="10" Background="{ThemeResource SubtleFillColorSecondaryBrush}">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="125" />
+                            <ColumnDefinition Width="125" />
+                            <ColumnDefinition Width="150" />
+                            <ColumnDefinition Width="150" />
+                            <ColumnDefinition Width="130" />
+                        </Grid.ColumnDefinitions>
+                        <TextBlock x:Uid="DriverDeviceHeader" Text="Device" FontSize="12" FontWeight="SemiBold" Style="{StaticResource MutedTextStyle}" />
+                        <TextBlock x:Uid="InstalledHeader" Grid.Column="1" Text="Installed" FontSize="12" FontWeight="SemiBold" Style="{StaticResource MutedTextStyle}" />
+                        <TextBlock x:Uid="AvailableHeader" Grid.Column="2" Text="Available" FontSize="12" FontWeight="SemiBold" Style="{StaticResource MutedTextStyle}" />
+                        <TextBlock x:Uid="DriverSourceHeader" Grid.Column="3" Text="Manufacturer source" FontSize="12" FontWeight="SemiBold" Style="{StaticResource MutedTextStyle}" />
+                        <TextBlock x:Uid="StatusHeader" Grid.Column="4" Text="Status" FontSize="12" FontWeight="SemiBold" Style="{StaticResource MutedTextStyle}" />
+                        <TextBlock x:Uid="ActionHeader" Grid.Column="5" Text="Action" FontSize="12" FontWeight="SemiBold" Style="{StaticResource MutedTextStyle}" />
+                    </Grid>
+                    <Grid Grid.Row="2">
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="*" />
+                            <RowDefinition Height="Auto" />
+                        </Grid.RowDefinitions>
+                        <ListView x:Name="DriversList" SelectionMode="Single">
+                            <ListView.ItemContainerStyle>
+                                <Style TargetType="ListViewItem">
+                                    <Setter Property="Padding" Value="0" />
+                                    <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+                                </Style>
+                            </ListView.ItemContainerStyle>
+                            <ListView.ItemTemplate>
+                                <DataTemplate>
+                                    <Grid Padding="14,10" ColumnSpacing="10">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="125" />
+                                            <ColumnDefinition Width="125" />
+                                            <ColumnDefinition Width="150" />
+                                            <ColumnDefinition Width="150" />
+                                            <ColumnDefinition Width="130" />
+                                        </Grid.ColumnDefinitions>
+                                        <StackPanel>
+                                            <TextBlock Text="{Binding Name}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
+                                            <TextBlock Text="{Binding Detail}" FontSize="11" Style="{StaticResource MutedTextStyle}" TextTrimming="CharacterEllipsis" />
+                                        </StackPanel>
+                                        <TextBlock Grid.Column="1" Text="{Binding Installed}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+                                        <TextBlock Grid.Column="2" Text="{Binding Available}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+                                        <TextBlock Grid.Column="3" Text="{Binding Provider}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+                                        <Border Grid.Column="4" Background="{Binding StatusBackground}" BorderBrush="{Binding StatusForeground}" BorderThickness="1" CornerRadius="10" Padding="7,3" HorizontalAlignment="Left" VerticalAlignment="Center">
+                                            <TextBlock Text="{Binding Status}" Foreground="{Binding StatusForeground}" FontSize="11" TextWrapping="Wrap" />
+                                        </Border>
+                                        <Button Grid.Column="5" Content="{Binding ActionText}" Visibility="{Binding ActionVisibility}" Click="DriverRowButton_Click" Padding="12,5" HorizontalAlignment="Stretch" VerticalAlignment="Center" Style="{StaticResource PurpleActionButtonStyle}" />
+                                    </Grid>
+                                </DataTemplate>
+                            </ListView.ItemTemplate>
+                        </ListView>
+                        <ProgressBar x:Name="DriverProgress" Grid.Row="1" Visibility="Collapsed" Margin="14,8" Minimum="0" Maximum="100" />
+                    </Grid>
+                </Grid>
             </Border>
         </Grid>
 

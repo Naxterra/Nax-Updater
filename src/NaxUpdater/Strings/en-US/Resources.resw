@@ -45,4 +45,26 @@
   <data name="SecurityMicrosoftStoreIdentity"><value>Verified Store catalog identity · deployed by Microsoft Store</value></data>
   <data name="ProviderMsixStoreAvailable"><value>The exact installed package family was correlated with Microsoft Store, which reports an applicable update. NaxUpdater will submit that update directly.</value></data>
   <data name="ProviderMsixStoreCurrent"><value>The exact installed package family was checked against Microsoft Store. No applicable update is currently reported.</value></data>
+  <data name="DriversButtonText.Text"><value>Drivers</value></data>
+  <data name="ManufacturerDriversHeader.Text"><value>Manufacturer drivers</value></data>
+  <data name="DriverCountText.Text"><value>Not checked</value></data>
+  <data name="DriverDeviceHeader.Text"><value>Device</value></data>
+  <data name="DriverSourceHeader.Text"><value>Manufacturer source</value></data>
+  <data name="DriverStatusAvailable"><value>Update available</value></data>
+  <data name="DriverStatusCurrent"><value>Current</value></data>
+  <data name="DriverStatusManufacturer"><value>Manufacturer-managed</value></data>
+  <data name="DriverStatusError"><value>Check failed</value></data>
+  <data name="OpenManufacturer"><value>Open manufacturer</value></data>
+  <data name="DriverCountFormat"><value>{0} available · {1} inventoried</value></data>
+  <data name="FilteredDriverCountFormat"><value>{0} available · {1} shown / {2} inventoried</value></data>
+  <data name="CheckingManufacturerDrivers"><value>Checking official manufacturer driver sources…</value></data>
+  <data name="DriversCurrent"><value>Manufacturer drivers are current</value></data>
+  <data name="DriverUpdatesAvailable"><value>{0} manufacturer driver update(s) available</value></data>
+  <data name="ManufacturerDriverSafety"><value>Windows Update is not used. Direct updates require the manufacturer's HTTPS source, published release hash, and trusted Authenticode publisher.</value></data>
+  <data name="DriverScanIssues"><value>{0} driver inventory source(s) reported a problem.</value></data>
+  <data name="DriverCheckFailed"><value>Manufacturer driver check failed</value></data>
+  <data name="PreparingDriverUpdate"><value>Preparing manufacturer driver update for {0}…</value></data>
+  <data name="DriverUpdatedTitle"><value>{0} driver update completed</value></data>
+  <data name="DriverUpdateCompleted"><value>The manufacturer installer completed. A new driver scan will verify the installed version.</value></data>
+  <data name="DriverNotUpdatedTitle"><value>{0} driver was not updated</value></data>
 </root>
