@@ -30,7 +30,7 @@ The inventory engine:
 
 ## Update providers
 
-Version 0.15.1 includes:
+Version 0.15.2 includes:
 
 - Mozilla Firefox releases from Mozilla's official product-details and release archive, preserving the effective Firefox profile language, architecture, channel, scope, and installation directory;
 - Nextcloud releases from the official `nextcloud-releases/desktop` GitHub repository using its release-asset SHA-256 digest and a multi-language MSI;
@@ -53,7 +53,7 @@ Version 0.15.1 includes:
 - MSI execution without process-name prechecks, preventing unrelated runtimes with the same filename from blocking Windows Installer updates;
 - direct Microsoft Store catalog and deployment integration through the official Windows Package Manager COM API;
 - installed PFN to Store Product ID resolution with exact package-family revalidation before silent install/update submission;
-- Store update applicability checks through an exact installed package-family → Store Product ID → composite installed-catalog correlation;
+- Store update applicability checks through an exact installed package-family → Store Product ID → architecture-matched Store package-version comparison, avoiding false negatives when the composite catalog omits its installed-version object or reports a stale applicability flag;
 - a direct **Update** row action only when Microsoft Store reports a real applicable upgrade; current or uncorrelated Store packages remain labelled as Store-managed without a misleading button;
 - launchable MSIX app-entry naming ahead of package identities, so Store packages such as `OpenAI.Codex` are presented by their user-facing app name, `ChatGPT`;
 - six-way parallel ranged downloads for installers of at least 64 MB when the server advertises byte-range support, followed by complete reconstruction and whole-file hash verification;
@@ -131,7 +131,7 @@ From this directory:
 dotnet build NaxUpdater.slnx
 dotnet run --project tests/NaxUpdater.Core.SmokeTests/NaxUpdater.Core.SmokeTests.csproj
 dotnet publish src/NaxUpdater/NaxUpdater.csproj -c Release -r win-x64 --self-contained true -o artifacts/NaxUpdater-win-x64
-./scripts/package-release.ps1 -Version 0.15.1
+./scripts/package-release.ps1 -Version 0.15.2
 ```
 
 The desktop project uses .NET 11, WinUI 3, and the Windows App SDK. It is not an Electron or WebView application.

@@ -61,6 +61,11 @@ internal sealed class MsixInventoryScanner
                         "MSIX package version",
                         version,
                         true));
+                    candidate.Evidence.Add(new ApplicationEvidence(
+                        EvidenceKind.MsixPackage,
+                        "MSIX package architecture",
+                        package.Id.Architecture.ToString().ToLowerInvariant(),
+                        true));
                     if (installedOn.HasValue)
                     {
                         candidate.Evidence.Add(new ApplicationEvidence(
