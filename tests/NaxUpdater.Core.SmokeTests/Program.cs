@@ -34,12 +34,20 @@ using (var storeFixture = JsonDocument.Parse("""
               {
                 "PackageFamilyName": "OpenAI.Codex_2p2nqsd0c76g0",
                 "PackageFullName": "OpenAI.Codex_26.825.5331.0_x64__2p2nqsd0c76g0",
-                "Architectures": ["x64"]
+                "Architectures": ["x64"],
+                "PackageFormat": "Msix"
               },
               {
                 "PackageFamilyName": "OpenAI.Codex_2p2nqsd0c76g0",
                 "PackageFullName": "OpenAI.Codex_26.900.1.0_arm64__2p2nqsd0c76g0",
-                "Architectures": ["arm64"]
+                "Architectures": ["arm64"],
+                "PackageFormat": "Msix"
+              },
+              {
+                "PackageFamilyName": "OpenAI.Codex_2p2nqsd0c76g0",
+                "PackageFullName": "OpenAI.Codex_26.825.5331.70_neutral_~_2p2nqsd0c76g0",
+                "Architectures": ["x64"],
+                "PackageFormat": "EAppxBundle"
               }
             ]
           }
@@ -53,12 +61,38 @@ using (var storeFixture = JsonDocument.Parse("""
     var storeVersion = MicrosoftStoreProductMetadataClient.ParseLatestPackageVersion(
         storeFixture.RootElement,
         "OpenAI.Codex_2p2nqsd0c76g0",
-        "x64");
+        "x64",
+        "26.825.4187.0");
     Assert(storeVersion == "26.825.5331.0", $"Store package metadata selected {storeVersion} instead of the applicable x64 ChatGPT version.");
     Assert(MicrosoftStoreProductMetadataClient.IsNewer("26.825.4187.0", storeVersion),
         "The observed ChatGPT Store transition was not detected as an update.");
     Assert(!MicrosoftStoreProductMetadataClient.IsNewer("26.825.5331.0", storeVersion),
         "The installed ChatGPT Store version was incorrectly reported as outdated.");
+}
+using (var bundleVersionFixture = JsonDocument.Parse("""
+{
+  "Product": {
+    "DisplaySkuAvailabilities": [{
+      "Sku": { "Properties": { "Packages": [
+        {
+          "PackageFamilyName": "Microsoft.PowerShell_8wekyb3d8bbwe",
+          "PackageFullName": "Microsoft.PowerShell_2026.811.2337.0_neutral_~_8wekyb3d8bbwe",
+          "Architectures": ["x64"],
+          "PackageFormat": "MsixBundle"
+        }
+      ] } }
+    }]
+  }
+}
+"""))
+{
+    var incomparableBundleVersion = MicrosoftStoreProductMetadataClient.ParseLatestPackageVersion(
+        bundleVersionFixture.RootElement,
+        "Microsoft.PowerShell_8wekyb3d8bbwe",
+        "x64",
+        "7.6.5.0");
+    Assert(incomparableBundleVersion is null,
+        $"An unrelated Store bundle version {incomparableBundleVersion} was compared with the installed PowerShell package version.");
 }
 
 var manufacturerHash = new string('e', 64);

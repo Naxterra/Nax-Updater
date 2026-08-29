@@ -11,6 +11,7 @@ internal sealed class MicrosoftStoreProductMetadataClient(HttpClient httpClient)
         string productId,
         string packageFamilyName,
         string? architecture,
+        string? installedVersion,
         CancellationToken cancellationToken)
     {
         var market = RegionInfo.CurrentRegion.TwoLetterISORegionName;
@@ -19,18 +20,19 @@ internal sealed class MicrosoftStoreProductMetadataClient(HttpClient httpClient)
             CatalogBaseUri,
             $"{Uri.EscapeDataString(productId)}?market={Uri.EscapeDataString(market)}&languages={Uri.EscapeDataString(language)}");
         using var request = new HttpRequestMessage(HttpMethod.Get, uri);
-        request.Headers.UserAgent.ParseAdd("NaxUpdater/0.15.2");
+        request.Headers.UserAgent.ParseAdd("NaxUpdater/0.15.3");
         using var response = await httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
         response.EnsureSuccessStatusCode();
         await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
         using var document = await JsonDocument.ParseAsync(stream, cancellationToken: cancellationToken);
-        return ParseLatestPackageVersion(document.RootElement, packageFamilyName, architecture);
+        return ParseLatestPackageVersion(document.RootElement, packageFamilyName, architecture, installedVersion);
     }
 
     internal static string? ParseLatestPackageVersion(
         JsonElement root,
         string packageFamilyName,
-        string? architecture)
+        string? architecture,
+        string? installedVersion)
     {
         if (!TryGet(root, "Product", out var product) ||
             !TryGet(product, "DisplaySkuAvailabilities", out var skuAvailabilities) ||
@@ -55,6 +57,7 @@ internal sealed class MicrosoftStoreProductMetadataClient(HttpClient httpClient)
             {
                 if (!TryGetString(package, "PackageFamilyName", out var candidateFamily) ||
                     !candidateFamily.Equals(packageFamilyName, StringComparison.OrdinalIgnoreCase) ||
+                    IsEncryptedPackage(package) ||
                     !TryReadVersion(package, packageFamilyName, out var version))
                 {
                     continue;
@@ -67,6 +70,18 @@ internal sealed class MicrosoftStoreProductMetadataClient(HttpClient httpClient)
         var applicable = candidates.Any(static candidate => candidate.ArchitectureMatch)
             ? candidates.Where(static candidate => candidate.ArchitectureMatch)
             : candidates;
+        if (Version.TryParse(installedVersion, out var installed))
+        {
+            var sameVersionLine = applicable.Where(candidate => candidate.Version.Major == installed.Major).ToArray();
+            if (sameVersionLine.Length == 0)
+            {
+                // Store bundle identities can use unrelated calendar/rank versions while their inner app
+                // packages retain product versions (for example PowerShell 7.x vs bundle 2026.x).
+                // In that case only the deployment catalog can authoritatively determine applicability.
+                return null;
+            }
+            applicable = sameVersionLine;
+        }
         var latest = applicable.Select(static candidate => candidate.Version).OrderDescending().FirstOrDefault();
         return latest?.ToString(4);
     }
@@ -130,6 +145,10 @@ internal sealed class MicrosoftStoreProductMetadataClient(HttpClient httpClient)
         }
         return false;
     }
+
+    private static bool IsEncryptedPackage(JsonElement package) =>
+        TryGetString(package, "PackageFormat", out var format) &&
+        format.StartsWith("E", StringComparison.OrdinalIgnoreCase);
 
     private static string? NormalizeArchitecture(string? value) => value?.Trim().ToLowerInvariant() switch
     {
