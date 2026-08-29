@@ -421,7 +421,17 @@
                             </StackPanel>
                         </Button>
                         <TextBlock x:Uid="ManufacturerDriversHeader" Grid.Column="1" Text="Manufacturer drivers" FontSize="18" FontWeight="SemiBold" Foreground="{StaticResource NaxPurpleBrush}" VerticalAlignment="Center" />
-                        <TextBlock x:Name="DriverCountText" x:Uid="DriverCountText" Grid.Column="2" Text="Not checked" Style="{StaticResource MutedTextStyle}" VerticalAlignment="Center" />
+                        <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
+                            <ComboBox x:Name="DriverStatusFilter" MinWidth="165" SelectedIndex="0" SelectionChanged="DriverStatusFilter_SelectionChanged">
+                                <ComboBoxItem x:Uid="DriverFilterAll" Tag="all" Content="All statuses" />
+                                <ComboBoxItem x:Uid="DriverFilterUpdates" Tag="updates" Content="Updates" />
+                                <ComboBoxItem x:Uid="DriverFilterCurrent" Tag="current" Content="Current" />
+                                <ComboBoxItem x:Uid="DriverFilterManaged" Tag="managed" Content="Manufacturer-managed" />
+                                <ComboBoxItem x:Uid="DriverFilterUnverified" Tag="unverified" Content="Unverified" />
+                                <ComboBoxItem x:Uid="DriverFilterErrors" Tag="errors" Content="Errors" />
+                            </ComboBox>
+                            <TextBlock x:Name="DriverCountText" x:Uid="DriverCountText" Text="Not checked" Style="{StaticResource MutedTextStyle}" VerticalAlignment="Center" />
+                        </StackPanel>
                     </Grid>
                     <Grid Grid.Row="1" Padding="14,7" ColumnSpacing="10" Background="{ThemeResource SubtleFillColorSecondaryBrush}">
                         <Grid.ColumnDefinitions>

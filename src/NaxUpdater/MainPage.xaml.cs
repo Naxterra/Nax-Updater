@@ -264,9 +264,11 @@ public sealed partial class MainPage : Page
     {
         var selectedIdentity = (DriversList.SelectedItem as ManufacturerDriverRow)?.Source.Driver.Identity;
         var filter = FilterBox.Text.Trim();
-        var filtered = string.IsNullOrWhiteSpace(filter)
-            ? _allDrivers
-            : _allDrivers.Where(row => MatchesDriverFilter(row, filter)).ToArray();
+        var statusFilter = (DriverStatusFilter.SelectedItem as ComboBoxItem)?.Tag?.ToString() ?? "all";
+        var filtered = _allDrivers
+            .Where(row => (string.IsNullOrWhiteSpace(filter) || MatchesDriverFilter(row, filter)) &&
+                          MatchesDriverStatusFilter(row, statusFilter))
+            .ToArray();
         _drivers.Clear();
         foreach (var row in filtered)
         {
@@ -275,7 +277,7 @@ public sealed partial class MainPage : Page
         var direct = _allDrivers.Count(static row => row.CanUpdate);
         var manufacturerDownloads = _allDrivers.Count(static row =>
             row.Source.Status == ManufacturerDriverStatus.Available && !row.CanUpdate);
-        DriverCountText.Text = string.IsNullOrWhiteSpace(filter)
+        DriverCountText.Text = string.IsNullOrWhiteSpace(filter) && statusFilter == "all"
             ? LocalizationService.Format("DriverCountFormat", direct, manufacturerDownloads, _allDrivers.Count)
             : LocalizationService.Format("FilteredDriverCountFormat", direct, manufacturerDownloads, _drivers.Count, _allDrivers.Count);
         var restored = selectedIdentity is null
@@ -292,6 +294,24 @@ public sealed partial class MainPage : Page
         row.Provider.Contains(filter, StringComparison.OrdinalIgnoreCase) ||
         row.Status.Contains(filter, StringComparison.OrdinalIgnoreCase) ||
         row.Source.Message.Contains(filter, StringComparison.OrdinalIgnoreCase);
+
+    private static bool MatchesDriverStatusFilter(ManufacturerDriverRow row, string filter) => filter switch
+    {
+        "updates" => row.Source.Status == ManufacturerDriverStatus.Available,
+        "current" => row.Source.Status is ManufacturerDriverStatus.Current or ManufacturerDriverStatus.NoUpdateRequired,
+        "managed" => row.Source.Status == ManufacturerDriverStatus.ManufacturerManaged,
+        "unverified" => row.Source.Status == ManufacturerDriverStatus.NoVerifiedCatalog,
+        "errors" => row.Source.Status == ManufacturerDriverStatus.Error,
+        _ => true
+    };
+
+    private void DriverStatusFilter_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (DriversList is not null && DriverCountText is not null)
+        {
+            ApplyDriverFilter();
+        }
+    }
 
     private void ApplicationsList_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
@@ -727,7 +747,7 @@ public sealed partial class MainPage : Page
         try
         {
             VerifiedInstaller? installer = null;
-            if (plan.Kind is UpdateExecutionKind.DownloadedExe or UpdateExecutionKind.DownloadedMsi or UpdateExecutionKind.DownloadedZipMsi)
+            if (plan.Kind is UpdateExecutionKind.DownloadedExe or UpdateExecutionKind.DownloadedMsi or UpdateExecutionKind.DownloadedZipMsi or UpdateExecutionKind.DownloadedZipDriver)
             {
                 var cacheRoot = Path.Combine(
                     Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),

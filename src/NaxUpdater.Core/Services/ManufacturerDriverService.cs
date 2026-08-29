@@ -13,8 +13,9 @@ public sealed partial class ManufacturerDriverService(HttpClient httpClient)
     private const string DriverClassPath = @"SYSTEM\CurrentControlSet\Control\Class";
     private static readonly Uri NvidiaDriverHome = new("https://www.nvidia.com/Download/index.aspx");
     private static readonly Uri IntelDsaHome = new("https://www.intel.com/content/www/us/en/support/detect.html");
-    private static readonly Uri IntelEthernetPack = new("https://www.intel.com/content/www/us/en/download/15084/intel-ethernet-adapter-complete-driver-pack.html");
-    private static readonly Uri IntelEthernetReadme = new("https://downloadmirror.intel.com/923522/readme.txt");
+    private static readonly Uri IntelEthernetWindows11Page = new("https://www.intel.com/content/www/us/en/download/727998/intel-network-adapter-driver-for-microsoft-windows-11.html");
+    private static readonly Uri IntelEthernetReadme = new("https://downloadmirror.intel.com/923981/readme.txt");
+    private static readonly Uri IntelEthernetReleaseNotes = new("https://edc.intel.com/content/www/us/en/design/products/ethernet/adapters-and-devices-release-notes/");
     private static readonly Uri MsiBoardSupport = new("https://www.msi.com/Motherboard/MAG-Z490-TOMAHAWK/support");
     private static readonly Uri RazerSupport = new("https://mysupport.razer.com/app/answers/detail/a_id/1835");
     private static readonly Uri RealtekPcieCatalog = new("https://www.realtek.com/Download/List?cate_id=584");
@@ -28,39 +29,7 @@ public sealed partial class ManufacturerDriverService(HttpClient httpClient)
     {
         var issues = new List<string>();
         var installed = await Task.Run(() => ReadInstalledDrivers(issues), cancellationToken);
-        var results = new List<ManufacturerDriverResult>(installed.Count);
-        foreach (var driver in installed)
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-            if (IsNvidiaDisplayDriver(driver))
-            {
-                results.Add(await CheckNvidiaAsync(driver, cancellationToken));
-            }
-            else if (IsRealtek8125(driver))
-            {
-                results.Add(await CheckRealtekEthernetAsync(driver, cancellationToken));
-            }
-            else if (IsIntelI219(driver))
-            {
-                results.Add(await CheckIntelI219Async(driver, cancellationToken));
-            }
-            else if (IsTpLinkTbe400Uh(driver))
-            {
-                results.Add(await CheckTpLinkAsync(driver, cancellationToken));
-            }
-            else if (IsDellAw3423DwDriver(driver))
-            {
-                results.Add(CheckDellAw3423Dw(driver));
-            }
-            else if (IsWesternDigitalExternal(driver))
-            {
-                results.Add(NoWdDriverRequired(driver));
-            }
-            else
-            {
-                results.Add(ManufacturerManaged(driver));
-            }
-        }
+        var results = await Task.WhenAll(installed.Select(driver => CheckDriverAsync(driver, cancellationToken)));
         return new ManufacturerDriverSnapshot(
             DateTimeOffset.Now,
             results
@@ -68,6 +37,20 @@ public sealed partial class ManufacturerDriverService(HttpClient httpClient)
                 .ThenBy(static result => result.Driver.DeviceName, StringComparer.CurrentCultureIgnoreCase)
                 .ToArray(),
             issues.Distinct(StringComparer.OrdinalIgnoreCase).ToArray());
+    }
+
+    private async Task<ManufacturerDriverResult> CheckDriverAsync(
+        InstalledHardwareDriver driver,
+        CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        if (IsNvidiaDisplayDriver(driver)) return await CheckNvidiaAsync(driver, cancellationToken);
+        if (IsRealtek8125(driver)) return await CheckRealtekEthernetAsync(driver, cancellationToken);
+        if (IsIntelI219(driver)) return await CheckIntelI219Async(driver, cancellationToken);
+        if (IsTpLinkTbe400Uh(driver)) return await CheckTpLinkAsync(driver, cancellationToken);
+        if (IsDellAw3423DwDriver(driver)) return CheckDellAw3423Dw(driver);
+        if (IsWesternDigitalExternal(driver)) return NoWdDriverRequired(driver);
+        return ManufacturerManaged(driver);
     }
 
     internal async Task<ManufacturerDriverResult> CheckNvidiaAsync(
@@ -254,27 +237,76 @@ public sealed partial class ManufacturerDriverService(HttpClient httpClient)
             {
                 throw new InvalidDataException("Intel's official Ethernet release metadata did not confirm I219 support.");
             }
-            var available = release.Groups["version"].Value;
-            var releaseDate = NormalizeDate(release.Groups["date"].Value) ?? release.Groups["date"].Value;
-            var newer = string.IsNullOrWhiteSpace(driver.DriverDate) ||
-                        string.CompareOrdinal(releaseDate, driver.DriverDate) > 0;
-            return newer
-                ? new ManufacturerDriverResult(
-                    driver,
-                    ManufacturerDriverStatus.Available,
-                    $"{available} · {releaseDate}",
-                    "Intel Ethernet I219",
-                    IntelEthernetPack,
-                    "Intel's official Ethernet pack explicitly supports the I219 family and is newer than the installed driver package. Intel requires acceptance of its license before download.",
-                    null)
-                : Current(driver, available, "Intel Ethernet I219", IntelEthernetPack,
-                    "Intel's official Ethernet pack explicitly supports the I219 family and is not newer than the installed package date.");
+            var releaseVersion = release.Groups["version"].Value;
+            var payload = IntelI219Payload(releaseVersion);
+            if (payload is null)
+            {
+                return NoVerifiedCatalog(driver, "Intel Ethernet I219", IntelEthernetReleaseNotes,
+                    $"Intel publishes Ethernet package {releaseVersion}, but its exact Windows 11 I219 INF payload has not been independently mapped yet. No version mismatch is claimed.");
+            }
+
+            var displayedAvailable = $"{payload.DriverVersion} · Intel {releaseVersion}";
+            if (VersionOrder.Compare(payload.DriverVersion, driver.InstalledVersion) <= 0)
+            {
+                return Current(driver, displayedAvailable, "Intel Ethernet I219", IntelEthernetWindows11Page,
+                    $"Intel Windows 11 package {releaseVersion} contains applicable e1d.inf {payload.DriverVersion}; the installed I219 driver is current. The package release number is not compared with the INF driver version.");
+            }
+
+            var plan = new UpdateExecutionPlan(
+                UpdateExecutionKind.DownloadedZipDriver,
+                payload.DownloadUri,
+                payload.FileName,
+                payload.Sha256,
+                null,
+                null,
+                [],
+                true,
+                ["downloadmirror.intel.com"],
+                [],
+                RequireAuthenticode: false,
+                ExpectedSigners: ["Microsoft Windows Hardware Compatibility Publisher"],
+                NestedInstallerRelativePath: payload.InfPath,
+                ExpectedHardwareId: "PCI\\VEN_8086&DEV_15BC");
+            var update = new UpdateCheckResult(
+                driver.Identity,
+                driver.DeviceName,
+                driver.InstalledVersion,
+                payload.DriverVersion,
+                UpdateStatus.Available,
+                "manufacturer-driver:intel-i219",
+                "Intel Windows 11 Ethernet driver package",
+                "neutral",
+                "Intel multi-language INF package",
+                "x64",
+                "stable",
+                IntelEthernetWindows11Page.AbsoluteUri,
+                $"Intel package {releaseVersion} is protected by Intel's published SHA-256; the exact I219 INF and Microsoft WHCP catalog are revalidated before pnputil installation.",
+                plan);
+            return new ManufacturerDriverResult(
+                driver,
+                ManufacturerDriverStatus.Available,
+                displayedAvailable,
+                "Intel Ethernet I219",
+                IntelEthernetWindows11Page,
+                $"A newer applicable Intel Windows 11 e1d INF ({payload.DriverVersion}) is available in package {releaseVersion}.",
+                update);
         }
         catch (Exception exception)
         {
-            return Error(driver, "Intel Ethernet I219", IntelEthernetPack, exception.Message);
+            return Error(driver, "Intel Ethernet I219", IntelEthernetWindows11Page, exception.Message);
         }
     }
+
+    private static IntelDriverPayload? IntelI219Payload(string releaseVersion) => releaseVersion switch
+    {
+        "31.2.2" => new IntelDriverPayload(
+            "12.19.2.64",
+            new Uri("https://downloadmirror.intel.com/923981/Wired_driver_31.2.2_x64.zip"),
+            "Wired_driver_31.2.2_x64.zip",
+            "2CBFF42AA02519E49F02D8E95A6572C44310E97FE67C42E299F2ABA6EA9344F5",
+            "PRO1000\\Winx64\\W11\\e1d.inf"),
+        _ => null
+    };
 
     private static ManufacturerDriverResult CheckDellAw3423Dw(InstalledHardwareDriver driver)
     {
@@ -305,7 +337,7 @@ public sealed partial class ManufacturerDriverService(HttpClient httpClient)
     private async Task<string> GetStringAsync(Uri uri, CancellationToken cancellationToken)
     {
         using var request = new HttpRequestMessage(HttpMethod.Get, uri);
-        request.Headers.UserAgent.ParseAdd("NaxUpdater/0.15");
+        request.Headers.UserAgent.ParseAdd("NaxUpdater/0.15.4");
         using var response = await httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
         response.EnsureSuccessStatusCode();
         return await response.Content.ReadAsStringAsync(cancellationToken);
@@ -627,13 +659,7 @@ public sealed partial class ManufacturerDriverService(HttpClient httpClient)
     internal static bool RealtekCatalogIsNewer(string installedVersion, string? installedDate, string catalogVersion, string? catalogDate)
     {
         var installedCore = string.Join('.', installedVersion.Split('.').Take(3));
-        if (VersionOrder.Compare(catalogVersion, installedCore) > 0)
-        {
-            return true;
-        }
-        return !string.IsNullOrWhiteSpace(catalogDate) &&
-               !string.IsNullOrWhiteSpace(installedDate) &&
-               string.CompareOrdinal(catalogDate, installedDate) > 0;
+        return VersionOrder.Compare(catalogVersion, installedCore) > 0;
     }
 
     private static string? NvidiaSeriesId(string deviceName) => NvidiaRtx50Regex().IsMatch(deviceName) ? "120" : null;
@@ -736,4 +762,11 @@ public sealed partial class ManufacturerDriverService(HttpClient httpClient)
         string? Version,
         string? Date,
         string? InfName);
+
+    private sealed record IntelDriverPayload(
+        string DriverVersion,
+        Uri DownloadUri,
+        string FileName,
+        string Sha256,
+        string InfPath);
 }

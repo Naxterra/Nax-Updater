@@ -145,6 +145,7 @@ public static partial class LocalizationService
             "Executable product" => Get("EvidenceLabelExecutableProduct"),
             "MSIX package family" => Get("EvidenceLabelMsixFamily"),
             "MSIX package version" => Get("EvidenceLabelMsixVersion"),
+            "MSIX package architecture" => Get("EvidenceLabelMsixArchitecture"),
             "MSIX package role" => Get("EvidenceLabelMsixRole"),
             "Externally registered executable" => Get("EvidenceLabelExternalExecutable"),
             "Registered Windows extensions" => Get("EvidenceLabelWindowsExtensions"),

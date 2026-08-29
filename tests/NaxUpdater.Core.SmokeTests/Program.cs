@@ -21,8 +21,44 @@ Assert(ManufacturerDriverService.NormalizeTpLinkVersion("5102.24.126.4") == "24.
     "TP-Link platform-prefix normalization failed.");
 Assert(ManufacturerDriverService.ProjectTpLinkVersion("5002.24.126.4", "5102.24.126.4") == "5102.24.126.4",
     "TP-Link Windows 11 branch projection failed.");
-Assert(ManufacturerDriverService.RealtekCatalogIsNewer("10.80.50.407", "2026-07-04", "10.80.50", "2026-08-28"),
-    "Realtek catalog date comparison failed for a refreshed same-branch package.");
+Assert(!ManufacturerDriverService.RealtekCatalogIsNewer("10.80.50.407", "2026-07-04", "10.80.50", "2026-08-28"),
+    "Realtek's matching installed driver branch was incorrectly treated as older because of the package date.");
+Assert(ManufacturerDriverService.RealtekCatalogIsNewer("10.80.50.407", "2026-07-04", "10.81.1", "2026-08-28"),
+    "A genuinely newer Realtek driver branch was not detected.");
+using (var intelClient = new HttpClient(new StubHttpMessageHandler(_ => new HttpResponseMessage(HttpStatusCode.OK)
+{
+    Content = new StringContent("Intel(R) Network Connections Software, Release 31.2.2\nJuly 2026\nIntel(R) Ethernet Connection I219")
+})))
+{
+    var intelService = new ManufacturerDriverService(intelClient);
+    var intelDriver = new InstalledHardwareDriver(
+        "intel-i219-fixture",
+        "Intel(R) Ethernet Connection (7) I219-V",
+        "Net",
+        "Intel",
+        "Intel",
+        "12.19.2.63",
+        "2025-05-07",
+        "PCI\\VEN_8086&DEV_15BC",
+        "e1d.inf");
+    var intelUpdate = await intelService.CheckIntelI219Async(intelDriver, CancellationToken.None);
+    Assert(intelUpdate.Status == ManufacturerDriverStatus.Available &&
+           intelUpdate.AvailableVersion is { } intelAvailable &&
+           intelAvailable.StartsWith("12.19.2.64", StringComparison.Ordinal) &&
+           intelUpdate.ExecutableUpdate?.ExecutionPlan is
+           {
+               Kind: UpdateExecutionKind.DownloadedZipDriver,
+               Sha256: "2CBFF42AA02519E49F02D8E95A6572C44310E97FE67C42E299F2ABA6EA9344F5",
+               NestedInstallerRelativePath: "PRO1000\\Winx64\\W11\\e1d.inf",
+               ExpectedHardwareId: "PCI\\VEN_8086&DEV_15BC"
+           },
+        "The exact Intel I219 Windows 11 INF update did not produce a verified direct-install plan.");
+    var intelCurrent = await intelService.CheckIntelI219Async(
+        intelDriver with { InstalledVersion = "12.19.2.64" },
+        CancellationToken.None);
+    Assert(intelCurrent.Status == ManufacturerDriverStatus.Current && intelCurrent.ExecutableUpdate is null,
+        "The exact Intel 31.2.2 Windows 11 I219 INF was not recognized as already installed.");
+}
 using (var storeFixture = JsonDocument.Parse("""
 {
   "Product": {
@@ -444,6 +480,37 @@ try
         traversalRejected = true;
     }
     Assert(traversalRejected, "A traversal path was accepted for a nested installer.");
+    var driverArchivePath = Path.Combine(firefoxFixture, "intel-driver.zip");
+    using (var driverArchive = ZipFile.Open(driverArchivePath, ZipArchiveMode.Create))
+    {
+        foreach (var item in new Dictionary<string, string>
+        {
+            ["PRO1000/Winx64/W11/e1d.inf"] = "[Version]\nDriverVer = 05/07/2025,12.19.2.64\n[Models]\nDevice=PCI\\VEN_8086&DEV_15BC",
+            ["PRO1000/Winx64/W11/e1d.cat"] = "signed catalog fixture",
+            ["PRO1000/Winx64/W11/e1d.sys"] = "driver binary fixture",
+            ["PRO1000/Winx64/W11/e1dmsg.dll"] = "message fixture",
+            ["PRO1000/Winx64/W11/e1dn.inf"] = "unrelated driver"
+        })
+        {
+            var entry = driverArchive.CreateEntry(item.Key);
+            await using var writer = new StreamWriter(entry.Open(), Encoding.UTF8);
+            await writer.WriteAsync(item.Value);
+        }
+    }
+    var driverExtraction = Directory.CreateDirectory(Path.Combine(firefoxFixture, "driver-extraction"));
+    var extractedInf = new UpdateExecutionService(new StubAuthenticodeVerifier("Microsoft Windows Hardware Compatibility Publisher"))
+        .ExtractAndVerifyDriverPackage(
+            driverArchivePath,
+            "PRO1000\\Winx64\\W11\\e1d.inf",
+            driverExtraction.FullName,
+            "PCI\\VEN_8086&DEV_15BC",
+            "12.19.2.64",
+            ["Microsoft Windows Hardware Compatibility Publisher"]);
+    Assert(File.Exists(extractedInf) &&
+           UpdateExecutionService.ReadInfDriverVersion(File.ReadAllText(extractedInf)) == "12.19.2.64" &&
+           File.Exists(Path.Combine(driverExtraction.FullName, "e1d.cat")) &&
+           File.Exists(Path.Combine(driverExtraction.FullName, "e1dmsg.dll")),
+        "The exact hardware-matched Intel INF package was not extracted and verified.");
     var uniqueCatalogApplication = CreateApplication(
         "unique-catalog-test",
         "Unique App 1.0.0",
