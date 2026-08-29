@@ -55,6 +55,7 @@ public sealed class StorePackageDeploymentService
                     identity.ProductId,
                     packageFamilyName,
                     installedArchitecture,
+                    installedVersion,
                     cancellationToken);
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
