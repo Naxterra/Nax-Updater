@@ -9,7 +9,7 @@ public sealed class StorePackageDeploymentService
         Timeout = TimeSpan.FromSeconds(30)
     };
     private readonly object _connectionLock = new();
-    private readonly SemaphoreSlim _catalogQuerySlots = new(6, 6);
+    private readonly SemaphoreSlim _catalogQuerySlots = new(12, 12);
     private Task<(PackageManager Manager, PackageCatalog Catalog)>? _storeConnection;
     private Task<(PackageManager Manager, PackageCatalog Catalog)>? _storeUpdateConnection;
     private readonly MicrosoftStoreProductMetadataClient _productMetadata;

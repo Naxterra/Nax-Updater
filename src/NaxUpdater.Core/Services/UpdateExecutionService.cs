@@ -8,6 +8,12 @@ namespace NaxUpdater.Core.Services;
 public sealed class UpdateExecutionService
 {
     private readonly StorePackageDeploymentService _storePackageDeploymentService = new();
+    private readonly IAuthenticodeVerifier _authenticodeVerifier;
+
+    public UpdateExecutionService(IAuthenticodeVerifier? authenticodeVerifier = null)
+    {
+        _authenticodeVerifier = authenticodeVerifier ?? new NativeAuthenticodeVerifier();
+    }
 
     public IReadOnlyList<string> FindRunningProcesses(UpdateCheckResult update)
     {
@@ -92,18 +98,26 @@ public sealed class UpdateExecutionService
 
         string? extractionDirectory = null;
         var executableInstallerPath = installer.Path;
-        if (plan.Kind == UpdateExecutionKind.DownloadedZipMsi)
+        if (plan.Kind is UpdateExecutionKind.DownloadedZipMsi or UpdateExecutionKind.DownloadedZipDriver)
         {
             if (string.IsNullOrWhiteSpace(plan.NestedInstallerRelativePath))
             {
-                throw new InvalidOperationException("The verified archive does not identify its nested MSI.");
+                throw new InvalidOperationException("The verified archive does not identify its nested installer.");
             }
             extractionDirectory = Path.Combine(Path.GetTempPath(), "NaxUpdater", Guid.NewGuid().ToString("N"));
             Directory.CreateDirectory(extractionDirectory);
-            executableInstallerPath = ExtractNestedInstaller(
-                installer.Path,
-                plan.NestedInstallerRelativePath,
-                extractionDirectory);
+            executableInstallerPath = plan.Kind == UpdateExecutionKind.DownloadedZipDriver
+                ? ExtractAndVerifyDriverPackage(
+                    installer.Path,
+                    plan.NestedInstallerRelativePath,
+                    extractionDirectory,
+                    plan.ExpectedHardwareId,
+                    update.AvailableVersion,
+                    plan.ExpectedSigners ?? [])
+                : ExtractNestedInstaller(
+                    installer.Path,
+                    plan.NestedInstallerRelativePath,
+                    extractionDirectory);
         }
 
         var startInfo = plan.Kind switch
@@ -111,6 +125,8 @@ public sealed class UpdateExecutionService
             UpdateExecutionKind.DownloadedExe => new ProcessStartInfo(executableInstallerPath),
             UpdateExecutionKind.DownloadedMsi or UpdateExecutionKind.DownloadedZipMsi =>
                 new ProcessStartInfo(Path.Combine(Environment.SystemDirectory, "msiexec.exe")),
+            UpdateExecutionKind.DownloadedZipDriver =>
+                new ProcessStartInfo(Path.Combine(Environment.SystemDirectory, "pnputil.exe")),
             _ => throw new InvalidOperationException($"Unsupported execution kind {plan.Kind}.")
         };
         startInfo.UseShellExecute = true;
@@ -122,6 +138,12 @@ public sealed class UpdateExecutionService
         {
             startInfo.ArgumentList.Add("/i");
             startInfo.ArgumentList.Add(executableInstallerPath);
+        }
+        else if (plan.Kind == UpdateExecutionKind.DownloadedZipDriver)
+        {
+            startInfo.ArgumentList.Add("/add-driver");
+            startInfo.ArgumentList.Add(executableInstallerPath);
+            startInfo.ArgumentList.Add("/install");
         }
         foreach (var argument in plan.Arguments)
         {
@@ -172,6 +194,97 @@ public sealed class UpdateExecutionService
         var destinationPath = Path.Combine(destinationDirectory, Path.GetFileName(matches[0].Name));
         matches[0].ExtractToFile(destinationPath, overwrite: false);
         return destinationPath;
+    }
+
+    internal string ExtractAndVerifyDriverPackage(
+        string archivePath,
+        string relativeInfPath,
+        string destinationDirectory,
+        string? expectedHardwareId,
+        string? expectedDriverVersion,
+        IReadOnlyList<string> expectedCatalogSigners)
+    {
+        var normalized = relativeInfPath.Replace('\\', '/').TrimStart('/');
+        var parts = normalized.Split('/');
+        if (parts.Length < 2 || parts.Any(static part => part is "" or "." or "..") ||
+            !parts[^1].EndsWith(".inf", StringComparison.OrdinalIgnoreCase))
+        {
+            throw new InvalidDataException("The nested driver INF path is unsafe.");
+        }
+
+        var directory = string.Join('/', parts[..^1]) + "/";
+        var infName = parts[^1];
+        using var archive = ZipFile.OpenRead(archivePath);
+        var directoryEntries = archive.Entries
+            .Where(entry => entry.FullName.Replace('\\', '/').StartsWith(directory, StringComparison.OrdinalIgnoreCase) &&
+                            !string.IsNullOrWhiteSpace(entry.Name) &&
+                            !entry.FullName.Replace('\\', '/')[directory.Length..].Contains('/'))
+            .ToArray();
+        var infEntries = directoryEntries
+            .Where(entry => entry.Name.Equals(infName, StringComparison.OrdinalIgnoreCase))
+            .ToArray();
+        if (infEntries.Length != 1)
+        {
+            throw new InvalidDataException("The exact nested driver INF was not found in the verified archive.");
+        }
+
+        foreach (var entry in directoryEntries)
+        {
+            var destinationPath = Path.Combine(destinationDirectory, Path.GetFileName(entry.Name));
+            entry.ExtractToFile(destinationPath, overwrite: false);
+        }
+
+        var infPath = Path.Combine(destinationDirectory, infName);
+        var infText = File.ReadAllText(infPath);
+        if (!string.IsNullOrWhiteSpace(expectedHardwareId) &&
+            !infText.Contains(expectedHardwareId, StringComparison.OrdinalIgnoreCase))
+        {
+            throw new InvalidDataException($"The verified driver INF does not support expected hardware ID {expectedHardwareId}.");
+        }
+        var driverVersion = ReadInfDriverVersion(infText);
+        if (string.IsNullOrWhiteSpace(expectedDriverVersion) ||
+            !driverVersion.Equals(expectedDriverVersion, StringComparison.OrdinalIgnoreCase))
+        {
+            throw new InvalidDataException($"The verified driver INF version is {driverVersion}; expected {expectedDriverVersion ?? "an explicit version"}.");
+        }
+
+        var catalogPath = Path.Combine(destinationDirectory, Path.GetFileNameWithoutExtension(infName) + ".cat");
+        if (!File.Exists(catalogPath) || expectedCatalogSigners.Count == 0)
+        {
+            throw new InvalidDataException("The verified driver archive does not provide a catalog signature policy.");
+        }
+        var signatureErrors = new List<string>();
+        foreach (var signer in expectedCatalogSigners)
+        {
+            var signature = _authenticodeVerifier.Verify(catalogPath, signer);
+            if (signature.IsValid)
+            {
+                return infPath;
+            }
+            if (!string.IsNullOrWhiteSpace(signature.Error))
+            {
+                signatureErrors.Add(signature.Error);
+            }
+        }
+        throw new InvalidDataException(string.Join(" | ", signatureErrors));
+    }
+
+    internal static string ReadInfDriverVersion(string infText)
+    {
+        foreach (var line in infText.Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries))
+        {
+            var trimmed = line.Trim();
+            if (!trimmed.StartsWith("DriverVer", StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+            var comma = trimmed.IndexOf(',');
+            if (comma >= 0 && comma + 1 < trimmed.Length)
+            {
+                return trimmed[(comma + 1)..].Trim();
+            }
+        }
+        throw new InvalidDataException("The driver INF does not declare DriverVer.");
     }
 
     public static bool IsSuccessfulExitCode(int exitCode) => exitCode is 0 or 1641 or 3010;

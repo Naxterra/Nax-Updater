@@ -30,7 +30,7 @@ The inventory engine:
 
 ## Update providers
 
-Version 0.15.3 includes:
+Version 0.15.4 includes:
 
 - Mozilla Firefox releases from Mozilla's official product-details and release archive, preserving the effective Firefox profile language, architecture, channel, scope, and installation directory;
 - Nextcloud releases from the official `nextcloud-releases/desktop` GitHub repository using its release-asset SHA-256 digest and a multi-language MSI;
@@ -64,6 +64,7 @@ Version 0.15.3 includes:
 - multi-signer Authenticode policies from installed updater metadata, accepting any explicitly declared trusted publisher identity;
 - Store package migration matching through a unique exact product-name and publisher pair when the Store product intentionally publishes a replacement PFN;
 - MSI upgrade-family correlation that collapses side-by-side product generations and retains the newest registered version, preventing a successful MSI install from being offered repeatedly because the vendor left an older product registration behind.
+- twelve-way bounded Store catalog checking, reducing the complete local application scan and update check from roughly 27 seconds to about 7–8 seconds on the validated workstation without omitting packages.
 
 ## Manufacturer drivers
 
@@ -72,8 +73,8 @@ The native **Drivers / Treiber** view does not use Windows Update. It correlates
 - NVIDIA GeForce RTX 50-series desktop drivers are checked directly against NVIDIA's official WHQL Game Ready catalog.
 - A newer NVIDIA driver receives an install button only after NaxUpdater obtains NVIDIA's official installer URL and published SHA-256 sidecar; the downloaded package must also carry the `NVIDIA Corporation` Authenticode publisher.
 - The manufacturer installer remains visible so component choices stay under user control. NaxUpdater handles download verification, elevation, exit codes, restart reporting, and the post-install rescan.
-- Realtek RTL8125 Ethernet is checked against Realtek's live PCIe controller catalog and routed to the exact Realtek licensed download, never to the motherboard page.
-- Intel I219-V is checked against Intel's current Ethernet release metadata only after Intel explicitly confirms I219-family and Windows 11 support.
+- Realtek RTL8125 Ethernet is compared by its applicable driver branch rather than the catalog publication date, so installed `10.80.50.407` is correctly current for package branch `10.80.50`; Realtek's CAPTCHA-protected download remains an exact source action only for a genuinely newer branch.
+- Intel I219-V is compared with the exact Windows 11 `e1d.inf` payload rather than the unrelated umbrella package number. A genuine advance receives a SHA-256-verified ZIP plan that revalidates the hardware ID, INF version, and Microsoft WHCP catalog before elevated `pnputil` installation.
 - TP-Link hardware ID `USB\VID_3625&PID_010A` is retained when disconnected, mapped to Archer TBE400UH, and compared with its exact TP-Link hardware-version page.
 - TP-Link's public `5002` package version is projected to the installed Windows 11 `5102` INF branch before comparison, avoiding a false downgrade display.
 - Dell hardware ID `MONITOR\DELA1E4` maps to the exact AW3423DW `M46J9` monitor-driver page rather than generic Dell support.
@@ -82,6 +83,7 @@ The native **Drivers / Treiber** view does not use Windows Update. It correlates
 - Razer's repeated HID/interface records are collapsed by physical product ID. Intel chipset packages are collapsed by installed INF. Rows without a verified exact catalog have no action button.
 - BIOS, UEFI, device firmware, beta drivers, and Windows Update driver packages are excluded.
 - Large segmented downloads are resumable. Completed segments survive interruption, merge progress is displayed separately from download progress, and a freshly downloaded file is not hashed twice before signature verification.
+- Independent manufacturer source checks run concurrently, and the driver table includes a localized status filter for updates, current, manufacturer-managed, unverified, and failed rows.
 
 Catalogs provide candidates, never installed state. NaxUpdater still decides the installed version, location, architecture, channel, and scope from its independent inventory. A package-manager match is accepted only through a stable identifier such as an exact MSI product code; name-only search results are not installable.
 
@@ -96,6 +98,7 @@ The shared search field remains active in both the installed-applications and up
 - An in-app settings dialog stores the language and verification-banner preferences.
 - The Settings dialog includes a localized **About / Über** section with the running application version and a link to the project repository.
 - A localized manufacturer-driver view shows device, installed version, available version, official source, status, and the safe action supported by that manufacturer.
+- Manufacturer-driver rows can be filtered by status without losing the existing free-text filter.
 - The verification information banner can be closed permanently and restored from Settings.
 - Installed applications can be sorted by clicking the **Application** or **Installed / updated** column header. Clicking the active header reverses direction; unknown dates remain last.
 - The former confidence/safety summary and list column are intentionally omitted from the user interface.
@@ -132,7 +135,7 @@ From this directory:
 dotnet build NaxUpdater.slnx
 dotnet run --project tests/NaxUpdater.Core.SmokeTests/NaxUpdater.Core.SmokeTests.csproj
 dotnet publish src/NaxUpdater/NaxUpdater.csproj -c Release -r win-x64 --self-contained true -o artifacts/NaxUpdater-win-x64
-./scripts/package-release.ps1 -Version 0.15.3
+./scripts/package-release.ps1 -Version 0.15.4
 ```
 
 The desktop project uses .NET 11, WinUI 3, and the Windows App SDK. It is not an Electron or WebView application.

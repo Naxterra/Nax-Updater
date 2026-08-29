@@ -14,6 +14,7 @@ public enum UpdateExecutionKind
     DownloadedExe,
     DownloadedMsi,
     DownloadedZipMsi,
+    DownloadedZipDriver,
     NativeCommand,
     StorePackage
 }
@@ -36,7 +37,8 @@ public sealed record UpdateExecutionPlan(
     string? StorePackageFamilyName = null,
     string? StorePublisher = null,
     IReadOnlyList<string>? ExpectedSigners = null,
-    string? NestedInstallerRelativePath = null);
+    string? NestedInstallerRelativePath = null,
+    string? ExpectedHardwareId = null);
 
 public sealed record UpdateCheckResult(
     string ApplicationIdentity,

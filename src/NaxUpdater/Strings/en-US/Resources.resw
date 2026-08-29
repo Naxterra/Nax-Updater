@@ -74,4 +74,11 @@
   <data name="DriverUpdatedTitle"><value>{0} driver update completed</value></data>
   <data name="DriverUpdateCompleted"><value>The manufacturer installer completed. A new driver scan will verify the installed version.</value></data>
   <data name="DriverNotUpdatedTitle"><value>{0} driver was not updated</value></data>
+  <data name="DriverFilterAll.Content"><value>All statuses</value></data>
+  <data name="DriverFilterUpdates.Content"><value>Updates</value></data>
+  <data name="DriverFilterCurrent.Content"><value>Current</value></data>
+  <data name="DriverFilterManaged.Content"><value>Manufacturer-managed</value></data>
+  <data name="DriverFilterUnverified.Content"><value>Unverified</value></data>
+  <data name="DriverFilterErrors.Content"><value>Errors</value></data>
+  <data name="EvidenceLabelMsixArchitecture"><value>MSIX package architecture</value></data>
 </root>
