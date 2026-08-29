@@ -8,6 +8,7 @@ using System.Net;
 using System.Net.Http.Headers;
 using System.Security.Cryptography;
 using System.Text;
+using System.Text.Json;
 using System.Xml.Linq;
 
 Assert(VersionNormalizer.Normalize("34.0.3.20260826", "FirstThreeNumericComponents") == "34.0.3", "Nextcloud version normalization failed.");
@@ -22,6 +23,43 @@ Assert(ManufacturerDriverService.ProjectTpLinkVersion("5002.24.126.4", "5102.24.
     "TP-Link Windows 11 branch projection failed.");
 Assert(ManufacturerDriverService.RealtekCatalogIsNewer("10.80.50.407", "2026-07-04", "10.80.50", "2026-08-28"),
     "Realtek catalog date comparison failed for a refreshed same-branch package.");
+using (var storeFixture = JsonDocument.Parse("""
+{
+  "Product": {
+    "DisplaySkuAvailabilities": [
+      {
+        "Sku": {
+          "Properties": {
+            "Packages": [
+              {
+                "PackageFamilyName": "OpenAI.Codex_2p2nqsd0c76g0",
+                "PackageFullName": "OpenAI.Codex_26.825.5331.0_x64__2p2nqsd0c76g0",
+                "Architectures": ["x64"]
+              },
+              {
+                "PackageFamilyName": "OpenAI.Codex_2p2nqsd0c76g0",
+                "PackageFullName": "OpenAI.Codex_26.900.1.0_arm64__2p2nqsd0c76g0",
+                "Architectures": ["arm64"]
+              }
+            ]
+          }
+        }
+      }
+    ]
+  }
+}
+"""))
+{
+    var storeVersion = MicrosoftStoreProductMetadataClient.ParseLatestPackageVersion(
+        storeFixture.RootElement,
+        "OpenAI.Codex_2p2nqsd0c76g0",
+        "x64");
+    Assert(storeVersion == "26.825.5331.0", $"Store package metadata selected {storeVersion} instead of the applicable x64 ChatGPT version.");
+    Assert(MicrosoftStoreProductMetadataClient.IsNewer("26.825.4187.0", storeVersion),
+        "The observed ChatGPT Store transition was not detected as an update.");
+    Assert(!MicrosoftStoreProductMetadataClient.IsNewer("26.825.5331.0", storeVersion),
+        "The installed ChatGPT Store version was incorrectly reported as outdated.");
+}
 
 var manufacturerHash = new string('e', 64);
 using (var manufacturerClient = new HttpClient(new StubHttpMessageHandler(request =>
@@ -581,8 +619,16 @@ if (installedChatGpt is not null)
 {
     Assert(installedChatGpt.DisplayName.Equals("ChatGPT", StringComparison.OrdinalIgnoreCase),
         $"The OpenAI Store package is still shown as {installedChatGpt.DisplayName} instead of ChatGPT.");
+    var chatGptStore = new StorePackageDeploymentService();
+    var chatGptIdentity = await chatGptStore.ResolveAsync(
+        "OpenAI.Codex_2p2nqsd0c76g0",
+        installedChatGpt.DisplayName,
+        installedChatGpt.Publisher,
+        CancellationToken.None);
+    Assert(chatGptIdentity?.ProductId == "9PLM9XGG6VKS",
+        $"ChatGPT resolved to {chatGptIdentity?.ProductId ?? chatGptStore.LastError} instead of its exact current Store product.");
     var chatGptAssessment = await new MsixStoreUpdateProvider().CheckAsync(installedChatGpt, CancellationToken.None);
-    Assert(chatGptAssessment.Status is UpdateStatus.Current or UpdateStatus.Available or UpdateStatus.ManagedExternally,
+    Assert(chatGptAssessment.Status is UpdateStatus.Current or UpdateStatus.Available,
         $"ChatGPT Store assessment failed: {chatGptAssessment.Status} · {chatGptAssessment.Message}");
     Assert(chatGptAssessment.Status != UpdateStatus.Available ||
            (chatGptAssessment.ExecutionPlan is { Kind: UpdateExecutionKind.StorePackage } && chatGptAssessment.IsInstallable),
@@ -590,6 +636,21 @@ if (installedChatGpt is not null)
     Assert(chatGptAssessment.Status == UpdateStatus.Available ||
            (chatGptAssessment.ExecutionPlan is null && !chatGptAssessment.IsInstallable),
         "ChatGPT received a Store action even though no applicable update was reported.");
+    var observedPreUpdateChatGpt = installedChatGpt with
+    {
+        InstalledVersion = "26.825.4187.0",
+        NormalizedVersion = "26.825.4187.0"
+    };
+    var observedPreUpdateAssessment = await new MsixStoreUpdateProvider().CheckAsync(observedPreUpdateChatGpt, CancellationToken.None);
+    Assert(observedPreUpdateAssessment.Status == UpdateStatus.Available &&
+           observedPreUpdateAssessment.AvailableVersion == "26.825.5331.0" &&
+           observedPreUpdateAssessment.ExecutionPlan is
+           {
+               Kind: UpdateExecutionKind.StorePackage,
+               StoreProductId: "9PLM9XGG6VKS",
+               StorePackageFamilyName: "OpenAI.Codex_2p2nqsd0c76g0"
+           },
+        $"The observed ChatGPT Store update was missed: {observedPreUpdateAssessment.Status} · {observedPreUpdateAssessment.AvailableVersion} · {observedPreUpdateAssessment.Message}");
 }
 
 var liveStoreIdentities = 0;

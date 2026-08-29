@@ -4,10 +4,20 @@ namespace NaxUpdater.Core.Services;
 
 public sealed class StorePackageDeploymentService
 {
+    private static readonly HttpClient SharedHttpClient = new()
+    {
+        Timeout = TimeSpan.FromSeconds(30)
+    };
     private readonly object _connectionLock = new();
     private readonly SemaphoreSlim _catalogQuerySlots = new(6, 6);
     private Task<(PackageManager Manager, PackageCatalog Catalog)>? _storeConnection;
     private Task<(PackageManager Manager, PackageCatalog Catalog)>? _storeUpdateConnection;
+    private readonly MicrosoftStoreProductMetadataClient _productMetadata;
+
+    public StorePackageDeploymentService(HttpClient? httpClient = null)
+    {
+        _productMetadata = new MicrosoftStoreProductMetadataClient(httpClient ?? SharedHttpClient);
+    }
 
     public string? LastError { get; private set; }
 
@@ -15,6 +25,8 @@ public sealed class StorePackageDeploymentService
         string packageFamilyName,
         string? installedDisplayName,
         string? installedPublisher,
+        string? installedVersion,
+        string? installedArchitecture,
         CancellationToken cancellationToken)
     {
         if (string.IsNullOrWhiteSpace(packageFamilyName))
@@ -34,6 +46,35 @@ public sealed class StorePackageDeploymentService
             {
                 return new StoreUpdateAvailability(false, false, null, null,
                     LastError ?? "No exact Microsoft Store product matched the installed package family.");
+            }
+
+            string? catalogVersion = null;
+            try
+            {
+                catalogVersion = await _productMetadata.GetLatestPackageVersionAsync(
+                    identity.ProductId,
+                    packageFamilyName,
+                    installedArchitecture,
+                    cancellationToken);
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch
+            {
+                // The supported WinGet deployment catalog remains the fallback if Store metadata is unavailable.
+            }
+
+            if (Version.TryParse(installedVersion, out _) && Version.TryParse(catalogVersion, out _))
+            {
+                var metadataReportsUpdate = MicrosoftStoreProductMetadataClient.IsNewer(installedVersion, catalogVersion);
+                return new StoreUpdateAvailability(
+                    true,
+                    metadataReportsUpdate,
+                    identity.ProductId,
+                    metadataReportsUpdate ? catalogVersion : null,
+                    null);
             }
 
             var (_, catalog) = await GetStoreUpdateConnectionAsync(cancellationToken);
@@ -56,8 +97,9 @@ public sealed class StorePackageDeploymentService
             {
                 var candidate = result.Matches[index].CatalogPackage;
                 if (!candidate.Id.Equals(identity.ProductId, StringComparison.OrdinalIgnoreCase) ||
-                    candidate.InstalledVersion is null ||
-                    !Contains(candidate.InstalledVersion.PackageFamilyNames, packageFamilyName))
+                    !Contains(candidate.DefaultInstallVersion.PackageFamilyNames, packageFamilyName) &&
+                    (candidate.InstalledVersion is null ||
+                     !Contains(candidate.InstalledVersion.PackageFamilyNames, packageFamilyName)))
                 {
                     continue;
                 }
@@ -74,10 +116,11 @@ public sealed class StorePackageDeploymentService
                     "No exact Store catalog product was correlated with the installed package family.");
             }
 
+            var isUpdateAvailable = package.IsUpdateAvailable;
             var availableVersion = package.IsUpdateAvailable ? StoreVersion(package) : null;
             return new StoreUpdateAvailability(
                 true,
-                package.IsUpdateAvailable,
+                isUpdateAvailable,
                 identity.ProductId,
                 availableVersion,
                 null);
@@ -274,12 +317,12 @@ public sealed class StorePackageDeploymentService
                     var candidate = find.Matches[index].CatalogPackage;
                     var familyMatch = candidate.InstalledVersion is not null &&
                                       Contains(candidate.InstalledVersion.PackageFamilyNames, packageFamilyName);
+                    var defaultFamilyMatch = Contains(candidate.DefaultInstallVersion.PackageFamilyNames, packageFamilyName);
                     var metadataMatch = !string.IsNullOrWhiteSpace(installedDisplayName) &&
                                         candidate.Name.Equals(installedDisplayName, StringComparison.OrdinalIgnoreCase) &&
                                         PublisherMatches(candidate, installedPublisher);
                     if (candidate.Id.Equals(productId, StringComparison.OrdinalIgnoreCase) &&
-                        candidate.IsUpdateAvailable &&
-                        (familyMatch || metadataMatch))
+                        (familyMatch || defaultFamilyMatch || metadataMatch))
                     {
                         if (package is not null)
                         {

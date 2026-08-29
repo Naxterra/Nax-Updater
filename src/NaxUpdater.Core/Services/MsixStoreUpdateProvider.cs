@@ -4,7 +4,12 @@ namespace NaxUpdater.Core.Services;
 
 public sealed class MsixStoreUpdateProvider : IUpdateProvider
 {
-    private readonly StorePackageDeploymentService _store = new();
+    private readonly StorePackageDeploymentService _store;
+
+    public MsixStoreUpdateProvider(HttpClient? httpClient = null)
+    {
+        _store = new StorePackageDeploymentService(httpClient);
+    }
 
     public string Id => "msix-store";
 
@@ -24,6 +29,8 @@ public sealed class MsixStoreUpdateProvider : IUpdateProvider
             packageFamily,
             application.DisplayName,
             application.Publisher,
+            application.NormalizedVersion,
+            PackageArchitecture(application),
             cancellationToken);
         if (!availability.IsResolved)
         {
@@ -82,4 +89,7 @@ public sealed class MsixStoreUpdateProvider : IUpdateProvider
             ? application.Identity[prefix.Length..]
             : application.Evidence.FirstOrDefault(static item => item.Label == "MSIX package family")?.Value;
     }
+
+    private static string? PackageArchitecture(InstalledApplication application) =>
+        application.Evidence.FirstOrDefault(static item => item.Label == "MSIX package architecture")?.Value;
 }
