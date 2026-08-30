@@ -4,12 +4,10 @@
     <EnableDefaultItems>false</EnableDefaultItems>
     <Platform>x64</Platform>
     <InstallerPlatform>x64</InstallerPlatform>
-    <Cultures>$(BundleCulture)</Cultures>
     <OutputName>NaxUpdater-Setup-x64</OutputName>
     <OutputPath>$(MSBuildProjectDirectory)\..\artifacts\bundle\</OutputPath>
-    <NaxUpdaterVersion Condition="'$(NaxUpdaterVersion)' == ''">0.15.6</NaxUpdaterVersion>
-    <BundleCulture Condition="'$(BundleCulture)' == ''">en-US</BundleCulture>
-    <DefineConstants>NaxUpdaterVersion=$(NaxUpdaterVersion);BundleCulture=$(BundleCulture)</DefineConstants>
+    <NaxUpdaterVersion Condition="'$(NaxUpdaterVersion)' == ''">0.15.7</NaxUpdaterVersion>
+    <DefineConstants>NaxUpdaterVersion=$(NaxUpdaterVersion)</DefineConstants>
   </PropertyGroup>
   <ItemGroup>
     <Compile Include="Bundle.wxs" />

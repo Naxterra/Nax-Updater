@@ -9,19 +9,21 @@
       UpgradeCode="{23B20884-E865-4567-8158-EFDE8E0DBF65}"
       Compressed="yes"
       IconSourceFile="$(sys.SOURCEFILEDIR)..\src\NaxUpdater\Assets\AppIcon.ico">
-    <BootstrapperApplication>
+    <BootstrapperApplication bal:UseUILanguages="yes">
       <bal:WixStandardBootstrapperApplication
           Theme="hyperlinkLargeLicense"
-          LocalizationFile="$(sys.SOURCEFILEDIR)Bundle.$(BundleCulture).wxl"
+          LocalizationFile="$(sys.SOURCEFILEDIR)Bundle.en-US.wxl"
           LicenseUrl="https://github.com/Naxterra/Nax-Updater/blob/main/LICENSE"
           LogoFile="$(sys.SOURCEFILEDIR)..\src\NaxUpdater\Assets\AppIcon-128.png"
           ShowVersion="yes"
           SuppressOptionsUI="yes" />
+      <Payload Id="EnglishSetupLocalization" Name="1033\thm.wxl" SourceFile="$(sys.SOURCEFILEDIR)Bundle.en-US.wxl" />
+      <Payload Id="GermanSetupLocalization" Name="1031\thm.wxl" SourceFile="$(sys.SOURCEFILEDIR)Bundle.de-DE.wxl" />
     </BootstrapperApplication>
     <Chain>
       <MsiPackage
           Id="NaxUpdaterMsi"
-          SourceFile="$(sys.SOURCEFILEDIR)..\artifacts\installer\$(BundleCulture)\NaxUpdater-Setup-x64.msi"
+          SourceFile="$(sys.SOURCEFILEDIR)..\artifacts\installer\en-US\NaxUpdater-Setup-x64.msi"
           Vital="yes" />
     </Chain>
   </Bundle>
