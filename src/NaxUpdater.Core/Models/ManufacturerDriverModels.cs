@@ -22,7 +22,8 @@ public sealed record InstalledHardwareDriver(
     string? HardwareId,
     string? InfName,
     bool IsPresent = true,
-    int DeviceCount = 1);
+    int DeviceCount = 1,
+    IReadOnlyList<string>? GroupMembers = null);
 
 public sealed record ManufacturerDriverResult(
     InstalledHardwareDriver Driver,

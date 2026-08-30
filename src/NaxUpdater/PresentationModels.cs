@@ -225,23 +225,41 @@ public sealed class ManufacturerDriverRow(ManufacturerDriverResult source)
 {
     public ManufacturerDriverResult Source { get; } = source;
     public string Name => Source.Driver.DeviceName;
-    public string Detail => string.Join(" · ", new[]
-    {
-        Source.Driver.DeviceClass,
-        Source.Driver.Provider,
-        Source.Driver.DeviceCount > 1 ? LocalizationService.Format("DriverDeviceCount", Source.Driver.DeviceCount) : null,
-        !Source.Driver.IsPresent ? LocalizationService.Get("DriverNotConnected") : null
-    }.Where(static value => !string.IsNullOrWhiteSpace(value)));
-    public string Installed => Source.Driver.InstalledVersion;
-    public string Available => Source.AvailableVersion ?? "—";
+    private bool IsRazerSuite => Source.Driver.Identity.EndsWith(":razer:suite", StringComparison.OrdinalIgnoreCase);
+    private bool IsIntelPackageGroup => Source.Driver.Identity.EndsWith(":intel:chipset", StringComparison.OrdinalIgnoreCase) ||
+                                        Source.Driver.Identity.EndsWith(":intel:management-engine", StringComparison.OrdinalIgnoreCase) ||
+                                        Source.Driver.Identity.EndsWith(":intel:rst", StringComparison.OrdinalIgnoreCase);
+    public string Detail => IsRazerSuite
+        ? LocalizationService.Format("DriverGroupedProducts", Source.Driver.DeviceCount)
+        : IsIntelPackageGroup
+            ? LocalizationService.Format("DriverGroupedComponents", Source.Driver.DeviceCount)
+            : string.Join(" · ", new[]
+            {
+                Source.Driver.DeviceClass,
+                Source.Driver.Provider,
+                Source.Driver.DeviceCount > 1 ? LocalizationService.Format("DriverDeviceCount", Source.Driver.DeviceCount) : null,
+                !Source.Driver.IsPresent ? LocalizationService.Get("DriverNotConnected") : null
+            }.Where(static value => !string.IsNullOrWhiteSpace(value)));
+    public string Installed => IsRazerSuite
+        ? LocalizationService.Format("DriverInstalledSynapse", Source.Driver.InstalledVersion)
+        : IsIntelPackageGroup
+            ? LocalizationService.Format("DriverInstalledComponentSet", Source.Driver.DeviceCount)
+            : Source.Driver.InstalledVersion;
+    public string Available => IsRazerSuite
+        ? LocalizationService.Format("DriverFirmwareChecksAvailable", Source.AvailableVersion ?? "0")
+        : Source.Status == ManufacturerDriverStatus.NoUpdateRequired && Source.SourceName.StartsWith("WD Elements", StringComparison.OrdinalIgnoreCase)
+            ? LocalizationService.Get("DriverWdOptionsAvailable")
+            : Source.AvailableVersion ?? "—";
     public string Provider => Source.SourceName;
     public string Status => Source.Status switch
     {
         ManufacturerDriverStatus.Available when CanUpdate => LocalizationService.Get("DriverStatusAvailable"),
         ManufacturerDriverStatus.Available => LocalizationService.Get("DriverStatusManufacturerPackage"),
         ManufacturerDriverStatus.Current => LocalizationService.Get("DriverStatusCurrent"),
-        ManufacturerDriverStatus.VendorSoftwareManaged => LocalizationService.Get("DriverStatusVendorManaged"),
-        ManufacturerDriverStatus.OfficialSourceOnly => LocalizationService.Get("DriverStatusOfficialSourceOnly"),
+        ManufacturerDriverStatus.VendorSoftwareManaged => LocalizationService.Get("DriverStatusSynapseChecked"),
+        ManufacturerDriverStatus.OfficialSourceOnly when Source.AvailableVersion is not null => LocalizationService.Get("DriverStatusOfficialPackageChecked"),
+        ManufacturerDriverStatus.OfficialSourceOnly => LocalizationService.Get("DriverStatusSupportPageOnly"),
+        ManufacturerDriverStatus.NoUpdateRequired when Source.SourceName.StartsWith("WD Elements", StringComparison.OrdinalIgnoreCase) => LocalizationService.Get("DriverStatusWdCurrent"),
         ManufacturerDriverStatus.NoUpdateRequired => LocalizationService.Get("DriverStatusNoUpdateRequired"),
         ManufacturerDriverStatus.NoVerifiedCatalog => LocalizationService.Get("DriverStatusNoCatalog"),
         _ => LocalizationService.Get("DriverStatusError")
@@ -256,7 +274,13 @@ public sealed class ManufacturerDriverRow(ManufacturerDriverResult source)
         ? LocalizationService.Get("UpdateShort")
         : Source.Status == ManufacturerDriverStatus.Available
             ? LocalizationService.Get("OpenExactDownload")
-            : LocalizationService.Get("OpenExactSource");
+            : Source.Status == ManufacturerDriverStatus.VendorSoftwareManaged
+                ? LocalizationService.Get("OpenRazerChecks")
+                : Source.Status == ManufacturerDriverStatus.NoUpdateRequired && Source.SourceName.StartsWith("WD Elements", StringComparison.OrdinalIgnoreCase)
+                    ? LocalizationService.Get("OpenWdSupport")
+                    : Source.Status == ManufacturerDriverStatus.OfficialSourceOnly && Source.AvailableVersion is not null
+                        ? LocalizationService.Get("OpenOfficialPackage")
+                        : LocalizationService.Get("OpenSupportPage");
     public Brush StatusForeground => PresentationBrushes.Get(Source.Status switch
     {
         ManufacturerDriverStatus.Available => "NaxOrangeBrush",

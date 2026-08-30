@@ -31,7 +31,7 @@ The inventory engine:
 
 ## Update providers
 
-Version 0.15.8 includes:
+Version 0.15.9 includes:
 
 - Mozilla Firefox releases from Mozilla's official product-details and release archive, preserving the effective Firefox profile language, architecture, channel, scope, and installation directory;
 - Nextcloud releases from the official `nextcloud-releases/desktop` GitHub repository using its release-asset SHA-256 digest and a multi-language MSI;
@@ -84,12 +84,13 @@ The native **Drivers / Treiber** view does not use Windows Update. It correlates
 - TP-Link's public `5002` package version is projected to the installed Windows 11 `5102` INF branch before comparison, avoiding a false downgrade display.
 - Dell hardware ID `MONITOR\DELA1E4` maps to the exact AW3423DW `M46J9` monitor-driver page rather than generic Dell support.
 - Dell's `A00-00` package label is kept separate from its installed `1.1.0.0` INF version.
-- Present WD Elements hardware is shown even though it uses Microsoft's inbox USB-storage driver; Western Digital's official policy is reported instead of inventing a missing driver update.
-- Razer's repeated HID/interface records are collapsed by physical product ID. Intel chipset packages are collapsed by installed INF. Rows without a verified exact catalog have no action button.
+- Present WD Elements hardware is shown with Western Digital's current SES guidance: Windows 11 keeps the Microsoft storage driver, required SES support installs automatically, the downloadable SES installer is explicitly legacy, and the official optional WD tools remain linked.
+- All Razer HID/interface records are collapsed into one Razer category. The installed Synapse version and Razer's public firmware catalog are checked once; matching Huntsman V3 Pro 8KHz, Kiyo Pro, and Nommo Pro firmware tools are reported without pretending that HID driver versions are firmware versions.
+- Intel devices are grouped by actual package boundary: Chipset Device Software, Management Engine components, Rapid Storage Technology, and exact Ethernet. The latest public Intel package version is shown without comparing an umbrella package number to unrelated component INF versions.
 - BIOS, UEFI, device firmware, beta drivers, and Windows Update driver packages are excluded.
 - Large segmented downloads are resumable. Completed segments survive interruption, merge progress is displayed separately from download progress, and a freshly downloaded file is not hashed twice before signature verification.
 - Independent manufacturer source checks run concurrently, and the driver table distinguishes verified installed vendor-software ownership from rows that only have an official source and still require hardware applicability validation. Neither state claims a manually installed driver is outdated.
-- Intel chipset, RST, Management Engine/iCLS/DAL, and other Intel component rows route to the relevant official Intel source without comparing umbrella package versions to unrelated device INF versions; detected Razer rows are assigned to the actually installed Synapse version.
+- The driver grid is width-capped on maximized and ultrawide windows so the device name column no longer expands into a large empty middle area.
 
 Catalogs provide candidates, never installed state. NaxUpdater still decides the installed version, location, architecture, channel, and scope from its independent inventory. A package-manager match is accepted only through a stable identifier such as an exact MSI product code; name-only search results are not installable.
 
@@ -144,7 +145,7 @@ From this directory:
 dotnet build NaxUpdater.slnx
 dotnet run --project tests/NaxUpdater.Core.SmokeTests/NaxUpdater.Core.SmokeTests.csproj
 dotnet publish src/NaxUpdater/NaxUpdater.csproj -c Release -r win-x64 --self-contained true -o artifacts/NaxUpdater-win-x64
-./scripts/package-release.ps1 -Version 0.15.8
+./scripts/package-release.ps1 -Version 0.15.9
 ```
 
 The desktop project uses .NET 11, WinUI 3, and the Windows App SDK. It is not an Electron or WebView application.

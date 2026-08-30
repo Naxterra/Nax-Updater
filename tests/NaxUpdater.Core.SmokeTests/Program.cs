@@ -1080,25 +1080,34 @@ if (HasDriverRegistration("DELA1E4"))
         "The Dell AW3423DW monitor driver did not receive its exact Dell driver page.");
 }
 var liveWdDrive = liveManufacturerDrivers.Results.FirstOrDefault(static result =>
-    result.SourceName.Equals("Western Digital", StringComparison.OrdinalIgnoreCase));
+    result.SourceName.StartsWith("WD Elements", StringComparison.OrdinalIgnoreCase));
 if (HasPresentPnpDevice("VID_1058&PID_25A3", "WD Elements"))
 {
     Assert(liveWdDrive is not null && liveWdDrive.Status == ManufacturerDriverStatus.NoUpdateRequired &&
-           liveWdDrive.Driver.DeviceName.Contains("WD Elements", StringComparison.OrdinalIgnoreCase),
+           liveWdDrive.Driver.DeviceName.Contains("WD Elements", StringComparison.OrdinalIgnoreCase) &&
+           liveWdDrive.AvailableVersion?.Contains("SES", StringComparison.OrdinalIgnoreCase) == true &&
+           liveWdDrive.SourceUri?.AbsoluteUri.Contains("13977", StringComparison.OrdinalIgnoreCase) == true,
         "The present WD Elements external drive was omitted or misclassified.");
 }
 var razerRows = liveManufacturerDrivers.Results.Count(static result =>
     result.Driver.Provider.Contains("Razer", StringComparison.OrdinalIgnoreCase));
 if (HasDriverRegistration("VID_1532"))
 {
-    Assert(razerRows is > 0 and <= 8, $"Razer interface drivers were not collapsed into physical-device packages: {razerRows} rows.");
+    Assert(razerRows == 1, $"Razer interface drivers were not collapsed into one Synapse/firmware category: {razerRows} rows.");
     if (snapshot.Applications.Any(static app => app.DisplayName.Equals("Razer Synapse", StringComparison.OrdinalIgnoreCase)))
     {
-        Assert(liveManufacturerDrivers.Results
-                .Where(static result => result.Driver.Provider.Contains("Razer", StringComparison.OrdinalIgnoreCase))
-                .All(static result => result.Status == ManufacturerDriverStatus.VendorSoftwareManaged &&
-                                      result.Message.Contains("Installed Razer Synapse", StringComparison.OrdinalIgnoreCase)),
-            "Razer drivers were not assigned to the detected Synapse installation.");
+        var razer = liveManufacturerDrivers.Results.Single(static result =>
+            result.Driver.Provider.Contains("Razer", StringComparison.OrdinalIgnoreCase));
+        Assert(razer.Status == ManufacturerDriverStatus.VendorSoftwareManaged &&
+               razer.Driver.DeviceName == "Razer peripherals" &&
+               razer.Driver.GroupMembers is { Count: > 1 } &&
+               razer.AvailableVersion == "3" &&
+               razer.Message.Contains("Huntsman V3 Pro 8KHz", StringComparison.OrdinalIgnoreCase) &&
+               razer.Message.Contains("Kiyo Pro", StringComparison.OrdinalIgnoreCase) &&
+               razer.Message.Contains("Nommo Pro", StringComparison.OrdinalIgnoreCase) &&
+               razer.Message.Contains("Installed Synapse", StringComparison.OrdinalIgnoreCase) &&
+               razer.SourceUri?.AbsoluteUri.Contains("4166", StringComparison.OrdinalIgnoreCase) == true,
+            "Razer products were not grouped under the detected Synapse installation and official firmware catalog.");
     }
 }
 var intelSourceOnlyRows = liveManufacturerDrivers.Results
@@ -1108,8 +1117,18 @@ var intelSourceOnlyRows = liveManufacturerDrivers.Results
 Assert(intelSourceOnlyRows.All(static result =>
         result.Status == ManufacturerDriverStatus.OfficialSourceOnly &&
         result.SourceUri?.Host.Contains("intel.com", StringComparison.OrdinalIgnoreCase) == true &&
-        result.Message.Contains("No update is claimed", StringComparison.OrdinalIgnoreCase)),
+        (result.AvailableVersion is not null || result.Message.Contains("No update is claimed", StringComparison.OrdinalIgnoreCase))),
     "An Intel component without exact INF applicability was labelled managed/outdated or lacked an official Intel source.");
+var intelChipsetGroup = intelSourceOnlyRows.FirstOrDefault(static result =>
+    result.Driver.Identity.EndsWith(":intel:chipset", StringComparison.OrdinalIgnoreCase));
+if (intelChipsetGroup is not null)
+{
+    Assert(intelChipsetGroup.Driver.DeviceName.Contains("Chipset Device Software", StringComparison.OrdinalIgnoreCase) &&
+           intelChipsetGroup.Driver.GroupMembers is { Count: > 1 } &&
+           intelChipsetGroup.AvailableVersion == "10.1.20658.8883" &&
+           intelChipsetGroup.SourceUri?.AbsoluteUri.Contains("19347", StringComparison.OrdinalIgnoreCase) == true,
+        "Intel chipset component INFs were not grouped and checked against Intel's official package.");
+}
 
 using var capabilityClient = new HttpClient();
 var installedMetadataCoverage = snapshot.Applications.Count(new ElectronBuilderUpdateProvider(capabilityClient).CanHandle);

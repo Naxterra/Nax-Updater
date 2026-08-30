@@ -462,14 +462,14 @@
                             <TextBlock x:Name="DriverCountText" x:Uid="DriverCountText" Text="Not checked" Style="{StaticResource MutedTextStyle}" VerticalAlignment="Center" />
                         </StackPanel>
                     </Grid>
-                    <Grid Grid.Row="1" Padding="14,7" ColumnSpacing="10" Background="{ThemeResource SubtleFillColorSecondaryBrush}">
+                    <Grid Grid.Row="1" Padding="14,7" ColumnSpacing="10" Background="{ThemeResource SubtleFillColorSecondaryBrush}" MaxWidth="1260" HorizontalAlignment="Left">
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="*" />
                             <ColumnDefinition Width="125" />
                             <ColumnDefinition Width="125" />
+                            <ColumnDefinition Width="190" />
+                            <ColumnDefinition Width="240" />
                             <ColumnDefinition Width="150" />
-                            <ColumnDefinition Width="150" />
-                            <ColumnDefinition Width="130" />
                         </Grid.ColumnDefinitions>
                         <Button Grid.Column="0" Tag="Name" Style="{StaticResource ColumnHeaderButtonStyle}" HorizontalContentAlignment="Left" Click="DriverSortHeader_Click">
                             <TextBlock x:Name="DriverNameHeaderText" Text="Device" />
@@ -496,14 +496,14 @@
                             </ListView.ItemContainerStyle>
                             <ListView.ItemTemplate>
                                 <DataTemplate>
-                                    <Grid Padding="14,10" ColumnSpacing="10">
+                                    <Grid Padding="14,10" ColumnSpacing="10" MaxWidth="1260" HorizontalAlignment="Left">
                                         <Grid.ColumnDefinitions>
                                             <ColumnDefinition Width="*" />
                                             <ColumnDefinition Width="125" />
                                             <ColumnDefinition Width="125" />
+                                            <ColumnDefinition Width="190" />
+                                            <ColumnDefinition Width="240" />
                                             <ColumnDefinition Width="150" />
-                                            <ColumnDefinition Width="150" />
-                                            <ColumnDefinition Width="130" />
                                         </Grid.ColumnDefinitions>
                                         <StackPanel>
                                             <TextBlock Text="{Binding Name}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
