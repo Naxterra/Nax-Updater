@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Wix
+    xmlns="http://wixtoolset.org/schemas/v4/wxs"
+    xmlns:bal="http://wixtoolset.org/schemas/v4/wxs/bal">
+  <Bundle
+      Name="NaxUpdater"
+      Manufacturer="Naxterra"
+      Version="$(NaxUpdaterVersion)"
+      UpgradeCode="{23B20884-E865-4567-8158-EFDE8E0DBF65}"
+      Compressed="yes"
+      IconSourceFile="$(sys.SOURCEFILEDIR)..\src\NaxUpdater\Assets\AppIcon.ico">
+    <BootstrapperApplication>
+      <bal:WixStandardBootstrapperApplication
+          Theme="hyperlinkLargeLicense"
+          LocalizationFile="$(sys.SOURCEFILEDIR)Bundle.$(BundleCulture).wxl"
+          LicenseUrl="https://github.com/Naxterra/Nax-Updater/blob/main/LICENSE"
+          LogoFile="$(sys.SOURCEFILEDIR)..\src\NaxUpdater\Assets\AppIcon-128.png"
+          ShowVersion="yes"
+          SuppressOptionsUI="yes" />
+    </BootstrapperApplication>
+    <Chain>
+      <MsiPackage
+          Id="NaxUpdaterMsi"
+          SourceFile="$(sys.SOURCEFILEDIR)..\artifacts\installer\$(BundleCulture)\NaxUpdater-Setup-x64.msi"
+          Vital="yes" />
+    </Chain>
+  </Bundle>
+</Wix>

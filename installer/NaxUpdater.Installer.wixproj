@@ -1,6 +1,7 @@
 <Project Sdk="WixToolset.Sdk/6.0.2">
   <PropertyGroup>
     <OutputType>Package</OutputType>
+    <EnableDefaultItems>false</EnableDefaultItems>
     <Platform>x64</Platform>
     <InstallerPlatform>x64</InstallerPlatform>
     <Cultures>en-US;de-DE</Cultures>
@@ -14,6 +15,9 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <Compile Include="Package.wxs" />
+    <EmbeddedResource Include="Package.en-US.wxl" />
+    <EmbeddedResource Include="Package.de-DE.wxl" />
     <BindPath Include="$(MSBuildProjectDirectory)\..\artifacts\NaxUpdater-win-x64">
       <BindName>Publish</BindName>
     </BindPath>
