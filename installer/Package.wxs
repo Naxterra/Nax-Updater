@@ -16,10 +16,7 @@
     <MediaTemplate EmbedCab="yes" CompressionLevel="high" />
     <SetProperty Id="ARPINSTALLLOCATION" Value="[APPLICATIONFOLDER]" After="CostFinalize" Sequence="execute" />
 
-    <Property Id="ApplicationFolderName" Value="NaxUpdater" />
-    <Property Id="WixAppFolder" Value="WixPerMachineFolder" />
-
-    <StandardDirectory Id="ProgramFiles6432Folder">
+    <StandardDirectory Id="ProgramFiles64Folder">
       <Directory Id="APPLICATIONFOLDER" Name="NaxUpdater" />
     </StandardDirectory>
     <StandardDirectory Id="ProgramMenuFolder">
@@ -71,8 +68,7 @@
     <Property Id="WIXUI_EXITDIALOGOPTIONALTEXT" Value="!(loc.ExitDialogText)" />
 
     <WixVariable Id="WixUILicenseRtf" Value="$(sys.SOURCEFILEDIR)License.rtf" />
-    <WixVariable Id="override WixUISupportPerUser" Value="0" />
-    <ui:WixUI Id="WixUI_Advanced" ExtendedPathValidation="yes" />
+    <ui:WixUI Id="WixUI_InstallDir" InstallDirectory="APPLICATIONFOLDER" ExtendedPathValidation="yes" />
     <UIRef Id="WixUI_ErrorProgressText" />
   </Package>
 </Wix>
