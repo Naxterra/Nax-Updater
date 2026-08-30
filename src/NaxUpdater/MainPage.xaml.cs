@@ -18,6 +18,7 @@ public sealed partial class MainPage : Page
     private readonly HttpClient _httpClient = new();
     private readonly UpdateExecutionService _updateExecutionService = new();
     private readonly ApplicationRemovalService _applicationRemovalService = new();
+    private readonly ApplicationIconService _applicationIconService = new();
     private readonly ManufacturerDriverService _manufacturerDriverService;
     private IReadOnlyList<ApplicationRow> _allApplications = [];
     private IReadOnlyList<UpdateRow> _allUpdates = [];
@@ -100,6 +101,7 @@ public sealed partial class MainPage : Page
             _snapshot = await _inventoryService.ScanAsync();
             _allApplications = _snapshot.Applications.Select(static application => new ApplicationRow(application)).ToArray();
             ApplyFilter();
+            _ = LoadApplicationIconsAsync(_allApplications);
             UpdateSummary(_snapshot);
             UpdatePolicies(_snapshot);
             if (_snapshot.Issues.Count > 0)
@@ -123,6 +125,14 @@ public sealed partial class MainPage : Page
             ScanProgress.IsActive = false;
             ScanProgress.Visibility = Visibility.Collapsed;
         }
+    }
+
+    private async Task LoadApplicationIconsAsync(IReadOnlyList<ApplicationRow> rows)
+    {
+        await Task.WhenAll(rows.Select(async row =>
+        {
+            row.Icon = await _applicationIconService.LoadAsync(row.Source);
+        }));
     }
 
     private void FilterBox_TextChanged(object sender, TextChangedEventArgs e)
@@ -565,7 +575,10 @@ public sealed partial class MainPage : Page
             var service = new UpdateCheckService(_httpClient, catalog);
             var result = await service.CheckAsync(_snapshot);
 
-            _allUpdates = result.Results.Select(static update => new UpdateRow(update)).ToArray();
+            var applicationsByIdentity = _allApplications.ToDictionary(static row => row.Source.Identity, StringComparer.Ordinal);
+            _allUpdates = result.Results.Select(update => new UpdateRow(
+                update,
+                applicationsByIdentity.GetValueOrDefault(update.ApplicationIdentity))).ToArray();
             var available = result.Results.Count(static update => update.Status == UpdateStatus.Available);
             _availableUpdateCount = available;
             var errors = result.Results.Count(static update => update.Status == UpdateStatus.Error);

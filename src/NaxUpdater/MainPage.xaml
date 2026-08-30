@@ -163,10 +163,22 @@
                                         <ColumnDefinition Width="130" />
                                         <ColumnDefinition Width="120" />
                                     </Grid.ColumnDefinitions>
-                                    <StackPanel>
-                                        <TextBlock Text="{Binding Name}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
-                                        <TextBlock Text="{Binding Publisher}" FontSize="11" Style="{StaticResource MutedTextStyle}" TextTrimming="CharacterEllipsis" />
-                                    </StackPanel>
+                                    <Grid ColumnSpacing="10">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="36" />
+                                            <ColumnDefinition Width="*" />
+                                        </Grid.ColumnDefinitions>
+                                        <Border Width="32" Height="32" CornerRadius="6" Background="{ThemeResource SubtleFillColorSecondaryBrush}" VerticalAlignment="Center">
+                                            <Grid>
+                                                <FontIcon Glyph="&#xE71D;" FontSize="18" Foreground="{StaticResource NaxBlueBrush}" />
+                                                <Image Source="{Binding Icon}" Width="32" Height="32" Stretch="Uniform" />
+                                            </Grid>
+                                        </Border>
+                                        <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                                            <TextBlock Text="{Binding Name}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
+                                            <TextBlock Text="{Binding Publisher}" FontSize="11" Style="{StaticResource MutedTextStyle}" TextTrimming="CharacterEllipsis" />
+                                        </StackPanel>
+                                    </Grid>
                                     <TextBlock Grid.Column="1" Text="{Binding Version}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
                                     <TextBlock Grid.Column="2" Text="{Binding Provider}" VerticalAlignment="Center" TextWrapping="Wrap" />
                                     <TextBlock Grid.Column="3" Text="{Binding InstallationDate}" VerticalAlignment="Center" />
@@ -340,10 +352,22 @@
                                         <ColumnDefinition Width="115" />
                                         <ColumnDefinition Width="100" />
                                     </Grid.ColumnDefinitions>
-                                    <StackPanel>
-                                        <TextBlock Text="{Binding Name}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
-                                        <TextBlock Text="{Binding Provider}" FontSize="11" Style="{StaticResource MutedTextStyle}" TextTrimming="CharacterEllipsis" />
-                                    </StackPanel>
+                                    <Grid ColumnSpacing="10">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="36" />
+                                            <ColumnDefinition Width="*" />
+                                        </Grid.ColumnDefinitions>
+                                        <Border Width="32" Height="32" CornerRadius="6" Background="{ThemeResource SubtleFillColorSecondaryBrush}" VerticalAlignment="Center">
+                                            <Grid>
+                                                <FontIcon Glyph="&#xE71D;" FontSize="18" Foreground="{StaticResource NaxBlueBrush}" />
+                                                <Image Source="{Binding Application.Icon}" Width="32" Height="32" Stretch="Uniform" />
+                                            </Grid>
+                                        </Border>
+                                        <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                                            <TextBlock Text="{Binding Name}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
+                                            <TextBlock Text="{Binding Provider}" FontSize="11" Style="{StaticResource MutedTextStyle}" TextTrimming="CharacterEllipsis" />
+                                        </StackPanel>
+                                    </Grid>
                                     <TextBlock Grid.Column="1" Text="{Binding Installed}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
                                     <TextBlock Grid.Column="2" Text="{Binding Available}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
                                     <TextBlock Grid.Column="3" Text="{Binding Language}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
