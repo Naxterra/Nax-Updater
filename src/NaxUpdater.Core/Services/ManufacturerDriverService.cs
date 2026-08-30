@@ -13,6 +13,9 @@ public sealed partial class ManufacturerDriverService(HttpClient httpClient)
     private const string DriverClassPath = @"SYSTEM\CurrentControlSet\Control\Class";
     private static readonly Uri NvidiaDriverHome = new("https://www.nvidia.com/Download/index.aspx");
     private static readonly Uri IntelDsaHome = new("https://www.intel.com/content/www/us/en/support/detect.html");
+    private static readonly Uri IntelChipsetSoftware = new("https://www.intel.com/content/www/us/en/download/19347/chipset-inf-utility.html");
+    private static readonly Uri IntelManagementEngine = new("https://www.intel.com/content/www/us/en/download/682431/intel-management-engine-drivers-for-windows-10-and-windows-11.html");
+    private static readonly Uri IntelRapidStorageTenEleven = new("https://www.intel.com/content/www/us/en/download/19512/intel-rapid-storage-technology-driver-installation-software-with-intel-optane-memory-10th-and-11th-gen-platforms.html");
     private static readonly Uri IntelEthernetWindows11Page = new("https://www.intel.com/content/www/us/en/download/727998/intel-network-adapter-driver-for-microsoft-windows-11.html");
     private static readonly Uri IntelEthernetReadme = new("https://downloadmirror.intel.com/923981/readme.txt");
     private static readonly Uri IntelEthernetReleaseNotes = new("https://edc.intel.com/content/www/us/en/design/products/ethernet/adapters-and-devices-release-notes/");
@@ -29,7 +32,9 @@ public sealed partial class ManufacturerDriverService(HttpClient httpClient)
     {
         var issues = new List<string>();
         var installed = await Task.Run(() => ReadInstalledDrivers(issues), cancellationToken);
-        var results = await Task.WhenAll(installed.Select(driver => CheckDriverAsync(driver, cancellationToken)));
+        var razerSynapseVersion = ReadInstalledProgramVersion("Razer Synapse");
+        var results = await Task.WhenAll(installed.Select(driver =>
+            CheckDriverAsync(driver, razerSynapseVersion, cancellationToken)));
         return new ManufacturerDriverSnapshot(
             DateTimeOffset.Now,
             results
@@ -41,6 +46,7 @@ public sealed partial class ManufacturerDriverService(HttpClient httpClient)
 
     private async Task<ManufacturerDriverResult> CheckDriverAsync(
         InstalledHardwareDriver driver,
+        string? razerSynapseVersion,
         CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
@@ -50,7 +56,7 @@ public sealed partial class ManufacturerDriverService(HttpClient httpClient)
         if (IsTpLinkTbe400Uh(driver)) return await CheckTpLinkAsync(driver, cancellationToken);
         if (IsDellAw3423DwDriver(driver)) return CheckDellAw3423Dw(driver);
         if (IsWesternDigitalExternal(driver)) return NoWdDriverRequired(driver);
-        return ManufacturerManaged(driver);
+        return OfficialSourceOrVendorSoftware(driver, razerSynapseVersion);
     }
 
     internal async Task<ManufacturerDriverResult> CheckNvidiaAsync(
@@ -317,7 +323,7 @@ public sealed partial class ManufacturerDriverService(HttpClient httpClient)
         }
         return new ManufacturerDriverResult(
             driver,
-            ManufacturerDriverStatus.ManufacturerManaged,
+            ManufacturerDriverStatus.OfficialSourceOnly,
             null,
             "Dell AW3423DW",
             DellAw3423DwSupport,
@@ -337,7 +343,7 @@ public sealed partial class ManufacturerDriverService(HttpClient httpClient)
     private async Task<string> GetStringAsync(Uri uri, CancellationToken cancellationToken)
     {
         using var request = new HttpRequestMessage(HttpMethod.Get, uri);
-        request.Headers.UserAgent.ParseAdd("NaxUpdater/0.15.4");
+        request.Headers.UserAgent.ParseAdd("NaxUpdater/0.15.5");
         using var response = await httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
         response.EnsureSuccessStatusCode();
         return await response.Content.ReadAsStringAsync(cancellationToken);
@@ -586,34 +592,101 @@ public sealed partial class ManufacturerDriverService(HttpClient httpClient)
                 deviceClass.Equals("MEDIA", StringComparison.OrdinalIgnoreCase));
     }
 
-    private static ManufacturerDriverResult ManufacturerManaged(InstalledHardwareDriver driver)
+    private static ManufacturerDriverResult OfficialSourceOrVendorSoftware(
+        InstalledHardwareDriver driver,
+        string? razerSynapseVersion)
     {
         if (driver.Provider.Contains("Intel", StringComparison.OrdinalIgnoreCase))
         {
-            return new ManufacturerDriverResult(driver, ManufacturerDriverStatus.ManufacturerManaged, null,
-                "Intel Driver & Support Assistant", IntelDsaHome,
-                "Intel requires its hardware-aware Driver & Support Assistant for an exact applicability decision; no update is claimed without that scan.", null);
+            if (driver.InfName?.Equals("iastorav.inf", StringComparison.OrdinalIgnoreCase) == true ||
+                driver.DeviceName.Contains("Rapid Storage", StringComparison.OrdinalIgnoreCase))
+            {
+                return OfficialSourceOnly(driver, "Intel Rapid Storage Technology", IntelRapidStorageTenEleven,
+                    "Intel publishes a 10th/11th-generation RST package, but recommends OEM validation for customized storage/RAID drivers. Package and INF version schemes are not compared; no update is claimed.");
+            }
+            if (driver.DeviceName.Contains("Management Engine", StringComparison.OrdinalIgnoreCase) ||
+                driver.DeviceName.Contains("iCLS", StringComparison.OrdinalIgnoreCase) ||
+                driver.DeviceName.Contains("Dynamic Application Loader", StringComparison.OrdinalIgnoreCase) ||
+                driver.DeviceName.Contains("WMI Provider", StringComparison.OrdinalIgnoreCase))
+            {
+                return OfficialSourceOnly(driver, "Intel Management Engine components", IntelManagementEngine,
+                    "Intel publishes generic Management Engine components, but its own guidance gives motherboard/OEM packages priority. The component INF version is not the umbrella package version; no update is claimed.");
+            }
+            if (driver.DeviceClass.Equals("System", StringComparison.OrdinalIgnoreCase))
+            {
+                return OfficialSourceOnly(driver, "Intel Chipset Device Software", IntelChipsetSoftware,
+                    "Intel's chipset package primarily installs device-identification INF files. Its package version is not comparable with this device INF version; no update is claimed.");
+            }
+            return OfficialSourceOnly(driver, "Intel Driver & Support Assistant", IntelDsaHome,
+                "Intel provides a hardware-aware official scan for this component, but Intel DSA is not installed or integrated with NaxUpdater. No update is claimed.");
         }
         if (driver.Provider.Contains("Razer", StringComparison.OrdinalIgnoreCase))
         {
-            return new ManufacturerDriverResult(driver, ManufacturerDriverStatus.ManufacturerManaged, null,
-                "Razer Synapse", RazerSupport,
-                "Razer Synapse owns this signed driver package. Repeated device interfaces are collapsed into one installed INF package.", null);
+            return !string.IsNullOrWhiteSpace(razerSynapseVersion)
+                ? new ManufacturerDriverResult(
+                    driver,
+                    ManufacturerDriverStatus.VendorSoftwareManaged,
+                    null,
+                    "Razer Synapse",
+                    RazerSupport,
+                    $"Installed Razer Synapse {razerSynapseVersion} owns driver servicing for this device. No separate driver update is claimed; repeated interfaces are collapsed into one INF package.",
+                    null)
+                : OfficialSourceOnly(driver, "Razer Synapse", RazerSupport,
+                    "Razer publishes driver applicability through Synapse and its support channel, but Synapse was not detected. No update is claimed.");
         }
         if (driver.Provider.Contains("Micro-Star", StringComparison.OrdinalIgnoreCase))
         {
-            return new ManufacturerDriverResult(driver, ManufacturerDriverStatus.ManufacturerManaged, null,
-                "MSI MAG Z490 TOMAHAWK", MsiBoardSupport,
-                "This MSI-specific component is routed to the exact motherboard support channel.", null);
+            return OfficialSourceOnly(driver, "MSI MAG Z490 TOMAHAWK", MsiBoardSupport,
+                "This MSI-specific component requires comparison through the exact motherboard support channel. No update is claimed.");
         }
         if (driver.HardwareId?.Contains("VEN_10EC", StringComparison.OrdinalIgnoreCase) == true)
         {
-            return new ManufacturerDriverResult(driver, ManufacturerDriverStatus.ManufacturerManaged, null,
-                "MSI MAG Z490 TOMAHAWK audio", MsiBoardSupport,
-                "Realtek's official guidance requires motherboard-OEM audio packages because generic audio drivers can omit customizations.", null);
+            return OfficialSourceOnly(driver, "MSI MAG Z490 TOMAHAWK audio", MsiBoardSupport,
+                "Realtek's guidance requires the motherboard-OEM audio package because a generic audio driver can omit customizations. No update is claimed.");
         }
         return NoVerifiedCatalog(driver, driver.Provider, null,
             "The driver package is inventoried, but no exact manufacturer catalog identity is available. No action is offered.");
+    }
+
+    private static ManufacturerDriverResult OfficialSourceOnly(
+        InstalledHardwareDriver driver,
+        string source,
+        Uri uri,
+        string message) =>
+        new(driver, ManufacturerDriverStatus.OfficialSourceOnly, null, source, uri, message, null);
+
+    private static string? ReadInstalledProgramVersion(string displayName)
+    {
+        foreach (var (hive, view) in new[]
+                 {
+                     (RegistryHive.LocalMachine, RegistryView.Registry64),
+                     (RegistryHive.LocalMachine, RegistryView.Registry32),
+                     (RegistryHive.CurrentUser, RegistryView.Registry64),
+                     (RegistryHive.CurrentUser, RegistryView.Registry32)
+                 })
+        {
+            try
+            {
+                using var baseKey = RegistryKey.OpenBaseKey(hive, view);
+                using var uninstall = baseKey.OpenSubKey(@"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall");
+                if (uninstall is null) continue;
+                foreach (var keyName in uninstall.GetSubKeyNames())
+                {
+                    using var key = uninstall.OpenSubKey(keyName);
+                    if (key?.GetValue("DisplayName")?.ToString()?.Equals(displayName, StringComparison.OrdinalIgnoreCase) == true)
+                    {
+                        return key.GetValue("DisplayVersion")?.ToString()?.Trim() is { Length: > 0 } version
+                            ? version
+                            : "installed";
+                    }
+                }
+            }
+            catch (Exception exception) when (exception is UnauthorizedAccessException or IOException)
+            {
+                // Continue through the remaining registry scopes.
+            }
+        }
+        return null;
     }
 
     private static ManufacturerDriverResult Current(InstalledHardwareDriver driver, string? available, string source, Uri uri, string message) =>

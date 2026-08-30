@@ -53,7 +53,8 @@
   <data name="DriverStatusAvailable"><value>Update available</value></data>
   <data name="DriverStatusManufacturerPackage"><value>New manufacturer package</value></data>
   <data name="DriverStatusCurrent"><value>Current</value></data>
-  <data name="DriverStatusManufacturer"><value>Manufacturer-managed</value></data>
+  <data name="DriverStatusVendorManaged"><value>Managed by installed vendor software</value></data>
+  <data name="DriverStatusOfficialSourceOnly"><value>Official source · applicability check required</value></data>
   <data name="DriverStatusNoUpdateRequired"><value>No vendor update required</value></data>
   <data name="DriverStatusNoCatalog"><value>No verified catalog</value></data>
   <data name="DriverStatusError"><value>Check failed</value></data>
@@ -77,8 +78,11 @@
   <data name="DriverFilterAll.Content"><value>All statuses</value></data>
   <data name="DriverFilterUpdates.Content"><value>Updates</value></data>
   <data name="DriverFilterCurrent.Content"><value>Current</value></data>
-  <data name="DriverFilterManaged.Content"><value>Manufacturer-managed</value></data>
+  <data name="DriverFilterManaged.Content"><value>Vendor-software managed</value></data>
+  <data name="DriverFilterOfficialSource.Content"><value>Official source only</value></data>
   <data name="DriverFilterUnverified.Content"><value>Unverified</value></data>
   <data name="DriverFilterErrors.Content"><value>Errors</value></data>
   <data name="EvidenceLabelMsixArchitecture"><value>MSIX package architecture</value></data>
+  <data name="StatusLabel"><value>Status</value></data>
+  <data name="DriverDeviceLabel"><value>Device</value></data>
 </root>

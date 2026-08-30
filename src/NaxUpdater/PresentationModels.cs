@@ -219,14 +219,16 @@ public sealed class ManufacturerDriverRow(ManufacturerDriverResult source)
         ManufacturerDriverStatus.Available when CanUpdate => LocalizationService.Get("DriverStatusAvailable"),
         ManufacturerDriverStatus.Available => LocalizationService.Get("DriverStatusManufacturerPackage"),
         ManufacturerDriverStatus.Current => LocalizationService.Get("DriverStatusCurrent"),
-        ManufacturerDriverStatus.ManufacturerManaged => LocalizationService.Get("DriverStatusManufacturer"),
+        ManufacturerDriverStatus.VendorSoftwareManaged => LocalizationService.Get("DriverStatusVendorManaged"),
+        ManufacturerDriverStatus.OfficialSourceOnly => LocalizationService.Get("DriverStatusOfficialSourceOnly"),
         ManufacturerDriverStatus.NoUpdateRequired => LocalizationService.Get("DriverStatusNoUpdateRequired"),
         ManufacturerDriverStatus.NoVerifiedCatalog => LocalizationService.Get("DriverStatusNoCatalog"),
         _ => LocalizationService.Get("DriverStatusError")
     };
     public bool CanUpdate => Source.ExecutableUpdate?.IsInstallable == true;
     public bool CanOpenSource => Source.SourceUri is not null &&
-        Source.Status is ManufacturerDriverStatus.Available or ManufacturerDriverStatus.Current or ManufacturerDriverStatus.NoUpdateRequired;
+        Source.Status is ManufacturerDriverStatus.Available or ManufacturerDriverStatus.Current or ManufacturerDriverStatus.NoUpdateRequired or
+            ManufacturerDriverStatus.VendorSoftwareManaged or ManufacturerDriverStatus.OfficialSourceOnly;
     public bool HasAction => CanUpdate || CanOpenSource;
     public Visibility ActionVisibility => HasAction ? Visibility.Visible : Visibility.Collapsed;
     public string ActionText => CanUpdate
@@ -239,7 +241,8 @@ public sealed class ManufacturerDriverRow(ManufacturerDriverResult source)
         ManufacturerDriverStatus.Available => "NaxOrangeBrush",
         ManufacturerDriverStatus.Current => "NaxGreenBrush",
         ManufacturerDriverStatus.NoUpdateRequired => "NaxGreenBrush",
-        ManufacturerDriverStatus.ManufacturerManaged => "NaxBlueBrush",
+        ManufacturerDriverStatus.VendorSoftwareManaged => "NaxBlueBrush",
+        ManufacturerDriverStatus.OfficialSourceOnly => "NaxBlueBrush",
         ManufacturerDriverStatus.NoVerifiedCatalog => "NaxPurpleBrush",
         _ => "NaxPinkBrush"
     });
@@ -248,7 +251,8 @@ public sealed class ManufacturerDriverRow(ManufacturerDriverResult source)
         ManufacturerDriverStatus.Available => "NaxOrangeCardBrush",
         ManufacturerDriverStatus.Current => "NaxGreenCardBrush",
         ManufacturerDriverStatus.NoUpdateRequired => "NaxGreenCardBrush",
-        ManufacturerDriverStatus.ManufacturerManaged => "NaxBlueCardBrush",
+        ManufacturerDriverStatus.VendorSoftwareManaged => "NaxBlueCardBrush",
+        ManufacturerDriverStatus.OfficialSourceOnly => "NaxBlueCardBrush",
         ManufacturerDriverStatus.NoVerifiedCatalog => "NaxPurpleCardBrush",
         _ => "NaxPinkCardBrush"
     });
