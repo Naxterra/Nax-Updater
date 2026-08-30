@@ -2,17 +2,31 @@ using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Media;
 using NaxUpdater.Core.Models;
 using NaxUpdater.Services;
+using System.ComponentModel;
+using System.Runtime.CompilerServices;
 
 namespace NaxUpdater;
 
-public sealed class ApplicationRow
+public sealed class ApplicationRow : INotifyPropertyChanged
 {
+    private ImageSource? _icon;
+
     public ApplicationRow(InstalledApplication source)
     {
         Source = source;
     }
 
     public InstalledApplication Source { get; }
+    public ImageSource? Icon
+    {
+        get => _icon;
+        set
+        {
+            if (ReferenceEquals(_icon, value)) return;
+            _icon = value;
+            OnPropertyChanged();
+        }
+    }
     public string Name => Source.DisplayName;
     public string Publisher => string.IsNullOrWhiteSpace(Source.Publisher) ? LocalizationService.Get("PublisherNotReported") : Source.Publisher;
     public string Version => string.IsNullOrWhiteSpace(Source.NormalizedVersion) ? LocalizationService.Get("Unknown") : Source.NormalizedVersion;
@@ -56,6 +70,11 @@ public sealed class ApplicationRow
         : string.Join(", ", Source.BlockedProviders);
     public bool IsProtected => Source.BlockedProviders.Count > 0;
     public bool IsSystemComponent => Source.IsSystemComponent;
+
+    public event PropertyChangedEventHandler? PropertyChanged;
+
+    private void OnPropertyChanged([CallerMemberName] string? propertyName = null) =>
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
 
     private static string LocalizeSource(string? source)
     {
@@ -135,12 +154,14 @@ public sealed class PolicyRow
 
 public sealed class UpdateRow
 {
-    public UpdateRow(UpdateCheckResult source)
+    public UpdateRow(UpdateCheckResult source, ApplicationRow? application = null)
     {
         Source = source;
+        Application = application;
     }
 
     public UpdateCheckResult Source { get; }
+    public ApplicationRow? Application { get; }
     public string Name => Source.DisplayName;
     public string Installed => Source.InstalledVersion ?? "Unknown";
     public string Available => Source.AvailableVersion ?? "—";
