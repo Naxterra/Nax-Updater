@@ -4,7 +4,8 @@ public enum ManufacturerDriverStatus
 {
     Current,
     Available,
-    ManufacturerManaged,
+    VendorSoftwareManaged,
+    OfficialSourceOnly,
     NoUpdateRequired,
     NoVerifiedCatalog,
     Error

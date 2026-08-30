@@ -2,6 +2,7 @@ using Microsoft.Data.Sqlite;
 using NaxUpdater.Core.Internal;
 using NaxUpdater.Core.Models;
 using System.Collections.Concurrent;
+using System.Globalization;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using Windows.Management.Deployment;
@@ -56,7 +57,7 @@ public sealed partial class FederatedCatalogUpdateProvider(HttpClient httpClient
 
         var manifest = await ReadWingetInstallerManifestAsync(identity, cancellationToken);
         var architecture = DetectArchitecture(application.PrimaryInstallPath);
-        var installer = SelectInstaller(manifest, architecture);
+        var installer = SelectInstaller(manifest, architecture, CultureInfo.CurrentUICulture.Name);
         if (installer is null)
         {
             return Result(
@@ -235,28 +236,32 @@ public sealed partial class FederatedCatalogUpdateProvider(HttpClient httpClient
                 }
             }
 
-            var publisher = NormalizeCatalogValue(application.Publisher);
+            var publishers = CatalogPublisherCandidates(application.Publisher).ToArray();
             var names = CatalogNameCandidates(application).ToArray();
-            if (publisher.Length == 0 || names.Length == 0)
+            if (publishers.Length == 0 || names.Length == 0)
             {
                 return null;
             }
             using var nameCommand = connection.CreateCommand();
             var nameParameters = names.Select((_, index) => $"$name{index}").ToArray();
+            var publisherParameters = publishers.Select((_, index) => $"$publisher{index}").ToArray();
             nameCommand.CommandText = $"""
                 SELECT DISTINCT p.id, p.name, p.moniker, p.latest_version
                 FROM packages p
                 JOIN norm_names2 n ON n.package = p.rowid
                 JOIN norm_publishers2 q ON q.package = p.rowid
                 WHERE n.norm_name IN ({string.Join(",", nameParameters)})
-                  AND q.norm_publisher = $publisher
+                  AND q.norm_publisher IN ({string.Join(",", publisherParameters)})
                 ORDER BY p.id
                 """;
             for (var index = 0; index < names.Length; index++)
             {
                 nameCommand.Parameters.AddWithValue(nameParameters[index], names[index]);
             }
-            nameCommand.Parameters.AddWithValue("$publisher", publisher);
+            for (var index = 0; index < publishers.Length; index++)
+            {
+                nameCommand.Parameters.AddWithValue(publisherParameters[index], publishers[index]);
+            }
             using var nameReader = nameCommand.ExecuteReader();
             CatalogIdentity? unique = null;
             while (nameReader.Read())
@@ -302,6 +307,42 @@ public sealed partial class FederatedCatalogUpdateProvider(HttpClient httpClient
                 candidates.Add(normalized);
             }
         }
+    }
+
+    private static IEnumerable<string> CatalogPublisherCandidates(string? publisher)
+    {
+        var candidates = new HashSet<string>(StringComparer.Ordinal);
+        var normalized = NormalizeCatalogValue(publisher);
+        if (normalized.Length >= 3)
+        {
+            candidates.Add(normalized);
+        }
+        string[] legalSuffixes =
+        [
+            "gesellschaftmitbeschraenkterhaftung",
+            "gesellschaftmitbeschränkterhaftung",
+            "incorporated",
+            "corporation",
+            "limited",
+            "ptyltd",
+            "gmbh",
+            "llc",
+            "ltd",
+            "corp",
+            "company",
+            "plc",
+            "inc"
+        ];
+        foreach (var suffix in legalSuffixes)
+        {
+            var normalizedSuffix = NormalizeCatalogValue(suffix);
+            if (normalized.EndsWith(normalizedSuffix, StringComparison.Ordinal) &&
+                normalized.Length - normalizedSuffix.Length >= 4)
+            {
+                candidates.Add(normalized[..^normalizedSuffix.Length]);
+            }
+        }
+        return candidates;
     }
 
     private static string NormalizeCatalogValue(string? value) =>
@@ -384,6 +425,7 @@ public sealed partial class FederatedCatalogUpdateProvider(HttpClient httpClient
         string? globalNestedType = null;
         string? globalNestedPath = null;
         string? architecture = null;
+        string? locale = null;
         string? type = null;
         string? url = null;
         string? hash = null;
@@ -415,6 +457,7 @@ public sealed partial class FederatedCatalogUpdateProvider(HttpClient httpClient
                     };
                     installers.Add(new CatalogInstaller(
                         architecture ?? "neutral",
+                        locale,
                         kind.Value,
                         uri,
                         hash,
@@ -422,7 +465,7 @@ public sealed partial class FederatedCatalogUpdateProvider(HttpClient httpClient
                         kind == UpdateExecutionKind.DownloadedZipMsi ? globalNestedPath : null));
                 }
             }
-            architecture = type = url = hash = null;
+            architecture = locale = type = url = hash = null;
         }
 
         foreach (var rawLine in yaml.Replace("\r", string.Empty, StringComparison.Ordinal).Split('\n'))
@@ -434,6 +477,7 @@ public sealed partial class FederatedCatalogUpdateProvider(HttpClient httpClient
                 architecture = Scalar(line);
             }
             else if (line.StartsWith("Architecture:", StringComparison.OrdinalIgnoreCase)) architecture = Scalar(line);
+            else if (line.StartsWith("InstallerLocale:", StringComparison.OrdinalIgnoreCase)) locale = Scalar(line);
             else if (line.StartsWith("InstallerUrl:", StringComparison.OrdinalIgnoreCase)) url = Scalar(line);
             else if (line.StartsWith("InstallerSha256:", StringComparison.OrdinalIgnoreCase)) hash = Scalar(line);
             else if (line.StartsWith("NestedInstallerType:", StringComparison.OrdinalIgnoreCase)) globalNestedType = Scalar(line);
@@ -484,13 +528,27 @@ public sealed partial class FederatedCatalogUpdateProvider(HttpClient httpClient
             : null;
     }
 
-    private static CatalogInstaller? SelectInstaller(IReadOnlyList<CatalogInstaller> installers, string architecture) =>
+    private static CatalogInstaller? SelectInstaller(
+        IReadOnlyList<CatalogInstaller> installers,
+        string architecture,
+        string preferredLocale) =>
         installers
-            .OrderByDescending(installer => installer.Architecture.Equals(architecture, StringComparison.OrdinalIgnoreCase) ? 100 :
-                                            installer.Architecture.Equals("neutral", StringComparison.OrdinalIgnoreCase) ? 10 : 0)
+            .OrderByDescending(installer =>
+                (installer.Architecture.Equals(architecture, StringComparison.OrdinalIgnoreCase) ? 100 :
+                 installer.Architecture.Equals("neutral", StringComparison.OrdinalIgnoreCase) ? 10 : 0) +
+                LocaleScore(installer.Locale, preferredLocale))
             .FirstOrDefault(installer =>
                 installer.Architecture.Equals(architecture, StringComparison.OrdinalIgnoreCase) ||
                 installer.Architecture.Equals("neutral", StringComparison.OrdinalIgnoreCase));
+
+    private static int LocaleScore(string? locale, string preferredLocale)
+    {
+        if (string.IsNullOrWhiteSpace(locale)) return 10;
+        if (locale.Equals(preferredLocale, StringComparison.OrdinalIgnoreCase)) return 50;
+        var preferredLanguage = preferredLocale.Split('-', 2)[0];
+        var installerLanguage = locale.Split('-', 2)[0];
+        return installerLanguage.Equals(preferredLanguage, StringComparison.OrdinalIgnoreCase) ? 40 : 0;
+    }
 
     private static string? ResolveInstalledSigner(InstalledApplication application, CatalogIdentity identity)
     {
@@ -612,13 +670,22 @@ public sealed partial class FederatedCatalogUpdateProvider(HttpClient httpClient
         {
             var separator = evidence.Value.LastIndexOf(" · ", StringComparison.Ordinal);
             var key = separator >= 0 ? evidence.Value[(separator + 3)..].Trim() : evidence.Value.Trim();
-            if (key.EndsWith("_is1", StringComparison.OrdinalIgnoreCase) || ProductCodeRegex().IsMatch(key))
+            if (key.EndsWith("_is1", StringComparison.OrdinalIgnoreCase) ||
+                ProductCodeRegex().IsMatch(key) ||
+                IsSafeRegisteredProductCode(key))
             {
                 return key;
             }
         }
         return null;
     }
+
+    private static bool IsSafeRegisteredProductCode(string value) =>
+        value.Length is >= 3 and <= 200 &&
+        !value.Any(char.IsControl) &&
+        !value.Contains('\\') &&
+        !value.Contains('/') &&
+        !value.Contains(':');
 
     private static string? UpgradeCode(InstalledApplication application) => application.Evidence
         .FirstOrDefault(static item => item.Label == RegistryInventoryScanner.InstallerUpgradeFamilyEvidenceLabel)
@@ -681,6 +748,7 @@ public sealed partial class FederatedCatalogUpdateProvider(HttpClient httpClient
     private sealed record ScoopCandidate(string Version, string? Homepage);
     private sealed record CatalogInstaller(
         string Architecture,
+        string? Locale,
         UpdateExecutionKind Kind,
         Uri Uri,
         string Sha256,

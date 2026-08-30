@@ -311,11 +311,15 @@
                             <ColumnDefinition Width="115" />
                             <ColumnDefinition Width="100" />
                         </Grid.ColumnDefinitions>
-                        <TextBlock x:Uid="ApplicationHeader" Text="Application" FontSize="12" FontWeight="SemiBold" Style="{StaticResource MutedTextStyle}" />
+                        <Button Grid.Column="0" Tag="Name" Style="{StaticResource ColumnHeaderButtonStyle}" HorizontalContentAlignment="Left" Click="UpdateResultSortHeader_Click">
+                            <TextBlock x:Name="UpdateNameHeaderText" Text="Application" />
+                        </Button>
                         <TextBlock x:Uid="InstalledHeader" Grid.Column="1" Text="Installed" FontSize="12" FontWeight="SemiBold" Style="{StaticResource MutedTextStyle}" />
                         <TextBlock x:Uid="AvailableHeader" Grid.Column="2" Text="Available" FontSize="12" FontWeight="SemiBold" Style="{StaticResource MutedTextStyle}" />
                         <TextBlock x:Uid="LanguageHeader" Grid.Column="3" Text="Language" FontSize="12" FontWeight="SemiBold" Style="{StaticResource MutedTextStyle}" />
-                        <TextBlock x:Uid="StatusHeader" Grid.Column="4" Text="Status" FontSize="12" FontWeight="SemiBold" Style="{StaticResource MutedTextStyle}" />
+                        <Button Grid.Column="4" Tag="Status" Style="{StaticResource ColumnHeaderButtonStyle}" HorizontalContentAlignment="Left" Click="UpdateResultSortHeader_Click">
+                            <TextBlock x:Name="UpdateStatusHeaderText" Text="Status ↑" />
+                        </Button>
                         <TextBlock x:Uid="ActionHeader" Grid.Column="5" Text="Action" FontSize="12" FontWeight="SemiBold" Style="{StaticResource MutedTextStyle}" />
                     </Grid>
                     <ListView x:Name="UpdatesList" Grid.Row="2" SelectionMode="Single" SelectionChanged="UpdatesList_SelectionChanged">
@@ -426,7 +430,8 @@
                                 <ComboBoxItem x:Uid="DriverFilterAll" Tag="all" Content="All statuses" />
                                 <ComboBoxItem x:Uid="DriverFilterUpdates" Tag="updates" Content="Updates" />
                                 <ComboBoxItem x:Uid="DriverFilterCurrent" Tag="current" Content="Current" />
-                                <ComboBoxItem x:Uid="DriverFilterManaged" Tag="managed" Content="Manufacturer-managed" />
+                                <ComboBoxItem x:Uid="DriverFilterManaged" Tag="managed" Content="Managed by installed vendor software" />
+                                <ComboBoxItem x:Uid="DriverFilterOfficialSource" Tag="source" Content="Official source only" />
                                 <ComboBoxItem x:Uid="DriverFilterUnverified" Tag="unverified" Content="Unverified" />
                                 <ComboBoxItem x:Uid="DriverFilterErrors" Tag="errors" Content="Errors" />
                             </ComboBox>
@@ -442,11 +447,15 @@
                             <ColumnDefinition Width="150" />
                             <ColumnDefinition Width="130" />
                         </Grid.ColumnDefinitions>
-                        <TextBlock x:Uid="DriverDeviceHeader" Text="Device" FontSize="12" FontWeight="SemiBold" Style="{StaticResource MutedTextStyle}" />
+                        <Button Grid.Column="0" Tag="Name" Style="{StaticResource ColumnHeaderButtonStyle}" HorizontalContentAlignment="Left" Click="DriverSortHeader_Click">
+                            <TextBlock x:Name="DriverNameHeaderText" Text="Device" />
+                        </Button>
                         <TextBlock x:Uid="InstalledHeader" Grid.Column="1" Text="Installed" FontSize="12" FontWeight="SemiBold" Style="{StaticResource MutedTextStyle}" />
                         <TextBlock x:Uid="AvailableHeader" Grid.Column="2" Text="Available" FontSize="12" FontWeight="SemiBold" Style="{StaticResource MutedTextStyle}" />
                         <TextBlock x:Uid="DriverSourceHeader" Grid.Column="3" Text="Manufacturer source" FontSize="12" FontWeight="SemiBold" Style="{StaticResource MutedTextStyle}" />
-                        <TextBlock x:Uid="StatusHeader" Grid.Column="4" Text="Status" FontSize="12" FontWeight="SemiBold" Style="{StaticResource MutedTextStyle}" />
+                        <Button Grid.Column="4" Tag="Status" Style="{StaticResource ColumnHeaderButtonStyle}" HorizontalContentAlignment="Left" Click="DriverSortHeader_Click">
+                            <TextBlock x:Name="DriverStatusHeaderText" Text="Status ↑" />
+                        </Button>
                         <TextBlock x:Uid="ActionHeader" Grid.Column="5" Text="Action" FontSize="12" FontWeight="SemiBold" Style="{StaticResource MutedTextStyle}" />
                     </Grid>
                     <Grid Grid.Row="2">

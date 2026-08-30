@@ -371,6 +371,10 @@ try
             INSERT INTO packages(rowid, id, name, moniker, latest_version) VALUES(4, 'Fixture.ArchiveMsi', 'Archive MSI', '', '2.0.0');
             INSERT INTO upgradecodes2(upgradecode, package) VALUES('{AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE}', 4);
             INSERT INTO norm_names2(norm_name, package) VALUES('archivemsi', 4);
+            INSERT INTO packages(rowid, id, name, moniker, latest_version) VALUES(5, 'RARLab.WinRAR', 'WinRAR', '', '7.23.0');
+            INSERT INTO productcodes2(productcode, package) VALUES('WinRAR archiver', 5);
+            INSERT INTO norm_names2(norm_name, package) VALUES('winrar', 5);
+            INSERT INTO norm_publishers2(norm_publisher, package) VALUES('winrar', 5);
             """;
         await catalogCommand.ExecuteNonQueryAsync();
     }
@@ -523,6 +527,29 @@ try
     var uniqueCatalogUpdate = await deterministicCatalog.CheckAsync(uniqueCatalogApplication, CancellationToken.None);
     Assert(uniqueCatalogUpdate.Status == UpdateStatus.Available && uniqueCatalogUpdate.AvailableVersion == "3.0.0" && uniqueCatalogUpdate.ExecutionPlan is null,
         "A unique weak catalog match should detect the update but remain non-installable.");
+    var winRarCatalogApplication = CreateApplication(
+        "winrar-catalog-test",
+        "WinRAR 7.23 (64-Bit)",
+        "win.rar GmbH",
+        "7.23.0",
+        Path.Combine(firefoxFixture, "WinRAR.exe"),
+        InstallScope.Machine,
+        ManagementMode.Registry) with
+    {
+        Evidence =
+        [
+            new ApplicationEvidence(
+                EvidenceKind.Registry,
+                "Uninstall registry",
+                "LocalMachine Registry64 · WinRAR archiver",
+                true)
+        ]
+    };
+    Assert(deterministicCatalog.CanHandle(winRarCatalogApplication),
+        "A unique WinRAR name plus legal-suffix-normalized publisher did not resolve its catalog source.");
+    var winRarCatalogUpdate = await deterministicCatalog.CheckAsync(winRarCatalogApplication, CancellationToken.None);
+    Assert(winRarCatalogUpdate.Status == UpdateStatus.Current && winRarCatalogUpdate.AvailableVersion == "7.23.0",
+        "WinRAR's verified catalog source did not recognize the installed current version.");
 
     var storeCatalogApplication = CreateApplication(
         "msix:Fixture.StoreApp_1234567890abc",
@@ -744,14 +771,14 @@ if (installedChatGpt is not null)
     };
     var observedPreUpdateAssessment = await new MsixStoreUpdateProvider().CheckAsync(observedPreUpdateChatGpt, CancellationToken.None);
     Assert(observedPreUpdateAssessment.Status == UpdateStatus.Available &&
-           observedPreUpdateAssessment.AvailableVersion == "26.825.5331.0" &&
+           VersionOrder.Compare(observedPreUpdateAssessment.AvailableVersion, "26.825.4187.0") > 0 &&
            observedPreUpdateAssessment.ExecutionPlan is
            {
                Kind: UpdateExecutionKind.StorePackage,
                StoreProductId: "9PLM9XGG6VKS",
                StorePackageFamilyName: "OpenAI.Codex_2p2nqsd0c76g0"
            },
-        $"The observed ChatGPT Store update was missed: {observedPreUpdateAssessment.Status} · {observedPreUpdateAssessment.AvailableVersion} · {observedPreUpdateAssessment.Message}");
+        $"The observed ChatGPT Store update line was missed: {observedPreUpdateAssessment.Status} · {observedPreUpdateAssessment.AvailableVersion} · {observedPreUpdateAssessment.Message}");
 }
 
 var liveStoreIdentities = 0;
@@ -844,6 +871,25 @@ if (installedGog is not null && federatedCatalog.CanHandle(installedGog))
     var gogUpdate = await federatedCatalog.CheckAsync(installedGog, CancellationToken.None);
     Assert(gogUpdate.Status == UpdateStatus.Current && gogUpdate.InstalledVersion == "2.1.8.30",
         $"GOG GALAXY should use its newer registered package version instead of an older executable version: {gogUpdate.Message}");
+}
+
+var installedWinRar = snapshot.Applications.FirstOrDefault(app =>
+    app.DisplayName.StartsWith("WinRAR", StringComparison.OrdinalIgnoreCase));
+if (installedWinRar is not null)
+{
+    Assert(installedWinRar.ManagementMode == ManagementMode.Registry && installedWinRar.NormalizedVersion == "7.23.0",
+        $"WinRAR's MSIX shell extension was not attached to its real Win32 installation: {installedWinRar.ManagementMode} · {installedWinRar.NormalizedVersion}.");
+    Assert(installedWinRar.Evidence.Any(static evidence =>
+            evidence.Label == "Attached MSIX integration package" &&
+            evidence.Value.Contains("WinRAR.ShellExtension", StringComparison.OrdinalIgnoreCase)),
+        "WinRAR lost the evidence for its attached MSIX shell extension.");
+    Assert(federatedCatalog.CanHandle(installedWinRar),
+        $"WinRAR was not correlated with its verified public catalog identity: {installedWinRar.DisplayName} · {installedWinRar.Publisher}.");
+    var winRarUpdate = await federatedCatalog.CheckAsync(installedWinRar, CancellationToken.None);
+    Assert(winRarUpdate.Status is UpdateStatus.Current or UpdateStatus.Available &&
+           winRarUpdate.ProviderId == "federated-public-catalogs" &&
+           winRarUpdate.Message?.Contains("WinGet", StringComparison.OrdinalIgnoreCase) == true,
+        $"WinRAR did not receive a verified catalog assessment: installed {winRarUpdate.InstalledVersion} · available {winRarUpdate.AvailableVersion} · {winRarUpdate.Status} · {winRarUpdate.Message}");
 }
 
 var installedGameInput = snapshot.Applications.FirstOrDefault(app =>
@@ -1008,7 +1054,24 @@ var razerRows = liveManufacturerDrivers.Results.Count(static result =>
 if (HasDriverRegistration("VID_1532"))
 {
     Assert(razerRows is > 0 and <= 8, $"Razer interface drivers were not collapsed into physical-device packages: {razerRows} rows.");
+    if (snapshot.Applications.Any(static app => app.DisplayName.Equals("Razer Synapse", StringComparison.OrdinalIgnoreCase)))
+    {
+        Assert(liveManufacturerDrivers.Results
+                .Where(static result => result.Driver.Provider.Contains("Razer", StringComparison.OrdinalIgnoreCase))
+                .All(static result => result.Status == ManufacturerDriverStatus.VendorSoftwareManaged &&
+                                      result.Message.Contains("Installed Razer Synapse", StringComparison.OrdinalIgnoreCase)),
+            "Razer drivers were not assigned to the detected Synapse installation.");
+    }
 }
+var intelSourceOnlyRows = liveManufacturerDrivers.Results
+    .Where(static result => result.Driver.Provider.Contains("Intel", StringComparison.OrdinalIgnoreCase) &&
+                            result.Driver.HardwareId?.Contains("VEN_8086&DEV_15BC", StringComparison.OrdinalIgnoreCase) != true)
+    .ToArray();
+Assert(intelSourceOnlyRows.All(static result =>
+        result.Status == ManufacturerDriverStatus.OfficialSourceOnly &&
+        result.SourceUri?.Host.Contains("intel.com", StringComparison.OrdinalIgnoreCase) == true &&
+        result.Message.Contains("No update is claimed", StringComparison.OrdinalIgnoreCase)),
+    "An Intel component without exact INF applicability was labelled managed/outdated or lacked an official Intel source.");
 
 using var capabilityClient = new HttpClient();
 var installedMetadataCoverage = snapshot.Applications.Count(new ElectronBuilderUpdateProvider(capabilityClient).CanHandle);

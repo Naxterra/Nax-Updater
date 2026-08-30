@@ -30,7 +30,7 @@ The inventory engine:
 
 ## Update providers
 
-Version 0.15.4 includes:
+Version 0.15.5 includes:
 
 - Mozilla Firefox releases from Mozilla's official product-details and release archive, preserving the effective Firefox profile language, architecture, channel, scope, and installation directory;
 - Nextcloud releases from the official `nextcloud-releases/desktop` GitHub repository using its release-asset SHA-256 digest and a multi-language MSI;
@@ -65,6 +65,8 @@ Version 0.15.4 includes:
 - Store package migration matching through a unique exact product-name and publisher pair when the Store product intentionally publishes a replacement PFN;
 - MSI upgrade-family correlation that collapses side-by-side product generations and retains the newest registered version, preventing a successful MSI install from being offered repeatedly because the vendor left an older product registration behind.
 - twelve-way bounded Store catalog checking, reducing the complete local application scan and update check from roughly 27 seconds to about 7–8 seconds on the validated workstation without omitting packages.
+- exact registered non-MSI product-code matching plus legal-entity publisher normalization, allowing packages such as WinRAR to resolve their verified catalog source without app-name whitelists;
+- version/architecture-aware MSIX integration correlation, attaching WinRAR's shell-extension package to the real Win32 installation instead of displaying a duplicate source-less package row;
 
 ## Manufacturer drivers
 
@@ -83,7 +85,8 @@ The native **Drivers / Treiber** view does not use Windows Update. It correlates
 - Razer's repeated HID/interface records are collapsed by physical product ID. Intel chipset packages are collapsed by installed INF. Rows without a verified exact catalog have no action button.
 - BIOS, UEFI, device firmware, beta drivers, and Windows Update driver packages are excluded.
 - Large segmented downloads are resumable. Completed segments survive interruption, merge progress is displayed separately from download progress, and a freshly downloaded file is not hashed twice before signature verification.
-- Independent manufacturer source checks run concurrently, and the driver table includes a localized status filter for updates, current, manufacturer-managed, unverified, and failed rows.
+- Independent manufacturer source checks run concurrently, and the driver table distinguishes verified installed vendor-software ownership from rows that only have an official source and still require hardware applicability validation. Neither state claims a manually installed driver is outdated.
+- Intel chipset, RST, Management Engine/iCLS/DAL, and other Intel component rows route to the relevant official Intel source without comparing umbrella package versions to unrelated device INF versions; detected Razer rows are assigned to the actually installed Synapse version.
 
 Catalogs provide candidates, never installed state. NaxUpdater still decides the installed version, location, architecture, channel, and scope from its independent inventory. A package-manager match is accepted only through a stable identifier such as an exact MSI product code; name-only search results are not installable.
 
@@ -99,6 +102,7 @@ The shared search field remains active in both the installed-applications and up
 - The Settings dialog includes a localized **About / Über** section with the running application version and a link to the project repository.
 - A localized manufacturer-driver view shows device, installed version, available version, official source, status, and the safe action supported by that manufacturer.
 - Manufacturer-driver rows can be filtered by status without losing the existing free-text filter.
+- Update results and manufacturer-driver rows can be sorted by clicking **Name** or **Status**; clicking the active column reverses its direction.
 - The verification information banner can be closed permanently and restored from Settings.
 - Installed applications can be sorted by clicking the **Application** or **Installed / updated** column header. Clicking the active header reverses direction; unknown dates remain last.
 - The former confidence/safety summary and list column are intentionally omitted from the user interface.
@@ -135,7 +139,7 @@ From this directory:
 dotnet build NaxUpdater.slnx
 dotnet run --project tests/NaxUpdater.Core.SmokeTests/NaxUpdater.Core.SmokeTests.csproj
 dotnet publish src/NaxUpdater/NaxUpdater.csproj -c Release -r win-x64 --self-contained true -o artifacts/NaxUpdater-win-x64
-./scripts/package-release.ps1 -Version 0.15.4
+./scripts/package-release.ps1 -Version 0.15.5
 ```
 
 The desktop project uses .NET 11, WinUI 3, and the Windows App SDK. It is not an Electron or WebView application.

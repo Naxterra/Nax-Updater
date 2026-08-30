@@ -53,7 +53,8 @@
   <data name="DriverStatusAvailable"><value>Update verfügbar</value></data>
   <data name="DriverStatusManufacturerPackage"><value>Neueres Herstellerpaket</value></data>
   <data name="DriverStatusCurrent"><value>Aktuell</value></data>
-  <data name="DriverStatusManufacturer"><value>Vom Hersteller verwaltet</value></data>
+  <data name="DriverStatusVendorManaged"><value>Durch installierte Herstellersoftware verwaltet</value></data>
+  <data name="DriverStatusOfficialSourceOnly"><value>Offizielle Quelle · Eignungsprüfung erforderlich</value></data>
   <data name="DriverStatusNoUpdateRequired"><value>Kein Herstellerupdate erforderlich</value></data>
   <data name="DriverStatusNoCatalog"><value>Kein verifizierter Katalog</value></data>
   <data name="DriverStatusError"><value>Prüfung fehlgeschlagen</value></data>
@@ -77,8 +78,11 @@
   <data name="DriverFilterAll.Content"><value>Alle Status</value></data>
   <data name="DriverFilterUpdates.Content"><value>Updates</value></data>
   <data name="DriverFilterCurrent.Content"><value>Aktuell</value></data>
-  <data name="DriverFilterManaged.Content"><value>Vom Hersteller verwaltet</value></data>
+  <data name="DriverFilterManaged.Content"><value>Durch Herstellersoftware verwaltet</value></data>
+  <data name="DriverFilterOfficialSource.Content"><value>Nur offizielle Quelle</value></data>
   <data name="DriverFilterUnverified.Content"><value>Nicht verifiziert</value></data>
   <data name="DriverFilterErrors.Content"><value>Fehler</value></data>
   <data name="EvidenceLabelMsixArchitecture"><value>MSIX-Paketarchitektur</value></data>
+  <data name="StatusLabel"><value>Status</value></data>
+  <data name="DriverDeviceLabel"><value>Gerät</value></data>
 </root>

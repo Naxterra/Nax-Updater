@@ -29,6 +29,10 @@ public sealed partial class MainPage : Page
     private bool _massUpdateBusy;
     private ApplicationSortColumn _sortColumn = ApplicationSortColumn.Name;
     private bool _sortDescending;
+    private ResultSortColumn _updateSortColumn = ResultSortColumn.Status;
+    private bool _updateSortDescending;
+    private ResultSortColumn _driverSortColumn = ResultSortColumn.Status;
+    private bool _driverSortDescending;
 
     public MainPage()
     {
@@ -43,6 +47,8 @@ public sealed partial class MainPage : Page
         _manufacturerDriverService = new ManufacturerDriverService(_httpClient);
         MainInfo.IsOpen = App.ShowSafetyInformation;
         UpdateSortHeaders();
+        UpdateResultSortHeaders();
+        UpdateDriverSortHeaders();
     }
 
     private void MainInfo_CloseButtonClick(InfoBar sender, object args) => App.SetShowSafetyInformation(false);
@@ -236,8 +242,9 @@ public sealed partial class MainPage : Page
             ? _allUpdates
             : _allUpdates.Where(row => MatchesUpdateFilter(row, filter)).ToArray();
 
+        var sorted = SortUpdateRows(filtered);
         _updates.Clear();
-        foreach (var row in filtered)
+        foreach (var row in sorted)
         {
             _updates.Add(row);
         }
@@ -260,6 +267,56 @@ public sealed partial class MainPage : Page
         row.Status.Contains(filter, StringComparison.OrdinalIgnoreCase) ||
         row.Message.Contains(filter, StringComparison.OrdinalIgnoreCase);
 
+    private void UpdateResultSortHeader_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is not Button button) return;
+        var requested = button.Tag?.ToString() == "Name" ? ResultSortColumn.Name : ResultSortColumn.Status;
+        if (requested == _updateSortColumn)
+        {
+            _updateSortDescending = !_updateSortDescending;
+        }
+        else
+        {
+            _updateSortColumn = requested;
+            _updateSortDescending = false;
+        }
+        UpdateResultSortHeaders();
+        ApplyUpdateFilter();
+    }
+
+    private IEnumerable<UpdateRow> SortUpdateRows(IEnumerable<UpdateRow> rows)
+    {
+        if (_updateSortColumn == ResultSortColumn.Name)
+        {
+            return _updateSortDescending
+                ? rows.OrderByDescending(static row => row.Name, StringComparer.CurrentCultureIgnoreCase)
+                : rows.OrderBy(static row => row.Name, StringComparer.CurrentCultureIgnoreCase);
+        }
+        return _updateSortDescending
+            ? rows.OrderByDescending(static row => UpdateStatusPriority(row.Source.Status))
+                .ThenBy(static row => row.Name, StringComparer.CurrentCultureIgnoreCase)
+            : rows.OrderBy(static row => UpdateStatusPriority(row.Source.Status))
+                .ThenBy(static row => row.Name, StringComparer.CurrentCultureIgnoreCase);
+    }
+
+    private void UpdateResultSortHeaders()
+    {
+        var direction = _updateSortDescending ? " ↓" : " ↑";
+        UpdateNameHeaderText.Text = LocalizationService.Get("ApplicationLabel") +
+                                    (_updateSortColumn == ResultSortColumn.Name ? direction : string.Empty);
+        UpdateStatusHeaderText.Text = LocalizationService.Get("StatusLabel") +
+                                      (_updateSortColumn == ResultSortColumn.Status ? direction : string.Empty);
+    }
+
+    private static int UpdateStatusPriority(UpdateStatus status) => status switch
+    {
+        UpdateStatus.Available => 0,
+        UpdateStatus.Error => 1,
+        UpdateStatus.Current => 2,
+        UpdateStatus.ManagedExternally => 3,
+        _ => 4
+    };
+
     private void ApplyDriverFilter()
     {
         var selectedIdentity = (DriversList.SelectedItem as ManufacturerDriverRow)?.Source.Driver.Identity;
@@ -269,8 +326,9 @@ public sealed partial class MainPage : Page
             .Where(row => (string.IsNullOrWhiteSpace(filter) || MatchesDriverFilter(row, filter)) &&
                           MatchesDriverStatusFilter(row, statusFilter))
             .ToArray();
+        var sorted = SortDriverRows(filtered);
         _drivers.Clear();
-        foreach (var row in filtered)
+        foreach (var row in sorted)
         {
             _drivers.Add(row);
         }
@@ -299,7 +357,8 @@ public sealed partial class MainPage : Page
     {
         "updates" => row.Source.Status == ManufacturerDriverStatus.Available,
         "current" => row.Source.Status is ManufacturerDriverStatus.Current or ManufacturerDriverStatus.NoUpdateRequired,
-        "managed" => row.Source.Status == ManufacturerDriverStatus.ManufacturerManaged,
+        "managed" => row.Source.Status == ManufacturerDriverStatus.VendorSoftwareManaged,
+        "source" => row.Source.Status == ManufacturerDriverStatus.OfficialSourceOnly,
         "unverified" => row.Source.Status == ManufacturerDriverStatus.NoVerifiedCatalog,
         "errors" => row.Source.Status == ManufacturerDriverStatus.Error,
         _ => true
@@ -312,6 +371,58 @@ public sealed partial class MainPage : Page
             ApplyDriverFilter();
         }
     }
+
+    private void DriverSortHeader_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is not Button button) return;
+        var requested = button.Tag?.ToString() == "Name" ? ResultSortColumn.Name : ResultSortColumn.Status;
+        if (requested == _driverSortColumn)
+        {
+            _driverSortDescending = !_driverSortDescending;
+        }
+        else
+        {
+            _driverSortColumn = requested;
+            _driverSortDescending = false;
+        }
+        UpdateDriverSortHeaders();
+        ApplyDriverFilter();
+    }
+
+    private IEnumerable<ManufacturerDriverRow> SortDriverRows(IEnumerable<ManufacturerDriverRow> rows)
+    {
+        if (_driverSortColumn == ResultSortColumn.Name)
+        {
+            return _driverSortDescending
+                ? rows.OrderByDescending(static row => row.Name, StringComparer.CurrentCultureIgnoreCase)
+                : rows.OrderBy(static row => row.Name, StringComparer.CurrentCultureIgnoreCase);
+        }
+        return _driverSortDescending
+            ? rows.OrderByDescending(static row => DriverStatusPriority(row.Source.Status))
+                .ThenBy(static row => row.Name, StringComparer.CurrentCultureIgnoreCase)
+            : rows.OrderBy(static row => DriverStatusPriority(row.Source.Status))
+                .ThenBy(static row => row.Name, StringComparer.CurrentCultureIgnoreCase);
+    }
+
+    private void UpdateDriverSortHeaders()
+    {
+        var direction = _driverSortDescending ? " ↓" : " ↑";
+        DriverNameHeaderText.Text = LocalizationService.Get("DriverDeviceLabel") +
+                                    (_driverSortColumn == ResultSortColumn.Name ? direction : string.Empty);
+        DriverStatusHeaderText.Text = LocalizationService.Get("StatusLabel") +
+                                      (_driverSortColumn == ResultSortColumn.Status ? direction : string.Empty);
+    }
+
+    private static int DriverStatusPriority(ManufacturerDriverStatus status) => status switch
+    {
+        ManufacturerDriverStatus.Available => 0,
+        ManufacturerDriverStatus.Error => 1,
+        ManufacturerDriverStatus.Current => 2,
+        ManufacturerDriverStatus.NoUpdateRequired => 3,
+        ManufacturerDriverStatus.VendorSoftwareManaged => 4,
+        ManufacturerDriverStatus.OfficialSourceOnly => 5,
+        _ => 6
+    };
 
     private void ApplicationsList_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
@@ -959,5 +1070,11 @@ public sealed partial class MainPage : Page
     {
         Name,
         InstallDate
+    }
+
+    private enum ResultSortColumn
+    {
+        Name,
+        Status
     }
 }

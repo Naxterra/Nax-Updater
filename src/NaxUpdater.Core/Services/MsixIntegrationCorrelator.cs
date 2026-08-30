@@ -4,7 +4,7 @@ using System.Text.RegularExpressions;
 
 namespace NaxUpdater.Core.Services;
 
-internal static class MsixIntegrationCorrelator
+internal static partial class MsixIntegrationCorrelator
 {
     private static readonly HashSet<string> IgnoredPublisherWords = new(StringComparer.OrdinalIgnoreCase)
     {
@@ -100,16 +100,9 @@ internal static class MsixIntegrationCorrelator
 
     private static string CanonicalProductName(string displayName)
     {
-        var normalized = NativePathParser.NormalizeName(displayName);
-        string[] architectureSuffixes = ["64bitx64", "32bitx86", "64bit", "32bit", "arm64", "x8664", "x64", "x86"];
-        foreach (var suffix in architectureSuffixes)
-        {
-            if (normalized.EndsWith(suffix, StringComparison.Ordinal) && normalized.Length > suffix.Length + 2)
-            {
-                return normalized[..^suffix.Length];
-            }
-        }
-        return normalized;
+        var withoutArchitecture = ArchitectureDisplaySuffixRegex().Replace(displayName, string.Empty);
+        var withoutVersion = VersionDisplaySuffixRegex().Replace(withoutArchitecture, string.Empty);
+        return NativePathParser.NormalizeName(withoutVersion);
     }
 
     private static bool AreEquivalentTargets(ApplicationCandidate first, ApplicationCandidate second)
@@ -136,6 +129,12 @@ internal static class MsixIntegrationCorrelator
             target.Evidence.Add(evidence with { Label = $"MSIX integration · {evidence.Label}" });
         }
     }
+
+    [GeneratedRegex(@"\s*\((?:x64|x86|arm64|64[- ]?bit(?:\s+x64)?|32[- ]?bit(?:\s+x86)?)[^)]*\)\s*$", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
+    private static partial Regex ArchitectureDisplaySuffixRegex();
+
+    [GeneratedRegex(@"\s+v?\d+(?:\.\d+)+(?:[-+][A-Za-z0-9.-]+)?\s*$", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
+    private static partial Regex VersionDisplaySuffixRegex();
 
     private sealed record CorrelationMatch(ApplicationCandidate Candidate, int Score);
 }
