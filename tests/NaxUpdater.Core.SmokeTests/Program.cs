@@ -15,6 +15,8 @@ Assert(VersionNormalizer.Normalize("34.0.3.20260826", "FirstThreeNumericComponen
 Assert(VersionNormalizer.Normalize("26.8.2.20990", null) == "26.8.2.20990", "Unconfigured versions must remain unchanged.");
 Assert(VersionOrder.Compare("154.0.1", "154.0") > 0, "Numeric update ordering failed.");
 Assert(VersionOrder.Compare("155.0b5", "155.0") < 0, "Prerelease ordering failed.");
+Assert(VersionOrder.Compare("26.08.19.0", "260819") == 0,
+    "Equivalent dotted and compact release-date versions were treated as different.");
 Assert(ManufacturerDriverService.NormalizeNvidiaVersion("32.0.16.1088") == "610.88",
     "NVIDIA Windows driver version normalization failed.");
 Assert(ManufacturerDriverService.NormalizeTpLinkVersion("5102.24.126.4") == "24.126.4",
@@ -589,6 +591,23 @@ try
            storeAssessment.UnsupportedApplicationCount == 0,
         "An unmatched MSIX package was incorrectly labelled actionable, unknown, or unsupported.");
 
+    var nativeUpdaterApplication = catalogApplication with
+    {
+        Identity = "native-updater-precedence-test",
+        DisplayName = "Catalog App",
+        ManagementMode = ManagementMode.NativeSelfUpdater
+    };
+    Assert(deterministicCatalog.CanHandle(nativeUpdaterApplication),
+        "The native-updater precedence fixture did not also match the public catalog provider.");
+    var nativeUpdaterAssessment = await new UpdateCheckService([deterministicCatalog])
+        .CheckAsync(new InventorySnapshot(DateTimeOffset.Now, [nativeUpdaterApplication], [], []));
+    Assert(nativeUpdaterAssessment.Results.Count == 1 &&
+           nativeUpdaterAssessment.Results[0].Status == UpdateStatus.ManagedExternally &&
+           nativeUpdaterAssessment.Results[0].ProviderId == "native-updater" &&
+           nativeUpdaterAssessment.Results[0].AvailableVersion is null &&
+           nativeUpdaterAssessment.Results[0].ExecutionPlan is null,
+        "An explicit native updater was overridden by an incidental public-catalog match.");
+
     var installerPayload = Encoding.UTF8.GetBytes("verified installer fixture");
     var installerHash = Convert.ToHexString(SHA256.HashData(installerPayload));
     var downloadPlan = nextcloudUpdate.ExecutionPlan! with
@@ -963,6 +982,25 @@ AssertProtectedApplication(
     ManagementMode.NativeSelfUpdater,
     expectedPathFileName: "brave.exe",
     requireVersion: true);
+var installedBrave = snapshot.Applications.FirstOrDefault(app =>
+    app.DisplayName.Equals("Brave Origin", StringComparison.OrdinalIgnoreCase));
+if (installedBrave is not null)
+{
+    var braveAssessment = await new UpdateCheckService([federatedCatalog])
+        .CheckAsync(new InventorySnapshot(DateTimeOffset.Now, [installedBrave], [], []));
+    Assert(braveAssessment.Results.Single().Status == UpdateStatus.ManagedExternally &&
+           braveAssessment.Results.Single().AvailableVersion is null,
+        "Brave's native updater was replaced by a Chromium/catalog version comparison.");
+}
+
+var installedPotPlayer = snapshot.Applications.FirstOrDefault(app =>
+    app.DisplayName.StartsWith("PotPlayer", StringComparison.OrdinalIgnoreCase));
+if (installedPotPlayer is not null && federatedCatalog.CanHandle(installedPotPlayer))
+{
+    var potPlayerAssessment = await federatedCatalog.CheckAsync(installedPotPlayer, CancellationToken.None);
+    Assert(potPlayerAssessment.Status == UpdateStatus.Current,
+        $"PotPlayer's equivalent dotted and compact release date was reported as an update: {potPlayerAssessment.InstalledVersion} -> {potPlayerAssessment.AvailableVersion}.");
+}
 
 var nextcloud = snapshot.Applications.FirstOrDefault(app => app.DisplayName.Equals("Nextcloud", StringComparison.OrdinalIgnoreCase));
 if (nextcloud is not null)

@@ -31,12 +31,13 @@ The inventory engine:
 
 ## Update providers
 
-Version 0.15.6 includes:
+Version 0.15.7 includes:
 
 - Mozilla Firefox releases from Mozilla's official product-details and release archive, preserving the effective Firefox profile language, architecture, channel, scope, and installation directory;
 - Nextcloud releases from the official `nextcloud-releases/desktop` GitHub repository using its release-asset SHA-256 digest and a multi-language MSI;
 - DeepL updates through its existing Zero Install feed and content-addressed provider;
 - explicit native-updater ownership for guarded applications such as Battle.net and Brave Origin;
+- native-updater policy precedence over incidental public-catalog matches, preventing component versions such as Brave's Chromium build from appearing as a Brave application update;
 - capability-based discovery of standard `app-update.yml` metadata shipped with installed applications, supporting generic HTTPS and GitHub feeds without application-name recipes;
 - SHA-512 verification from those installed update feeds in addition to SHA-256 and Authenticode verification;
 - exact MSI product-code correlation against WinGet's signed local catalog index without using WinGet's installed-version or path detection;
@@ -68,6 +69,7 @@ Version 0.15.6 includes:
 - twelve-way bounded Store catalog checking, reducing the complete local application scan and update check from roughly 27 seconds to about 7–8 seconds on the validated workstation without omitting packages.
 - exact registered non-MSI product-code matching plus legal-entity publisher normalization, allowing packages such as WinRAR to resolve their verified catalog source without app-name whitelists;
 - version/architecture-aware MSIX integration correlation, attaching WinRAR's shell-extension package to the real Win32 installation instead of displaying a duplicate source-less package row;
+- equivalent compact and dotted date-release versions such as PotPlayer `260819` and `26.08.19.0` are treated as the same release;
 
 ## Manufacturer drivers
 
@@ -104,7 +106,7 @@ The shared search field remains active in both the installed-applications and up
 - A localized manufacturer-driver view shows device, installed version, available version, official source, status, and the safe action supported by that manufacturer.
 - Manufacturer-driver rows can be filtered by status without losing the existing free-text filter.
 - Update results and manufacturer-driver rows can be sorted by clicking **Name** or **Status**; clicking the active column reverses its direction.
-- the interactive installer is now a WiX Burn setup EXE with a verified fixed-size native window; the embedded MSI runs without its unreliable internal UI, while standalone MSI artifacts use `WixUI_InstallDir` and `ProgramFiles64Folder` for enterprise deployment.
+- one multilingual WiX Burn setup EXE contains English and German setup resources, selects the Windows UI language automatically, and also supports Burn's `-lang 1033` / `-lang 1031` override; the app language remains directly selectable in Settings. Its verified fixed-size native window replaces the unreliable MSI dialog, and the embedded MSI runs without internal UI.
 - The verification information banner can be closed permanently and restored from Settings.
 - Installed applications can be sorted by clicking the **Application** or **Installed / updated** column header. Clicking the active header reverses direction; unknown dates remain last.
 - The former confidence/safety summary and list column are intentionally omitted from the user interface.
@@ -141,7 +143,7 @@ From this directory:
 dotnet build NaxUpdater.slnx
 dotnet run --project tests/NaxUpdater.Core.SmokeTests/NaxUpdater.Core.SmokeTests.csproj
 dotnet publish src/NaxUpdater/NaxUpdater.csproj -c Release -r win-x64 --self-contained true -o artifacts/NaxUpdater-win-x64
-./scripts/package-release.ps1 -Version 0.15.6
+./scripts/package-release.ps1 -Version 0.15.7
 ```
 
 The desktop project uses .NET 11, WinUI 3, and the Windows App SDK. It is not an Electron or WebView application.

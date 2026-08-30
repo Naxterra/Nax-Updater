@@ -6,6 +6,11 @@ public sealed class UpdateCheckService
 {
     private readonly IReadOnlyList<IUpdateProvider> _providers;
 
+    public UpdateCheckService(IReadOnlyList<IUpdateProvider> providers)
+    {
+        _providers = providers;
+    }
+
     public UpdateCheckService(HttpClient httpClient, UpdateProviderCatalog catalog, FirefoxMetadataDetector? firefoxMetadataDetector = null)
     {
         var providers = new List<IUpdateProvider>
@@ -30,13 +35,9 @@ public sealed class UpdateCheckService
 
         foreach (var application in inventory.Applications.Where(static application => !application.IsSystemComponent))
         {
-            var provider = _providers.FirstOrDefault(candidate => candidate.CanHandle(application));
-            if (provider is not null)
-            {
-                supportedIdentities.Add(application.Identity);
-                checks.Add(SafeCheckAsync(provider, application, cancellationToken));
-                continue;
-            }
+            // Native-updater ownership is an explicit application policy and must win over
+            // any incidental public-catalog name match. Otherwise catalog versions (for
+            // example Chromium's version for Brave) can be presented as application updates.
             if (application.ManagementMode == ManagementMode.NativeSelfUpdater)
             {
                 supportedIdentities.Add(application.Identity);
@@ -55,6 +56,14 @@ public sealed class UpdateCheckService
                     null,
                     "NaxUpdater will not replace this application's own update mechanism.",
                     null));
+                continue;
+            }
+
+            var provider = _providers.FirstOrDefault(candidate => candidate.CanHandle(application));
+            if (provider is not null)
+            {
+                supportedIdentities.Add(application.Identity);
+                checks.Add(SafeCheckAsync(provider, application, cancellationToken));
                 continue;
             }
             externalResults.Add(new UpdateCheckResult(
