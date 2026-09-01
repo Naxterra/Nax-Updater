@@ -8,7 +8,7 @@
       Version="$(NaxUpdaterVersion)"
       UpgradeCode="{23B20884-E865-4567-8158-EFDE8E0DBF65}"
       Compressed="yes"
-      IconSourceFile="$(sys.SOURCEFILEDIR)..\src\NaxUpdater\Assets\AppIcon.ico">
+      IconSourceFile="$(sys.SOURCEFILEDIR)..\src\NaxUpdater\Assets\AppIcon-Installer.ico">
     <BootstrapperApplication bal:UseUILanguages="yes">
       <bal:WixStandardBootstrapperApplication
           Theme="hyperlinkLargeLicense"

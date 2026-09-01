@@ -970,6 +970,17 @@ AssertProtectedApplication(
     ManagementMode.ZeroInstall,
     expectedPathFileName: "DeepL.exe",
     requireVersion: true);
+var installedDeepL = snapshot.Applications.FirstOrDefault(app =>
+    app.DisplayName.Equals("DeepL", StringComparison.OrdinalIgnoreCase));
+if (installedDeepL is not null)
+{
+    var deepLAssessment = await new ZeroInstallUpdateProvider(new ProcessQueryRunner())
+        .CheckAsync(installedDeepL, CancellationToken.None);
+    Assert(deepLAssessment.Status is UpdateStatus.Current or UpdateStatus.Available &&
+           deepLAssessment.AvailableVersion == "26.8.2.20990" &&
+           deepLAssessment.Message?.Contains("digest", StringComparison.OrdinalIgnoreCase) == true,
+        $"DeepL's Zero Install refresh and cached-selection fallback both failed: {deepLAssessment.Message}");
+}
 AssertProtectedApplication(
     snapshot,
     "Battle.net",

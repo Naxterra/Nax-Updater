@@ -28,6 +28,14 @@ def main() -> None:
             resized(master, size).save(args.output / f"AppIcon-{size}.png", optimize=True)
 
         master.save(args.output / "AppIcon.ico", format="ICO", sizes=ICO_SIZES)
+        # WiX 4 uses the classic Win32 resource updater for Burn's window icon.
+        # Keep a BMP-backed, pre-Vista-compatible icon without the 256px PNG frame.
+        master.save(
+            args.output / "AppIcon-Installer.ico",
+            format="ICO",
+            sizes=((16, 16), (24, 24), (32, 32), (40, 40), (48, 48)),
+            bitmap_format="bmp",
+        )
 
         aliases = {
             "Square44x44Logo.scale-100.png": 44,
