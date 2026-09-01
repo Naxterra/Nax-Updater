@@ -11,7 +11,11 @@ public sealed partial class MainWindow : Window
         InitializeComponent();
         ExtendsContentIntoTitleBar = true;
         SetTitleBar(AppTitleBar);
-        AppWindow.SetIcon("Assets/AppIcon.ico");
+        var iconPath = Path.Combine(AppContext.BaseDirectory, "Assets", "AppIcon.ico");
+        if (File.Exists(iconPath))
+        {
+            AppWindow.SetIcon(iconPath);
+        }
         AppWindow.Resize(new SizeInt32(1380, 860));
         WindowRoot.ActualThemeChanged += (_, _) => UpdateCaptionButtons();
         UpdateCaptionButtons();

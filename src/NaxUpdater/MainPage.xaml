@@ -462,7 +462,7 @@
                             <TextBlock x:Name="DriverCountText" x:Uid="DriverCountText" Text="Not checked" Style="{StaticResource MutedTextStyle}" VerticalAlignment="Center" />
                         </StackPanel>
                     </Grid>
-                    <Grid Grid.Row="1" Padding="14,7" ColumnSpacing="10" Background="{ThemeResource SubtleFillColorSecondaryBrush}" MaxWidth="1260" HorizontalAlignment="Left">
+                    <Grid Grid.Row="1" Padding="14,7" ColumnSpacing="10" Background="{ThemeResource SubtleFillColorSecondaryBrush}" Width="1260" HorizontalAlignment="Center">
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="*" />
                             <ColumnDefinition Width="125" />
@@ -496,7 +496,7 @@
                             </ListView.ItemContainerStyle>
                             <ListView.ItemTemplate>
                                 <DataTemplate>
-                                    <Grid Padding="14,10" ColumnSpacing="10" MaxWidth="1260" HorizontalAlignment="Left">
+                                    <Grid Padding="14,10" ColumnSpacing="10" Width="1260" HorizontalAlignment="Center">
                                         <Grid.ColumnDefinitions>
                                             <ColumnDefinition Width="*" />
                                             <ColumnDefinition Width="125" />

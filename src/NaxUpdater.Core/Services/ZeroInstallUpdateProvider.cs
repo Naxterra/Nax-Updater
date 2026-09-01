@@ -27,14 +27,31 @@ internal sealed class ZeroInstallUpdateProvider(ProcessQueryRunner processRunner
             ["select", "--refresh", "--xml", feed],
             TimeSpan.FromSeconds(45),
             cancellationToken);
-        if (query.ExitCode != 0)
-        {
-            return Error(application, string.IsNullOrWhiteSpace(query.StandardError) ? $"Zero Install exited with {query.ExitCode}." : query.StandardError.Trim());
-        }
-        var selection = ZeroInstallEnricher.ParseSelection(query.StandardOutput, feed);
+        var selection = query.ExitCode == 0
+            ? ZeroInstallEnricher.ParseSelection(query.StandardOutput, feed)
+            : null;
+        var usedCachedSelection = false;
         if (selection is null)
         {
-            return Error(application, "Zero Install did not return a valid release selection.");
+            var offline = await processRunner.RunAsync(
+                cli,
+                ["select", "--offline", "--xml", feed],
+                TimeSpan.FromSeconds(12),
+                cancellationToken);
+            selection = offline.ExitCode == 0
+                ? ZeroInstallEnricher.ParseSelection(offline.StandardOutput, feed)
+                : null;
+            if (selection is null)
+            {
+                var refreshError = string.IsNullOrWhiteSpace(query.StandardError)
+                    ? $"Zero Install refresh exited with {query.ExitCode}."
+                    : query.StandardError.Trim();
+                var offlineError = string.IsNullOrWhiteSpace(offline.StandardError)
+                    ? $"Cached selection exited with {offline.ExitCode}."
+                    : offline.StandardError.Trim();
+                return Error(application, $"{refreshError} {offlineError}");
+            }
+            usedCachedSelection = true;
         }
 
         var status = VersionOrder.Compare(selection.Version, application.NormalizedVersion) > 0
@@ -69,7 +86,9 @@ internal sealed class ZeroInstallUpdateProvider(ProcessQueryRunner processRunner
             selection.Architecture ?? "provider-selected",
             "stable",
             feed,
-            $"Zero Install selected content digest {selection.Digest}.",
+            usedCachedSelection
+                ? $"Zero Install refresh was unavailable; cached signed selection {selection.Version} with content digest {selection.Digest} was verified instead."
+                : $"Zero Install selected content digest {selection.Digest}.",
             plan);
     }
 

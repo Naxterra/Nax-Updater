@@ -1,4 +1,4 @@
-<Project Sdk="WixToolset.Sdk/6.0.2">
+<Project Sdk="WixToolset.Sdk/4.0.6">
   <PropertyGroup>
     <OutputType>Bundle</OutputType>
     <EnableDefaultItems>false</EnableDefaultItems>
@@ -6,11 +6,11 @@
     <InstallerPlatform>x64</InstallerPlatform>
     <OutputName>NaxUpdater-Setup-x64</OutputName>
     <OutputPath>$(MSBuildProjectDirectory)\..\artifacts\bundle\</OutputPath>
-    <NaxUpdaterVersion Condition="'$(NaxUpdaterVersion)' == ''">0.15.9</NaxUpdaterVersion>
+    <NaxUpdaterVersion Condition="'$(NaxUpdaterVersion)' == ''">0.15.10</NaxUpdaterVersion>
     <DefineConstants>NaxUpdaterVersion=$(NaxUpdaterVersion)</DefineConstants>
   </PropertyGroup>
   <ItemGroup>
     <Compile Include="Bundle.wxs" />
-    <PackageReference Include="WixToolset.BootstrapperApplications.wixext" Version="6.0.2" />
+    <PackageReference Include="WixToolset.Bal.wixext" Version="4.0.6" />
   </ItemGroup>
 </Project>

@@ -122,19 +122,19 @@ public sealed partial class ManufacturerDriverService(HttpClient httpClient)
         string? razerSynapseVersion,
         CancellationToken cancellationToken)
     {
-        var publishedFirmware = new List<string>();
+        var matchingReleases = RazerFirmwareReleases
+            .Where(release => driver.GroupMembers?.Contains(release.Product, StringComparer.OrdinalIgnoreCase) == true)
+            .ToArray();
+        var publishedFirmware = matchingReleases
+            .Select(static release => $"{release.Product} {release.Version}")
+            .ToList();
+        var liveCatalogConfirmed = false;
         try
         {
             var catalog = WebUtility.HtmlDecode(await GetStringAsync(RazerFirmwareCatalog, cancellationToken));
-            foreach (var (product, catalogName, version) in RazerFirmwareReleases)
-            {
-                if (driver.GroupMembers?.Contains(product, StringComparer.OrdinalIgnoreCase) == true &&
-                    catalog.Contains(catalogName, StringComparison.OrdinalIgnoreCase) &&
-                    catalog.Contains(version, StringComparison.OrdinalIgnoreCase))
-                {
-                    publishedFirmware.Add($"{product} {version}");
-                }
-            }
+            liveCatalogConfirmed = matchingReleases.All(release =>
+                catalog.Contains(release.CatalogName, StringComparison.OrdinalIgnoreCase) &&
+                catalog.Contains(release.Version, StringComparison.OrdinalIgnoreCase));
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -149,7 +149,11 @@ public sealed partial class ManufacturerDriverService(HttpClient httpClient)
         var available = publishedFirmware.Count.ToString(CultureInfo.InvariantCulture);
         var firmwareMessage = publishedFirmware.Count == 0
             ? "No separate firmware updater was matched in Razer's current public catalog."
-            : $"Razer publishes device-specific firmware checks for: {string.Join(", ", publishedFirmware)}. Each official updater performs the final connected-device firmware applicability check.";
+            : $"Razer publishes device-specific firmware checks for: {string.Join(", ", publishedFirmware)}. " +
+              (liveCatalogConfirmed
+                  ? "The live Razer catalog confirmed all matched releases. "
+                  : "The last verified Razer catalog mapping is shown because the live support page did not return complete machine-readable content. ") +
+              "Each official updater performs the final connected-device firmware applicability check.";
         var status = string.IsNullOrWhiteSpace(razerSynapseVersion)
             ? ManufacturerDriverStatus.OfficialSourceOnly
             : ManufacturerDriverStatus.VendorSoftwareManaged;
@@ -447,7 +451,7 @@ public sealed partial class ManufacturerDriverService(HttpClient httpClient)
     private async Task<string> GetStringAsync(Uri uri, CancellationToken cancellationToken)
     {
         using var request = new HttpRequestMessage(HttpMethod.Get, uri);
-        request.Headers.UserAgent.ParseAdd("NaxUpdater/0.15.9");
+        request.Headers.UserAgent.ParseAdd("NaxUpdater/0.15.10");
         using var response = await httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
         response.EnsureSuccessStatusCode();
         return await response.Content.ReadAsStringAsync(cancellationToken);
