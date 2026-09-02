@@ -117,7 +117,8 @@ public sealed class GogGalaxyUpdateProvider : IUpdateProvider
             true,
             [],
             ["GalaxyClient", "GOG Galaxy Notifications Renderer"],
-            NativeWorkingDirectory: updaterDirectory);
+            NativeWorkingDirectory: updaterDirectory,
+            NativeStagingRoot: _updateRoot);
         return new UpdateCheckResult(
             application.Identity,
             application.DisplayName,

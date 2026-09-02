@@ -39,7 +39,8 @@ public sealed record UpdateExecutionPlan(
     IReadOnlyList<string>? ExpectedSigners = null,
     string? NestedInstallerRelativePath = null,
     string? ExpectedHardwareId = null,
-    string? NativeWorkingDirectory = null);
+    string? NativeWorkingDirectory = null,
+    string? NativeStagingRoot = null);
 
 public sealed record UpdateCheckResult(
     string ApplicationIdentity,

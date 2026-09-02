@@ -58,40 +58,87 @@ public sealed class UpdateExecutionService
             {
                 throw new InvalidOperationException("The native update provider executable is missing.");
             }
-            if (plan.RequiresElevation || !string.IsNullOrWhiteSpace(plan.NativeWorkingDirectory))
+            var nativeExecutable = plan.NativeExecutable;
+            var nativeWorkingDirectory = plan.NativeWorkingDirectory;
+            string? nativeStagingDirectory = null;
+            try
             {
-                var nativeStartInfo = new ProcessStartInfo(plan.NativeExecutable)
+                if (!string.IsNullOrWhiteSpace(plan.NativeStagingRoot))
                 {
-                    UseShellExecute = true,
-                    WorkingDirectory = string.IsNullOrWhiteSpace(plan.NativeWorkingDirectory)
-                        ? Path.GetDirectoryName(plan.NativeExecutable) ?? string.Empty
-                        : plan.NativeWorkingDirectory
-                };
-                if (plan.RequiresElevation)
-                {
-                    nativeStartInfo.Verb = "runas";
+                    nativeStagingDirectory = Path.Combine(
+                        Path.GetTempPath(),
+                        "NaxUpdater",
+                        "Native",
+                        Guid.NewGuid().ToString("N"));
+                    var staged = StageNativeCommandFiles(plan, nativeStagingDirectory);
+                    nativeExecutable = staged.Executable;
+                    nativeWorkingDirectory = staged.WorkingDirectory;
+                    if (string.IsNullOrWhiteSpace(plan.ExpectedSigner))
+                    {
+                        throw new InvalidOperationException("The staged native updater has no signer policy.");
+                    }
+                    var signature = _authenticodeVerifier.Verify(nativeExecutable, plan.ExpectedSigner);
+                    if (!signature.IsValid)
+                    {
+                        throw new InvalidDataException(signature.Error ?? "The staged native updater signature is invalid.");
+                    }
+                    var stagedVersion = FileVersionInfo.GetVersionInfo(nativeExecutable).ProductVersion?.Trim();
+                    if (!string.Equals(stagedVersion, update.AvailableVersion, StringComparison.OrdinalIgnoreCase))
+                    {
+                        throw new InvalidDataException(
+                            $"The staged native updater version is {stagedVersion ?? "unknown"}; expected {update.AvailableVersion}.");
+                    }
                 }
-                foreach (var argument in plan.Arguments)
+
+                if (plan.RequiresElevation || !string.IsNullOrWhiteSpace(nativeWorkingDirectory))
                 {
-                    nativeStartInfo.ArgumentList.Add(argument);
+                    var nativeStartInfo = new ProcessStartInfo(nativeExecutable)
+                    {
+                        UseShellExecute = true,
+                        WorkingDirectory = string.IsNullOrWhiteSpace(nativeWorkingDirectory)
+                            ? Path.GetDirectoryName(nativeExecutable) ?? string.Empty
+                            : nativeWorkingDirectory
+                    };
+                    if (plan.RequiresElevation)
+                    {
+                        nativeStartInfo.Verb = "runas";
+                    }
+                    foreach (var argument in plan.Arguments)
+                    {
+                        nativeStartInfo.ArgumentList.Add(argument);
+                    }
+                    try
+                    {
+                        using var process = Process.Start(nativeStartInfo) ?? throw new InvalidOperationException("The native update provider did not start.");
+                        await process.WaitForExitAsync(cancellationToken);
+                        return new UpdateExecutionResult(process.ExitCode, IsSuccessfulExitCode(process.ExitCode), null);
+                    }
+                    catch (Win32Exception exception) when (exception.NativeErrorCode == 1223)
+                    {
+                        return new UpdateExecutionResult(1223, false, "The Windows elevation prompt was cancelled.");
+                    }
                 }
-                try
+                var query = await new ProcessQueryRunner().RunAsync(
+                    nativeExecutable,
+                    plan.Arguments,
+                    TimeSpan.FromMinutes(20),
+                    cancellationToken);
+                return new UpdateExecutionResult(query.ExitCode, IsSuccessfulExitCode(query.ExitCode), query.StandardError.Trim());
+            }
+            finally
+            {
+                if (!string.IsNullOrWhiteSpace(nativeStagingDirectory) && Directory.Exists(nativeStagingDirectory))
                 {
-                    using var process = Process.Start(nativeStartInfo) ?? throw new InvalidOperationException("The native update provider did not start.");
-                    await process.WaitForExitAsync(cancellationToken);
-                    return new UpdateExecutionResult(process.ExitCode, IsSuccessfulExitCode(process.ExitCode), null);
-                }
-                catch (Win32Exception exception) when (exception.NativeErrorCode == 1223)
-                {
-                    return new UpdateExecutionResult(1223, false, "The Windows elevation prompt was cancelled.");
+                    try
+                    {
+                        Directory.Delete(nativeStagingDirectory, recursive: true);
+                    }
+                    catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+                    {
+                        // The completed vendor update is more important than best-effort staging cleanup.
+                    }
                 }
             }
-            var query = await new ProcessQueryRunner().RunAsync(
-                plan.NativeExecutable,
-                plan.Arguments,
-                TimeSpan.FromMinutes(20),
-                cancellationToken);
-            return new UpdateExecutionResult(query.ExitCode, IsSuccessfulExitCode(query.ExitCode), query.StandardError.Trim());
         }
 
         if (plan.Kind == UpdateExecutionKind.StorePackage)
@@ -203,6 +250,68 @@ public sealed class UpdateExecutionService
             }
         }
     }
+
+    internal static NativeStagingResult StageNativeCommandFiles(
+        UpdateExecutionPlan plan,
+        string destinationDirectory)
+    {
+        if (string.IsNullOrWhiteSpace(plan.NativeStagingRoot) ||
+            string.IsNullOrWhiteSpace(plan.NativeExecutable))
+        {
+            throw new InvalidOperationException("The native staging plan is incomplete.");
+        }
+        var sourceRoot = Path.GetFullPath(plan.NativeStagingRoot).TrimEnd(Path.DirectorySeparatorChar);
+        var sourceExecutable = Path.GetFullPath(plan.NativeExecutable);
+        var sourceWorkingDirectory = Path.GetFullPath(
+            string.IsNullOrWhiteSpace(plan.NativeWorkingDirectory)
+                ? Path.GetDirectoryName(sourceExecutable) ?? sourceRoot
+                : plan.NativeWorkingDirectory);
+        if (!IsWithinDirectory(sourceExecutable, sourceRoot) ||
+            !IsWithinDirectory(sourceWorkingDirectory, sourceRoot) ||
+            !Directory.Exists(sourceRoot) ||
+            !File.Exists(sourceExecutable))
+        {
+            throw new InvalidDataException("The native updater or working directory escapes its verified staging root.");
+        }
+
+        var destinationRoot = Path.GetFullPath(destinationDirectory).TrimEnd(Path.DirectorySeparatorChar);
+        Directory.CreateDirectory(destinationRoot);
+        CopyDirectoryTree(sourceRoot, destinationRoot);
+        var stagedExecutable = Path.Combine(destinationRoot, Path.GetRelativePath(sourceRoot, sourceExecutable));
+        var stagedWorkingDirectory = Path.Combine(destinationRoot, Path.GetRelativePath(sourceRoot, sourceWorkingDirectory));
+        if (!File.Exists(stagedExecutable) || !Directory.Exists(stagedWorkingDirectory))
+        {
+            throw new InvalidDataException("The staged native updater is incomplete after copying.");
+        }
+        return new NativeStagingResult(stagedExecutable, stagedWorkingDirectory, destinationRoot);
+    }
+
+    private static void CopyDirectoryTree(string sourceRoot, string destinationRoot)
+    {
+        foreach (var directory in Directory.EnumerateDirectories(sourceRoot, "*", SearchOption.AllDirectories))
+        {
+            if ((File.GetAttributes(directory) & FileAttributes.ReparsePoint) != 0)
+            {
+                throw new InvalidDataException($"Native staging rejected reparse-point directory {directory}.");
+            }
+            var destination = Path.Combine(destinationRoot, Path.GetRelativePath(sourceRoot, directory));
+            Directory.CreateDirectory(destination);
+        }
+        foreach (var file in Directory.EnumerateFiles(sourceRoot, "*", SearchOption.AllDirectories))
+        {
+            if ((File.GetAttributes(file) & FileAttributes.ReparsePoint) != 0)
+            {
+                throw new InvalidDataException($"Native staging rejected reparse-point file {file}.");
+            }
+            var destination = Path.Combine(destinationRoot, Path.GetRelativePath(sourceRoot, file));
+            Directory.CreateDirectory(Path.GetDirectoryName(destination)!);
+            File.Copy(file, destination, overwrite: false);
+        }
+    }
+
+    private static bool IsWithinDirectory(string path, string root) =>
+        path.Equals(root, StringComparison.OrdinalIgnoreCase) ||
+        path.StartsWith(root + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase);
 
     internal static string ExtractNestedInstaller(string archivePath, string relativePath, string destinationDirectory)
     {
@@ -317,6 +426,8 @@ public sealed class UpdateExecutionService
 
     public static bool IsSuccessfulExitCode(int exitCode) => exitCode is 0 or 1641 or 3010;
 }
+
+internal sealed record NativeStagingResult(string Executable, string WorkingDirectory, string Root);
 
 public sealed record UpdateExecutionResult(int ExitCode, bool IsSuccess, string? Error);
 
