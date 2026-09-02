@@ -50,9 +50,26 @@ public sealed class ApplicationIconService
     private static IEnumerable<string> IconCandidates(InstalledApplication application)
     {
         var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        // Packaged executables often expose only a generic executable icon. Prefer the
+        // package manifest's Square44x44Logo/Logo assets before asking Shell for the EXE.
+        if (application.ManagementMode == ManagementMode.Msix)
+        {
+            foreach (var evidence in application.Evidence.Where(static evidence =>
+                         evidence.Label == "MSIX installed location"))
+            {
+                if (!string.IsNullOrWhiteSpace(evidence.Value) && seen.Add(evidence.Value))
+                {
+                    yield return evidence.Value;
+                }
+            }
+        }
+
         foreach (var evidence in application.Evidence.Where(static evidence =>
                      evidence.Label == "Display icon path" ||
-                     evidence.Label == "Executable path"))
+                     evidence.Label == "Executable path" ||
+                     evidence.Label == "Resolved application executable" ||
+                     evidence.Label == "Windows shortcut"))
         {
             if (!string.IsNullOrWhiteSpace(evidence.Value) && seen.Add(evidence.Value))
             {
@@ -94,10 +111,10 @@ public sealed class ApplicationIconService
             }
             else if (Directory.Exists(path))
             {
-                var packageIcon = FindPackageIcon(path);
-                if (packageIcon is not null)
+                var directoryIcon = FindPackageIcon(path) ?? FindDesktopIcon(path);
+                if (directoryIcon is not null)
                 {
-                    return await TryLoadPathAsync(packageIcon);
+                    return await TryLoadPathAsync(directoryIcon);
                 }
             }
         }
@@ -107,6 +124,43 @@ public sealed class ApplicationIconService
             // The list keeps its neutral fallback icon in that case.
         }
         return null;
+    }
+
+    private static string? FindDesktopIcon(string directory)
+    {
+        try
+        {
+            var image = Directory.EnumerateFiles(directory, "*", SearchOption.TopDirectoryOnly)
+                .Where(IsDirectImage)
+                .OrderBy(static path =>
+                {
+                    var name = Path.GetFileNameWithoutExtension(path);
+                    return name.Contains("icon", StringComparison.OrdinalIgnoreCase) ? 0 :
+                           name.Contains("logo", StringComparison.OrdinalIgnoreCase) ? 1 : 2;
+                })
+                .FirstOrDefault();
+            if (image is not null)
+            {
+                return image;
+            }
+
+            return Directory.EnumerateFiles(directory, "*.exe", SearchOption.TopDirectoryOnly)
+                .Where(static path =>
+                {
+                    var name = Path.GetFileNameWithoutExtension(path);
+                    return !name.Contains("uninstall", StringComparison.OrdinalIgnoreCase) &&
+                           !name.Contains("unins", StringComparison.OrdinalIgnoreCase) &&
+                           !name.Contains("update", StringComparison.OrdinalIgnoreCase) &&
+                           !name.Contains("setup", StringComparison.OrdinalIgnoreCase) &&
+                           !name.Contains("crash", StringComparison.OrdinalIgnoreCase);
+                })
+                .OrderByDescending(static path => new FileInfo(path).Length)
+                .FirstOrDefault();
+        }
+        catch (Exception)
+        {
+            return null;
+        }
     }
 
     private static string? FindPackageIcon(string packageDirectory)

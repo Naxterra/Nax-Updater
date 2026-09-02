@@ -283,7 +283,7 @@
             </Border>
         </Grid>
 
-        <Grid x:Name="UpdatesWorkspace" Grid.Row="3" ColumnSpacing="12" Visibility="Collapsed">
+        <Grid x:Name="UpdatesWorkspace" Grid.Row="3" ColumnSpacing="12" Visibility="Collapsed" MaxWidth="1740" HorizontalAlignment="Center">
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="*" MinWidth="650" />
                 <ColumnDefinition Width="1" />
@@ -316,7 +316,7 @@
                     </Grid>
                     <Grid Grid.Row="1" Padding="14,7" ColumnSpacing="10" Background="{ThemeResource SubtleFillColorSecondaryBrush}">
                         <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="*" MinWidth="280" MaxWidth="600" />
                             <ColumnDefinition Width="105" />
                             <ColumnDefinition Width="105" />
                             <ColumnDefinition Width="90" />
@@ -345,7 +345,7 @@
                             <DataTemplate>
                                 <Grid Padding="14,10" ColumnSpacing="10">
                                     <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="*" MinWidth="280" MaxWidth="600" />
                                         <ColumnDefinition Width="105" />
                                         <ColumnDefinition Width="105" />
                                         <ColumnDefinition Width="90" />
