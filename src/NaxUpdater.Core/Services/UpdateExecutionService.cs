@@ -58,6 +58,34 @@ public sealed class UpdateExecutionService
             {
                 throw new InvalidOperationException("The native update provider executable is missing.");
             }
+            if (plan.RequiresElevation || !string.IsNullOrWhiteSpace(plan.NativeWorkingDirectory))
+            {
+                var nativeStartInfo = new ProcessStartInfo(plan.NativeExecutable)
+                {
+                    UseShellExecute = true,
+                    WorkingDirectory = string.IsNullOrWhiteSpace(plan.NativeWorkingDirectory)
+                        ? Path.GetDirectoryName(plan.NativeExecutable) ?? string.Empty
+                        : plan.NativeWorkingDirectory
+                };
+                if (plan.RequiresElevation)
+                {
+                    nativeStartInfo.Verb = "runas";
+                }
+                foreach (var argument in plan.Arguments)
+                {
+                    nativeStartInfo.ArgumentList.Add(argument);
+                }
+                try
+                {
+                    using var process = Process.Start(nativeStartInfo) ?? throw new InvalidOperationException("The native update provider did not start.");
+                    await process.WaitForExitAsync(cancellationToken);
+                    return new UpdateExecutionResult(process.ExitCode, IsSuccessfulExitCode(process.ExitCode), null);
+                }
+                catch (Win32Exception exception) when (exception.NativeErrorCode == 1223)
+                {
+                    return new UpdateExecutionResult(1223, false, "The Windows elevation prompt was cancelled.");
+                }
+            }
             var query = await new ProcessQueryRunner().RunAsync(
                 plan.NativeExecutable,
                 plan.Arguments,

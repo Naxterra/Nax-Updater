@@ -199,7 +199,9 @@ public sealed class UpdateRow
     public string Message => LocalizationService.ProviderMessage(Source);
     public string ReleaseNotes => Source.ReleaseNotesUrl ?? LocalizationService.Get("NotProvided");
     public bool CanInstall => Source.IsInstallable;
-    public string UpdateActionText => Source.ExecutionPlan?.Kind == UpdateExecutionKind.NativeCommand
+    public string UpdateActionText => Source.ProviderId == "gog-galaxy-native"
+        ? LocalizationService.Get("UpdateShort")
+        : Source.ExecutionPlan?.Kind == UpdateExecutionKind.NativeCommand
         ? LocalizationService.Get("RunUpdateShort")
         : LocalizationService.Get("UpdateShort");
     public Visibility UpdateActionVisibility => CanInstall ? Visibility.Visible : Visibility.Collapsed;

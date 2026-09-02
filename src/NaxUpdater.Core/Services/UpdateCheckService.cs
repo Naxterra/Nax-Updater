@@ -17,7 +17,8 @@ public sealed class UpdateCheckService
         {
             new FirefoxUpdateProvider(httpClient, firefoxMetadataDetector ?? new FirefoxMetadataDetector()),
             new ZeroInstallUpdateProvider(new ProcessQueryRunner()),
-            new ElectronBuilderUpdateProvider(httpClient)
+            new ElectronBuilderUpdateProvider(httpClient),
+            new GogGalaxyUpdateProvider()
         };
         providers.AddRange(catalog.GitHub.Select(recipe => new GitHubReleaseUpdateProvider(httpClient, recipe)));
         providers.Add(new MsixStoreUpdateProvider(httpClient));

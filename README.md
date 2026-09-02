@@ -31,7 +31,7 @@ The inventory engine:
 
 ## Update providers
 
-Version 0.15.13 includes:
+Version 0.15.14 includes:
 
 - Mozilla Firefox releases from Mozilla's official product-details and release archive, preserving the effective Firefox profile language, architecture, channel, scope, and installation directory;
 - Nextcloud releases from the official `nextcloud-releases/desktop` GitHub repository using its release-asset SHA-256 digest and a multi-language MSI;
@@ -50,6 +50,7 @@ Version 0.15.13 includes:
 - GitHub CLI promotion from the installed exact MSI upgrade family to GitHub's newer official release MSI, verified with the versioned `gh_*_checksums.txt` asset so a detected update receives a real Update button;
 - a complete assessment result for every visible application, including an explicit **No verifiable update source** status instead of silently omitting unsupported software;
 - registered non-MSI product-code correlation for installer technologies such as Inno Setup;
+- vendor-native GOG Galaxy updates read from GOG's own `autoupdate-verified` state, with the staged updater version matched to its metadata and its GOG Authenticode signature validated before GOG's own elevated update command is offered;
 - catalog comparison against the highest credible executable and registered package version, preventing false repeated updates when an executable embeds an older component version;
 - explicitly labelled SHA-256-only update plans for unsigned vendor installers, limited to exact registered product-code matches;
 - exact MSIX package-family correlation against catalog PFNs;
@@ -98,6 +99,8 @@ The native **Drivers / Treiber** view does not use Windows Update. It correlates
 - Applications and Updates now use the same full-width table/details workspace. Their name columns share the same responsive 280–600 px constraint, while surplus ultrawide space is placed after the last data/action column instead of inside the application name.
 
 Catalogs provide candidates, never installed state. NaxUpdater still decides the installed version, location, architecture, channel, and scope from its independent inventory. A package-manager match is accepted only through a stable identifier such as an exact MSI product code; name-only search results are not installable.
+
+Provider priority is vendor-first: installed native/self-updaters and installed signed updater metadata, official direct release channels, Microsoft Store for Store packages, and only then federated public catalogs as a fallback. A verified native vendor channel such as GOG Galaxy therefore overrides a stale WinGet version.
 
 The single **Scan and check updates** action rebuilds the installed-application list and then checks every supported provider. The **Updates (N)** control shows both available updates and the checked/installed coverage; it only switches to the results and never starts a second check.
 
@@ -150,7 +153,7 @@ From this directory:
 dotnet build NaxUpdater.slnx
 dotnet run --project tests/NaxUpdater.Core.SmokeTests/NaxUpdater.Core.SmokeTests.csproj
 dotnet publish src/NaxUpdater/NaxUpdater.csproj -c Release -r win-x64 --self-contained true -o artifacts/NaxUpdater-win-x64
-./scripts/package-release.ps1 -Version 0.15.13
+./scripts/package-release.ps1 -Version 0.15.14
 ```
 
 The desktop project uses .NET 11, WinUI 3, and the Windows App SDK. It is not an Electron or WebView application.

@@ -327,6 +327,42 @@ try
            rateLimitedNextcloud.Message?.Contains("latest-release redirect", StringComparison.OrdinalIgnoreCase) == true,
         $"Nextcloud did not fall back to its immutable latest-release redirect after a GitHub API failure: {rateLimitedNextcloud.Message}");
 
+    var gogUpdateFixture = Directory.CreateDirectory(Path.Combine(firefoxFixture, "gog-autoupdate-verified"));
+    var gogUpdaterDirectory = Directory.CreateDirectory(Path.Combine(gogUpdateFixture.FullName, "desktop-galaxy-updater"));
+    var gogUpdaterPath = Path.Combine(gogUpdaterDirectory.FullName, "GalaxyUpdater.exe");
+    await File.WriteAllBytesAsync(gogUpdaterPath, [1, 2, 3]);
+    await File.WriteAllTextAsync(
+        Path.Combine(gogUpdateFixture.FullName, "version.update.json"),
+        """{"generation":8,"state":"Downloaded","version":"2.1.9.27"}""");
+    var gogInstallDirectory = Directory.CreateDirectory(Path.Combine(firefoxFixture, "GOG Galaxy"));
+    var gogExecutable = Path.Combine(gogInstallDirectory.FullName, "GalaxyClient.exe");
+    await File.WriteAllBytesAsync(gogExecutable, []);
+    var gogApplication = CreateApplication(
+        "gog-native-test",
+        "GOG GALAXY",
+        "GOG.com",
+        "2.1.8.30",
+        gogExecutable,
+        InstallScope.Machine,
+        ManagementMode.Registry);
+    var gogNativeUpdate = await new GogGalaxyUpdateProvider(
+            gogUpdateFixture.FullName,
+            new StubAuthenticodeVerifier("GOG  sp. z o.o"),
+            _ => "2.1.9.27")
+        .CheckAsync(gogApplication, CancellationToken.None);
+    Assert(gogNativeUpdate.Status == UpdateStatus.Available &&
+           gogNativeUpdate.AvailableVersion == "2.1.9.27" &&
+           gogNativeUpdate.ExecutionPlan is
+           {
+               Kind: UpdateExecutionKind.NativeCommand,
+               RequiresElevation: true,
+               NativeWorkingDirectory: var gogWorkingDirectory
+           } &&
+           gogWorkingDirectory == gogUpdaterDirectory.FullName &&
+           gogNativeUpdate.ExecutionPlan.Arguments.Contains("/updateClient") &&
+           gogNativeUpdate.ExecutionPlan.RunningProcessNames.Contains("GalaxyClient"),
+        "GOG's downloaded, signed native update did not take precedence over the stale public catalog.");
+
     var metadataFixture = Directory.CreateDirectory(Path.Combine(firefoxFixture, "MetadataApp"));
     var metadataResources = Directory.CreateDirectory(Path.Combine(metadataFixture.FullName, "resources"));
     var metadataExecutable = Path.Combine(metadataFixture.FullName, "MetadataApp.exe");
@@ -908,11 +944,21 @@ if (installedNode is not null && federatedCatalog.CanHandle(installedNode))
 }
 
 var installedGog = snapshot.Applications.FirstOrDefault(app => app.DisplayName.Equals("GOG GALAXY", StringComparison.OrdinalIgnoreCase));
-if (installedGog is not null && federatedCatalog.CanHandle(installedGog))
+if (installedGog is not null)
 {
-    var gogUpdate = await federatedCatalog.CheckAsync(installedGog, CancellationToken.None);
-    Assert(gogUpdate.Status == UpdateStatus.Current && gogUpdate.InstalledVersion == "2.1.8.30",
-        $"GOG GALAXY should use its newer registered package version instead of an older executable version: {gogUpdate.Message}");
+    var gogUpdate = await new GogGalaxyUpdateProvider().CheckAsync(installedGog, CancellationToken.None);
+    Assert(gogUpdate.ProviderId == "gog-galaxy-native" &&
+           gogUpdate.Status is UpdateStatus.Current or UpdateStatus.Available or UpdateStatus.ManagedExternally,
+        $"GOG GALAXY was not checked through its installed native updater: {gogUpdate.Message}");
+    if (File.Exists(Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData),
+            "GOG.com", "Galaxy", "autoupdate-verified", "version.update.json")))
+    {
+        Assert(gogUpdate.Status == UpdateStatus.Available &&
+               VersionOrder.Compare(gogUpdate.AvailableVersion, installedGog.NormalizedVersion) > 0 &&
+               gogUpdate.ExecutionPlan?.NativeExecutable?.EndsWith("GalaxyUpdater.exe", StringComparison.OrdinalIgnoreCase) == true,
+            $"GOG's staged vendor update was missed: {gogUpdate.AvailableVersion} · {gogUpdate.Message}");
+    }
 }
 
 var installedWinRar = snapshot.Applications.FirstOrDefault(app =>
