@@ -11,11 +11,13 @@ public sealed class GogGalaxyUpdateProvider : IUpdateProvider
     private readonly string _updateRoot;
     private readonly IAuthenticodeVerifier _authenticodeVerifier;
     private readonly Func<string, string?> _fileVersionReader;
+    private readonly string _redistRoot;
 
     public GogGalaxyUpdateProvider(
         string? updateRoot = null,
         IAuthenticodeVerifier? authenticodeVerifier = null,
-        Func<string, string?>? fileVersionReader = null)
+        Func<string, string?>? fileVersionReader = null,
+        string? redistRoot = null)
     {
         _updateRoot = updateRoot ?? Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData),
@@ -24,6 +26,11 @@ public sealed class GogGalaxyUpdateProvider : IUpdateProvider
             "autoupdate-verified");
         _authenticodeVerifier = authenticodeVerifier ?? new NativeAuthenticodeVerifier();
         _fileVersionReader = fileVersionReader ?? ReadFileVersion;
+        _redistRoot = redistRoot ?? Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData),
+            "GOG.com",
+            "Galaxy",
+            "redists");
     }
 
     public string Id => "gog-galaxy-native";
@@ -92,11 +99,6 @@ public sealed class GogGalaxyUpdateProvider : IUpdateProvider
         {
             return Error(application, "GOG's installation directory could not be resolved for its native updater.", state.Version);
         }
-        var redistDirectory = Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData),
-            "GOG.com",
-            "Galaxy",
-            "redists");
         var plan = new UpdateExecutionPlan(
             UpdateExecutionKind.NativeCommand,
             null,
@@ -107,9 +109,9 @@ public sealed class GogGalaxyUpdateProvider : IUpdateProvider
             [
                 $"/clientUpdatePath={installDirectory}",
                 "/disableUpdateMessageBox",
-                $"/globalRedistUpdatePath={redistDirectory}",
+                $"/globalRedistUpdatePath={_redistRoot}",
                 $"/previousClientVersion={application.NormalizedVersion}",
-                $"/redistUpdatePath={redistDirectory}",
+                $"/redistUpdatePath={_redistRoot}",
                 "/updateClient",
                 "/updateRedist",
                 "/updateStrategy=Normal"
@@ -118,7 +120,8 @@ public sealed class GogGalaxyUpdateProvider : IUpdateProvider
             [],
             ["GalaxyClient", "GOG Galaxy Notifications Renderer"],
             NativeWorkingDirectory: updaterDirectory,
-            NativeStagingRoot: _updateRoot);
+            NativeStagingRoot: _updateRoot,
+            NativeDependencyRoot: _redistRoot);
         return new UpdateCheckResult(
             application.Identity,
             application.DisplayName,
