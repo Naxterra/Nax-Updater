@@ -911,6 +911,26 @@ if (installedWinRar is not null)
         $"WinRAR did not receive a verified catalog assessment: installed {winRarUpdate.InstalledVersion} · available {winRarUpdate.AvailableVersion} · {winRarUpdate.Status} · {winRarUpdate.Message}");
 }
 
+var installedGitHubCli = snapshot.Applications.FirstOrDefault(app =>
+    app.DisplayName.Equals("GitHub CLI", StringComparison.OrdinalIgnoreCase));
+if (installedGitHubCli is not null && federatedCatalog.CanHandle(installedGitHubCli))
+{
+    var gitHubCliUpdate = await federatedCatalog.CheckAsync(installedGitHubCli, CancellationToken.None);
+    Assert(gitHubCliUpdate.Status is UpdateStatus.Current or UpdateStatus.Available,
+        $"GitHub CLI's exact MSI upgrade family was not assessed: {gitHubCliUpdate.Message}");
+    if (gitHubCliUpdate.Status == UpdateStatus.Available)
+    {
+        Assert(gitHubCliUpdate.ExecutionPlan is
+               {
+                   Kind: UpdateExecutionKind.DownloadedMsi,
+                   Sha256.Length: 64,
+                   DownloadUri.Host: "github.com"
+               } &&
+               gitHubCliUpdate.ExecutionPlan.DownloadUri.AbsoluteUri.Contains("/cli/cli/releases/", StringComparison.OrdinalIgnoreCase),
+            $"GitHub CLI {gitHubCliUpdate.AvailableVersion} was detected without its official checksum-backed MSI plan: {gitHubCliUpdate.Message}");
+    }
+}
+
 var installedGameInput = snapshot.Applications.FirstOrDefault(app =>
     app.DisplayName.Equals("Microsoft GameInput", StringComparison.OrdinalIgnoreCase));
 if (installedGameInput is not null)

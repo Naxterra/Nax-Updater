@@ -72,7 +72,7 @@ public sealed partial class FederatedCatalogUpdateProvider(HttpClient httpClient
 
         if (VersionOrder.Compare(availableVersion, identity.LatestVersion) > 0)
         {
-            installer = await TryPromoteVersionedInstallerAsync(installer, identity.LatestVersion, availableVersion, cancellationToken);
+            installer = await TryPromoteVersionedInstallerAsync(installer, identity, identity.LatestVersion, availableVersion, cancellationToken);
             if (installer is null)
             {
                 return Result(
@@ -494,6 +494,7 @@ public sealed partial class FederatedCatalogUpdateProvider(HttpClient httpClient
 
     private async Task<CatalogInstaller?> TryPromoteVersionedInstallerAsync(
         CatalogInstaller installer,
+        CatalogIdentity identity,
         string oldVersion,
         string newVersion,
         CancellationToken cancellationToken)
@@ -511,7 +512,9 @@ public sealed partial class FederatedCatalogUpdateProvider(HttpClient httpClient
             return null;
         }
 
-        var checksumUri = new Uri(candidateUri, "SHASUMS256.txt");
+        var checksumUri = identity.Id.Equals("GitHub.cli", StringComparison.OrdinalIgnoreCase)
+            ? new Uri($"https://github.com/cli/cli/releases/download/v{Uri.EscapeDataString(newVersion)}/gh_{Uri.EscapeDataString(newVersion)}_checksums.txt")
+            : new Uri(candidateUri, "SHASUMS256.txt");
         using var response = await httpClient.GetAsync(checksumUri, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
         if (!response.IsSuccessStatusCode)
         {
