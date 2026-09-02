@@ -31,10 +31,11 @@ The inventory engine:
 
 ## Update providers
 
-Version 0.15.12 includes:
+Version 0.15.13 includes:
 
 - Mozilla Firefox releases from Mozilla's official product-details and release archive, preserving the effective Firefox profile language, architecture, channel, scope, and installation directory;
 - Nextcloud releases from the official `nextcloud-releases/desktop` GitHub repository using its release-asset SHA-256 digest and a multi-language MSI;
+- retry and immutable latest-release redirect fallback for current Nextcloud checks when the GitHub JSON API is temporarily unavailable or rate-limited;
 - DeepL updates through its existing Zero Install feed and content-addressed provider;
 - resilient DeepL checks that fall back to Zero Install's locally cached signed selection when a feed refresh is temporarily unavailable, avoiding a false provider failure for the installed current release;
 - explicit native-updater ownership for guarded applications such as Battle.net and Brave Origin;
@@ -60,6 +61,7 @@ Version 0.15.12 includes:
 - Store update applicability checks through an exact installed package-family → Store Product ID → architecture-matched Store package-version comparison, avoiding false negatives when the composite catalog omits its installed-version object or reports a stale applicability flag;
 - conservative Store package comparison that excludes encrypted duplicate bundles and rejects unrelated outer-bundle version schemes, preventing satellite revisions such as `.70` and calendar/rank bundle versions from becoming false application updates;
 - a direct **Update** row action only when Microsoft Store reports a real applicable upgrade; current or uncorrelated Store packages remain labelled as Store-managed without a misleading button;
+- an exact Microsoft Store product-install fallback when package metadata proves a newer applicable version but the composite update catalog exposes no upgrade candidate; Windows applies the exact Store product as an upgrade to the installed package family, while a genuinely withdrawn update is refreshed as already current instead of shown as a red failure;
 - launchable MSIX app-entry naming ahead of package identities, so Store packages such as `OpenAI.Codex` are presented by their user-facing app name, `ChatGPT`;
 - six-way parallel ranged downloads for installers of at least 64 MB when the server advertises byte-range support, followed by complete reconstruction and whole-file hash verification;
 - SHA-256-verified ZIP/NuGet packages containing an explicitly declared nested MSI, with exact-entry extraction, traversal rejection, and silent MSI execution;
@@ -148,7 +150,7 @@ From this directory:
 dotnet build NaxUpdater.slnx
 dotnet run --project tests/NaxUpdater.Core.SmokeTests/NaxUpdater.Core.SmokeTests.csproj
 dotnet publish src/NaxUpdater/NaxUpdater.csproj -c Release -r win-x64 --self-contained true -o artifacts/NaxUpdater-win-x64
-./scripts/package-release.ps1 -Version 0.15.12
+./scripts/package-release.ps1 -Version 0.15.13
 ```
 
 The desktop project uses .NET 11, WinUI 3, and the Windows App SDK. It is not an Electron or WebView application.

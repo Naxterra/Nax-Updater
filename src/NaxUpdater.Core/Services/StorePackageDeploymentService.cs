@@ -4,6 +4,8 @@ namespace NaxUpdater.Core.Services;
 
 public sealed class StorePackageDeploymentService
 {
+    public const string NoApplicableUpdateMessage = "Microsoft Store no longer reports an applicable update for this package.";
+
     private static readonly HttpClient SharedHttpClient = new()
     {
         Timeout = TimeSpan.FromSeconds(30)
@@ -302,41 +304,29 @@ public sealed class StorePackageDeploymentService
         try
         {
             var (manager, catalog) = await GetStoreUpdateConnectionAsync(cancellationToken);
-            var options = new FindPackagesOptions { ResultLimit = 5 };
-            options.Selectors.Add(new PackageMatchFilter
-            {
-                Field = PackageMatchField.Id,
-                Option = PackageFieldMatchOption.EqualsCaseInsensitive,
-                Value = productId
-            });
-            var find = await catalog.FindPackagesAsync(options).AsTask(cancellationToken);
-            CatalogPackage? package = null;
-            if (find.Status == FindPackagesResultStatus.Ok)
-            {
-                for (var index = 0; index < find.Matches.Count; index++)
-                {
-                    var candidate = find.Matches[index].CatalogPackage;
-                    var familyMatch = candidate.InstalledVersion is not null &&
-                                      Contains(candidate.InstalledVersion.PackageFamilyNames, packageFamilyName);
-                    var defaultFamilyMatch = Contains(candidate.DefaultInstallVersion.PackageFamilyNames, packageFamilyName);
-                    var metadataMatch = !string.IsNullOrWhiteSpace(installedDisplayName) &&
-                                        candidate.Name.Equals(installedDisplayName, StringComparison.OrdinalIgnoreCase) &&
-                                        PublisherMatches(candidate, installedPublisher);
-                    if (candidate.Id.Equals(productId, StringComparison.OrdinalIgnoreCase) &&
-                        (familyMatch || defaultFamilyMatch || metadataMatch))
-                    {
-                        if (package is not null)
-                        {
-                            package = null;
-                            break;
-                        }
-                        package = candidate;
-                    }
-                }
-            }
+            var package = await FindExactPackageAsync(
+                catalog,
+                productId,
+                packageFamilyName,
+                installedDisplayName,
+                installedPublisher,
+                cancellationToken);
+            var useInstallFallback = false;
             if (package is null)
             {
-                return new UpdateExecutionResult(-1, false, "Microsoft Store no longer reports an applicable update for this package.");
+                (manager, catalog) = await GetStoreConnectionAsync(cancellationToken);
+                package = await FindExactPackageAsync(
+                    catalog,
+                    productId,
+                    packageFamilyName,
+                    installedDisplayName,
+                    installedPublisher,
+                    cancellationToken);
+                useInstallFallback = package is not null;
+                if (package is null)
+                {
+                    return new UpdateExecutionResult(-1, false, NoApplicableUpdateMessage);
+                }
             }
 
             var installOptions = new InstallOptions
@@ -347,7 +337,9 @@ public sealed class StorePackageDeploymentService
                 PackageInstallScope = PackageInstallScope.Any,
                 CorrelationData = "{\"caller\":\"NaxUpdater\"}"
             };
-            var result = await manager.UpgradePackageAsync(package, installOptions).AsTask(cancellationToken);
+            var result = useInstallFallback
+                ? await manager.InstallPackageAsync(package, installOptions).AsTask(cancellationToken)
+                : await manager.UpgradePackageAsync(package, installOptions).AsTask(cancellationToken);
             var success = result.Status is InstallResultStatus.Ok or InstallResultStatus.NoApplicableUpgrade;
             var error = success
                 ? null
@@ -361,6 +353,50 @@ public sealed class StorePackageDeploymentService
         {
             return new UpdateExecutionResult(-1, false, exception.Message);
         }
+    }
+
+    private static async Task<CatalogPackage?> FindExactPackageAsync(
+        PackageCatalog catalog,
+        string productId,
+        string packageFamilyName,
+        string? installedDisplayName,
+        string? installedPublisher,
+        CancellationToken cancellationToken)
+    {
+        var options = new FindPackagesOptions { ResultLimit = 5 };
+        options.Selectors.Add(new PackageMatchFilter
+        {
+            Field = PackageMatchField.Id,
+            Option = PackageFieldMatchOption.EqualsCaseInsensitive,
+            Value = productId
+        });
+        var find = await catalog.FindPackagesAsync(options).AsTask(cancellationToken);
+        CatalogPackage? package = null;
+        if (find.Status != FindPackagesResultStatus.Ok)
+        {
+            return null;
+        }
+        for (var index = 0; index < find.Matches.Count; index++)
+        {
+            var candidate = find.Matches[index].CatalogPackage;
+            var familyMatch = candidate.InstalledVersion is not null &&
+                              Contains(candidate.InstalledVersion.PackageFamilyNames, packageFamilyName);
+            var defaultFamilyMatch = Contains(candidate.DefaultInstallVersion.PackageFamilyNames, packageFamilyName);
+            var metadataMatch = !string.IsNullOrWhiteSpace(installedDisplayName) &&
+                                candidate.Name.Equals(installedDisplayName, StringComparison.OrdinalIgnoreCase) &&
+                                PublisherMatches(candidate, installedPublisher);
+            if (!candidate.Id.Equals(productId, StringComparison.OrdinalIgnoreCase) ||
+                (!familyMatch && !defaultFamilyMatch && !metadataMatch))
+            {
+                continue;
+            }
+            if (package is not null)
+            {
+                return null;
+            }
+            package = candidate;
+        }
+        return package;
     }
 
     private async Task<(PackageManager Manager, PackageCatalog Catalog)> GetStoreConnectionAsync(CancellationToken cancellationToken)
