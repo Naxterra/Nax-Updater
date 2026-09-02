@@ -133,10 +133,11 @@
                     </Grid>
                     <Grid Grid.Row="1" Padding="14,7" ColumnSpacing="12" Background="{ThemeResource SubtleFillColorSecondaryBrush}">
                         <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="*" MinWidth="280" MaxWidth="600" />
                             <ColumnDefinition Width="130" />
                             <ColumnDefinition Width="130" />
                             <ColumnDefinition Width="120" />
+                            <ColumnDefinition Width="*" />
                         </Grid.ColumnDefinitions>
                         <Button Grid.Column="0" Tag="Name" Style="{StaticResource ColumnHeaderButtonStyle}" HorizontalContentAlignment="Left" Click="SortHeader_Click">
                             <TextBlock x:Name="ApplicationHeaderText" Text="Application ↑" />
@@ -158,10 +159,11 @@
                             <DataTemplate>
                                 <Grid Padding="14,9" ColumnSpacing="12">
                                     <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="*" MinWidth="280" MaxWidth="600" />
                                         <ColumnDefinition Width="130" />
                                         <ColumnDefinition Width="130" />
                                         <ColumnDefinition Width="120" />
+                                        <ColumnDefinition Width="*" />
                                     </Grid.ColumnDefinitions>
                                     <Grid ColumnSpacing="10">
                                         <Grid.ColumnDefinitions>
@@ -283,7 +285,7 @@
             </Border>
         </Grid>
 
-        <Grid x:Name="UpdatesWorkspace" Grid.Row="3" ColumnSpacing="12" Visibility="Collapsed" MaxWidth="1740" HorizontalAlignment="Center">
+        <Grid x:Name="UpdatesWorkspace" Grid.Row="3" ColumnSpacing="12" Visibility="Collapsed">
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="*" MinWidth="650" />
                 <ColumnDefinition Width="1" />
@@ -322,6 +324,7 @@
                             <ColumnDefinition Width="90" />
                             <ColumnDefinition Width="115" />
                             <ColumnDefinition Width="100" />
+                            <ColumnDefinition Width="*" />
                         </Grid.ColumnDefinitions>
                         <Button Grid.Column="0" Tag="Name" Style="{StaticResource ColumnHeaderButtonStyle}" HorizontalContentAlignment="Left" Click="UpdateResultSortHeader_Click">
                             <TextBlock x:Name="UpdateNameHeaderText" Text="Application" />
@@ -351,6 +354,7 @@
                                         <ColumnDefinition Width="90" />
                                         <ColumnDefinition Width="115" />
                                         <ColumnDefinition Width="100" />
+                                        <ColumnDefinition Width="*" />
                                     </Grid.ColumnDefinitions>
                                     <Grid ColumnSpacing="10">
                                         <Grid.ColumnDefinitions>
