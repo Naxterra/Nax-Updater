@@ -304,6 +304,29 @@ try
     Assert(nextcloudUpdate.Language == "neutral" && nextcloudUpdate.ExecutionPlan?.Kind == UpdateExecutionKind.DownloadedMsi,
         "Nextcloud multi-language MSI plan is incorrect.");
 
+    using var rateLimitedGitHubClient = new HttpClient(new StubHttpMessageHandler(request =>
+    {
+        if (request.RequestUri?.Host.Equals("api.github.com", StringComparison.OrdinalIgnoreCase) == true)
+        {
+            return new HttpResponseMessage(HttpStatusCode.Forbidden)
+            {
+                ReasonPhrase = "rate limit"
+            };
+        }
+        return new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            RequestMessage = new HttpRequestMessage(
+                HttpMethod.Get,
+                "https://github.com/nextcloud-releases/desktop/releases/tag/v34.0.3")
+        };
+    }));
+    var rateLimitedNextcloud = await new GitHubReleaseUpdateProvider(rateLimitedGitHubClient, nextcloudRecipe)
+        .CheckAsync(nextcloudApplication, CancellationToken.None);
+    Assert(rateLimitedNextcloud.Status == UpdateStatus.Current &&
+           rateLimitedNextcloud.AvailableVersion == "34.0.3" &&
+           rateLimitedNextcloud.Message?.Contains("latest-release redirect", StringComparison.OrdinalIgnoreCase) == true,
+        $"Nextcloud did not fall back to its immutable latest-release redirect after a GitHub API failure: {rateLimitedNextcloud.Message}");
+
     var metadataFixture = Directory.CreateDirectory(Path.Combine(firefoxFixture, "MetadataApp"));
     var metadataResources = Directory.CreateDirectory(Path.Combine(metadataFixture.FullName, "resources"));
     var metadataExecutable = Path.Combine(metadataFixture.FullName, "MetadataApp.exe");
@@ -1040,6 +1063,14 @@ if (nextcloud is not null)
     Assert(nextcloud.NormalizedVersion == "34.0.3", $"Unexpected normalized Nextcloud version: {nextcloud.NormalizedVersion}");
     Assert(nextcloud.PrimaryInstallPath?.EndsWith("nextcloud.exe", StringComparison.OrdinalIgnoreCase) == true, "Nextcloud executable path was not resolved.");
     Assert(nextcloud.RemovalPlan?.Kind == RemovalKind.WindowsInstaller, "Nextcloud MSI removal plan was not detected.");
+    var liveProviderCatalog = await UpdateProviderCatalogLoader.LoadAsync(
+        Path.Combine(AppContext.BaseDirectory, "Configuration", "update-providers.json"));
+    var liveNextcloudRecipe = liveProviderCatalog.GitHub.Single(recipe => recipe.Id == "Nextcloud.NextcloudDesktop");
+    using var liveNextcloudClient = new HttpClient { Timeout = TimeSpan.FromSeconds(30) };
+    var liveNextcloudAssessment = await new GitHubReleaseUpdateProvider(liveNextcloudClient, liveNextcloudRecipe)
+        .CheckAsync(nextcloud, CancellationToken.None);
+    Assert(liveNextcloudAssessment.Status is UpdateStatus.Current or UpdateStatus.Available,
+        $"Nextcloud's live release check and latest-tag fallback both failed: {liveNextcloudAssessment.Message}");
 }
 
 var deepLRemoval = snapshot.Applications.FirstOrDefault(app => app.DisplayName.Equals("DeepL", StringComparison.OrdinalIgnoreCase));

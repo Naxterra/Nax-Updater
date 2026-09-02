@@ -19,13 +19,24 @@ public sealed class GitHubReleaseUpdateProvider(
 
     public async Task<UpdateCheckResult> CheckAsync(InstalledApplication application, CancellationToken cancellationToken)
     {
-        using var request = new HttpRequestMessage(
-            HttpMethod.Get,
-            $"https://api.github.com/repos/{recipe.Repository}/releases/latest");
-        request.Headers.UserAgent.ParseAdd("NaxUpdater/0.2");
-        request.Headers.Accept.ParseAdd("application/vnd.github+json");
-        using var response = await httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
-        response.EnsureSuccessStatusCode();
+        HttpResponseMessage response;
+        try
+        {
+            response = await GetLatestReleaseResponseAsync(cancellationToken);
+        }
+        catch (Exception exception) when (exception is (HttpRequestException or TaskCanceledException) && !cancellationToken.IsCancellationRequested)
+        {
+            return await CheckLatestTagFallbackAsync(application, exception.Message, cancellationToken);
+        }
+        using (response)
+        {
+            if (!response.IsSuccessStatusCode)
+            {
+                return await CheckLatestTagFallbackAsync(
+                    application,
+                    $"GitHub API returned {(int)response.StatusCode} {response.ReasonPhrase}.",
+                    cancellationToken);
+            }
         using var document = JsonDocument.Parse(await response.Content.ReadAsStreamAsync(cancellationToken));
 
         var root = document.RootElement;
@@ -105,6 +116,88 @@ public sealed class GitHubReleaseUpdateProvider(
             releasePage,
             "The GitHub asset SHA-256 and Windows publisher signature are required before installation.",
             plan);
+        }
+    }
+
+    private async Task<HttpResponseMessage> GetLatestReleaseResponseAsync(CancellationToken cancellationToken)
+    {
+        HttpResponseMessage? response = null;
+        for (var attempt = 0; attempt < 2; attempt++)
+        {
+            response?.Dispose();
+            using var request = new HttpRequestMessage(
+                HttpMethod.Get,
+                $"https://api.github.com/repos/{recipe.Repository}/releases/latest");
+            request.Headers.UserAgent.ParseAdd("NaxUpdater/0.15");
+            request.Headers.Accept.ParseAdd("application/vnd.github+json");
+            try
+            {
+                response = await httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
+                if (response.IsSuccessStatusCode)
+                {
+                    return response;
+                }
+            }
+            catch (Exception exception) when (attempt == 0 && exception is (HttpRequestException or TaskCanceledException) && !cancellationToken.IsCancellationRequested)
+            {
+                await Task.Delay(350, cancellationToken);
+                continue;
+            }
+            if (attempt == 0)
+            {
+                await Task.Delay(350, cancellationToken);
+            }
+        }
+        return response ?? throw new HttpRequestException("GitHub returned no response.");
+    }
+
+    private async Task<UpdateCheckResult> CheckLatestTagFallbackAsync(
+        InstalledApplication application,
+        string apiError,
+        CancellationToken cancellationToken)
+    {
+        using var request = new HttpRequestMessage(
+            HttpMethod.Get,
+            $"https://github.com/{recipe.Repository}/releases/latest");
+        request.Headers.UserAgent.ParseAdd("NaxUpdater/0.15");
+        using var response = await httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
+        var finalUri = response.RequestMessage?.RequestUri;
+        var match = finalUri is null
+            ? Match.Empty
+            : Regex.Match(finalUri.AbsolutePath, @"/releases/tag/v?(?<version>[^/]+)$", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+        var latestVersion = match.Success ? Uri.UnescapeDataString(match.Groups["version"].Value) : null;
+        if (!response.IsSuccessStatusCode || string.IsNullOrWhiteSpace(latestVersion))
+        {
+            return Error(application, $"{apiError} The latest-release fallback could not resolve a version.");
+        }
+
+        var releasePage = finalUri!.AbsoluteUri;
+        if (VersionOrder.Compare(latestVersion, application.NormalizedVersion) > 0)
+        {
+            return Error(
+                application,
+                $"{apiError} GitHub's latest-release redirect reports {latestVersion}, but the API is required to verify its exact asset digest before installation.",
+                latestVersion,
+                releasePage);
+        }
+
+        return new UpdateCheckResult(
+            application.Identity,
+            application.DisplayName,
+            application.NormalizedVersion,
+            latestVersion,
+            UpdateStatus.Current,
+            Id,
+            $"Official GitHub release · {recipe.Repository}",
+            recipe.Language,
+            recipe.Language.Equals("neutral", StringComparison.OrdinalIgnoreCase)
+                ? "Vendor multi-language installer"
+                : "Recipe-pinned installer language",
+            recipe.Architecture,
+            "stable",
+            releasePage,
+            $"{apiError} GitHub's immutable latest-release redirect confirms that the installed version is current.",
+            null);
     }
 
     private UpdateCheckResult Error(

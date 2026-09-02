@@ -100,4 +100,6 @@
   <data name="EvidenceLabelMsixArchitecture"><value>MSIX package architecture</value></data>
   <data name="StatusLabel"><value>Status</value></data>
   <data name="DriverDeviceLabel"><value>Device</value></data>
+  <data name="StoreAlreadyCurrentTitle"><value>{0} is already current</value></data>
+  <data name="StoreAlreadyCurrentMessage"><value>Microsoft Store rechecked the package and no longer reports an applicable update. NaxUpdater refreshed the result instead of treating this as an installation failure.</value></data>
 </root>
