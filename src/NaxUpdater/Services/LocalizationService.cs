@@ -34,6 +34,7 @@ public static partial class LocalizationService
         if (update.ProviderId == "unverified") return Get("ProviderUnverified");
         if (update.ProviderId == "msix-store") return Get("ProviderMsixStore");
         if (update.ProviderId == "installed-updater-metadata") return Get("ProviderInstalledMetadata");
+        if (update.ProviderId == "gog-galaxy-native") return Get("ProviderGogGalaxyNative");
         if (update.ProviderId == "federated-public-catalogs") return Get("ProviderFederatedCatalogs");
         if (update.ProviderId.StartsWith("github:", StringComparison.Ordinal))
         {
@@ -53,6 +54,7 @@ public static partial class LocalizationService
             _ => Get("ProviderMsixStoreNote")
         };
         if (update.ProviderId == "installed-updater-metadata") return Get("ProviderInstalledMetadataNote");
+        if (update.ProviderId == "gog-galaxy-native") return Get("ProviderGogGalaxyNativeNote");
         if (update.ProviderId == "federated-public-catalogs")
         {
             if (update.Status == UpdateStatus.Current) return Get("ProviderFederatedCatalogCurrent");
@@ -89,7 +91,8 @@ public static partial class LocalizationService
         "Firefox installed-package locale" => Get("LanguageSourceFirefoxPackage"),
         "Vendor multi-language installer" => Get("LanguageSourceMultiLanguage"),
         "Recipe-pinned installer language" => Get("LanguageSourceRecipe"),
-        "Zero Install application feed" => Get("LanguageSourceZeroInstall"),
+            "Zero Install application feed" => Get("LanguageSourceZeroInstall"),
+            "Preserved by GOG Galaxy's staged updater" or "Preserved by GOG Galaxy's updater" => Get("LanguageSourceGogGalaxy"),
         "Preserved by the application's updater" => Get("LanguageSourceNative"),
         "Preserved by Microsoft Store/MSIX package" => Get("LanguageSourceMsixStore"),
         "Check failed before language could be verified" => Get("LanguageSourceFailed"),

@@ -102,4 +102,7 @@
   <data name="DriverDeviceLabel"><value>Device</value></data>
   <data name="StoreAlreadyCurrentTitle"><value>{0} is already current</value></data>
   <data name="StoreAlreadyCurrentMessage"><value>Microsoft Store rechecked the package and no longer reports an applicable update. NaxUpdater refreshed the result instead of treating this as an installation failure.</value></data>
+  <data name="ProviderGogGalaxyNative"><value>GOG Galaxy native updater</value></data>
+  <data name="ProviderGogGalaxyNativeNote"><value>GOG Galaxy staged this update in its vendor-verified update directory. NaxUpdater validates the signed GOG updater and then uses GOG's own update mechanism.</value></data>
+  <data name="LanguageSourceGogGalaxy"><value>Preserved by GOG Galaxy's signed native updater</value></data>
 </root>

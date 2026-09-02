@@ -102,4 +102,7 @@
   <data name="DriverDeviceLabel"><value>Gerät</value></data>
   <data name="StoreAlreadyCurrentTitle"><value>{0} ist bereits aktuell</value></data>
   <data name="StoreAlreadyCurrentMessage"><value>Der Microsoft Store hat das Paket erneut geprüft und meldet kein anwendbares Update mehr. NaxUpdater hat das Ergebnis aktualisiert, statt dies als Installationsfehler zu behandeln.</value></data>
+  <data name="ProviderGogGalaxyNative"><value>Anwendungseigener GOG-Galaxy-Updater</value></data>
+  <data name="ProviderGogGalaxyNativeNote"><value>GOG Galaxy hat dieses Update im herstellerverifizierten Updateordner bereitgestellt. NaxUpdater validiert den signierten GOG-Updater und verwendet anschließend den GOG-eigenen Updatemechanismus.</value></data>
+  <data name="LanguageSourceGogGalaxy"><value>Wird durch den signierten GOG-Galaxy-Updater bewahrt</value></data>
 </root>
