@@ -362,6 +362,15 @@ try
            gogNativeUpdate.ExecutionPlan.Arguments.Contains("/updateClient") &&
            gogNativeUpdate.ExecutionPlan.RunningProcessNames.Contains("GalaxyClient"),
         "GOG's downloaded, signed native update did not take precedence over the stale public catalog.");
+    var gogStagingDirectory = Path.Combine(firefoxFixture, "gog-native-staging");
+    var stagedGogUpdate = UpdateExecutionService.StageNativeCommandFiles(
+        gogNativeUpdate.ExecutionPlan!,
+        gogStagingDirectory);
+    Assert(File.Exists(stagedGogUpdate.Executable) &&
+           stagedGogUpdate.Executable.EndsWith("desktop-galaxy-updater\\GalaxyUpdater.exe", StringComparison.OrdinalIgnoreCase) &&
+           stagedGogUpdate.WorkingDirectory.EndsWith("desktop-galaxy-updater", StringComparison.OrdinalIgnoreCase) &&
+           File.Exists(Path.Combine(stagedGogUpdate.Root, "version.update.json")),
+        "GOG's protected vendor update tree was not copied with its updater-relative layout intact.");
 
     var metadataFixture = Directory.CreateDirectory(Path.Combine(firefoxFixture, "MetadataApp"));
     var metadataResources = Directory.CreateDirectory(Path.Combine(metadataFixture.FullName, "resources"));
