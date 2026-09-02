@@ -276,9 +276,18 @@ public sealed class UpdateExecutionService
 
         var destinationRoot = Path.GetFullPath(destinationDirectory).TrimEnd(Path.DirectorySeparatorChar);
         Directory.CreateDirectory(destinationRoot);
-        CopyDirectoryTree(sourceRoot, destinationRoot);
+        CopyDirectoryTree(sourceRoot, destinationRoot, skipExistingFiles: false);
         var stagedExecutable = Path.Combine(destinationRoot, Path.GetRelativePath(sourceRoot, sourceExecutable));
         var stagedWorkingDirectory = Path.Combine(destinationRoot, Path.GetRelativePath(sourceRoot, sourceWorkingDirectory));
+        if (!string.IsNullOrWhiteSpace(plan.NativeDependencyRoot))
+        {
+            var dependencyRoot = Path.GetFullPath(plan.NativeDependencyRoot).TrimEnd(Path.DirectorySeparatorChar);
+            if (!Directory.Exists(dependencyRoot))
+            {
+                throw new InvalidDataException("The native updater dependency directory is missing.");
+            }
+            CopyDirectoryTree(dependencyRoot, stagedWorkingDirectory, skipExistingFiles: true);
+        }
         if (!File.Exists(stagedExecutable) || !Directory.Exists(stagedWorkingDirectory))
         {
             throw new InvalidDataException("The staged native updater is incomplete after copying.");
@@ -286,7 +295,7 @@ public sealed class UpdateExecutionService
         return new NativeStagingResult(stagedExecutable, stagedWorkingDirectory, destinationRoot);
     }
 
-    private static void CopyDirectoryTree(string sourceRoot, string destinationRoot)
+    private static void CopyDirectoryTree(string sourceRoot, string destinationRoot, bool skipExistingFiles)
     {
         foreach (var directory in Directory.EnumerateDirectories(sourceRoot, "*", SearchOption.AllDirectories))
         {
@@ -305,6 +314,10 @@ public sealed class UpdateExecutionService
             }
             var destination = Path.Combine(destinationRoot, Path.GetRelativePath(sourceRoot, file));
             Directory.CreateDirectory(Path.GetDirectoryName(destination)!);
+            if (skipExistingFiles && File.Exists(destination))
+            {
+                continue;
+            }
             File.Copy(file, destination, overwrite: false);
         }
     }

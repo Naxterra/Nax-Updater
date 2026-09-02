@@ -337,6 +337,9 @@ try
     var gogInstallDirectory = Directory.CreateDirectory(Path.Combine(firefoxFixture, "GOG Galaxy"));
     var gogExecutable = Path.Combine(gogInstallDirectory.FullName, "GalaxyClient.exe");
     await File.WriteAllBytesAsync(gogExecutable, []);
+    var gogRedistFixture = Directory.CreateDirectory(Path.Combine(firefoxFixture, "gog-redists"));
+    await File.WriteAllBytesAsync(Path.Combine(gogRedistFixture.FullName, "Qt6Core.dll"), [4, 5, 6]);
+    await File.WriteAllBytesAsync(Path.Combine(gogRedistFixture.FullName, "GalaxyUpdater.exe"), [9, 9, 9]);
     var gogApplication = CreateApplication(
         "gog-native-test",
         "GOG GALAXY",
@@ -348,7 +351,8 @@ try
     var gogNativeUpdate = await new GogGalaxyUpdateProvider(
             gogUpdateFixture.FullName,
             new StubAuthenticodeVerifier("GOG  sp. z o.o"),
-            _ => "2.1.9.27")
+            _ => "2.1.9.27",
+            gogRedistFixture.FullName)
         .CheckAsync(gogApplication, CancellationToken.None);
     Assert(gogNativeUpdate.Status == UpdateStatus.Available &&
            gogNativeUpdate.AvailableVersion == "2.1.9.27" &&
@@ -369,8 +373,10 @@ try
     Assert(File.Exists(stagedGogUpdate.Executable) &&
            stagedGogUpdate.Executable.EndsWith("desktop-galaxy-updater\\GalaxyUpdater.exe", StringComparison.OrdinalIgnoreCase) &&
            stagedGogUpdate.WorkingDirectory.EndsWith("desktop-galaxy-updater", StringComparison.OrdinalIgnoreCase) &&
-           File.Exists(Path.Combine(stagedGogUpdate.Root, "version.update.json")),
-        "GOG's protected vendor update tree was not copied with its updater-relative layout intact.");
+           File.Exists(Path.Combine(stagedGogUpdate.Root, "version.update.json")) &&
+           File.Exists(Path.Combine(stagedGogUpdate.WorkingDirectory, "Qt6Core.dll")) &&
+           File.ReadAllBytes(stagedGogUpdate.Executable).SequenceEqual(new byte[] { 1, 2, 3 }),
+        "GOG's protected vendor update tree and installed runtime dependencies were not merged without replacing the new updater.");
 
     var metadataFixture = Directory.CreateDirectory(Path.Combine(firefoxFixture, "MetadataApp"));
     var metadataResources = Directory.CreateDirectory(Path.Combine(metadataFixture.FullName, "resources"));
@@ -965,7 +971,8 @@ if (installedGog is not null)
     {
         Assert(gogUpdate.Status == UpdateStatus.Available &&
                VersionOrder.Compare(gogUpdate.AvailableVersion, installedGog.NormalizedVersion) > 0 &&
-               gogUpdate.ExecutionPlan?.NativeExecutable?.EndsWith("GalaxyUpdater.exe", StringComparison.OrdinalIgnoreCase) == true,
+               gogUpdate.ExecutionPlan?.NativeExecutable?.EndsWith("GalaxyUpdater.exe", StringComparison.OrdinalIgnoreCase) == true &&
+               Directory.Exists(gogUpdate.ExecutionPlan.NativeDependencyRoot),
             $"GOG's staged vendor update was missed: {gogUpdate.AvailableVersion} · {gogUpdate.Message}");
     }
 }

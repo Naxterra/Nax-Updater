@@ -40,7 +40,8 @@ public sealed record UpdateExecutionPlan(
     string? NestedInstallerRelativePath = null,
     string? ExpectedHardwareId = null,
     string? NativeWorkingDirectory = null,
-    string? NativeStagingRoot = null);
+    string? NativeStagingRoot = null,
+    string? NativeDependencyRoot = null);
 
 public sealed record UpdateCheckResult(
     string ApplicationIdentity,
