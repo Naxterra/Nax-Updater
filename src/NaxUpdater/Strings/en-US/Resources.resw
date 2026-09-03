@@ -57,6 +57,12 @@
   <data name="ProviderWingetFallbackVerified"><value>No installed or producer-owned source claimed this application. The exact WinGet fallback identity supplies a compatible HTTPS installer and SHA-256 hash; NaxUpdater still verifies the installed publisher before execution.</value></data>
   <data name="ProviderWingetFallbackBlocked"><value>WinGet found a possible newer version, but the fallback could not establish a complete verified installer plan, so installation remains blocked.</value></data>
   <data name="DriversButtonText.Text"><value>Drivers</value></data>
+  <data name="CheckDriversTop"><value>Check manufacturer drivers</value></data>
+  <data name="DriverFilterPlaceholder"><value>Filter device, vendor, installed or available version, source, or status</value></data>
+  <data name="DriverGroupsSummary"><value>Device groups</value></data>
+  <data name="OfficialPackagesSummary"><value>Official packages checked</value></data>
+  <data name="InstallableDriverUpdatesSummary"><value>Installable updates</value></data>
+  <data name="DriverIssuesSummary"><value>Check issues</value></data>
   <data name="ManufacturerDriversHeader.Text"><value>Manufacturer drivers</value></data>
   <data name="DriverCountText.Text"><value>Not checked</value></data>
   <data name="DriverDeviceHeader.Text"><value>Device</value></data>

@@ -20,6 +20,10 @@ Assert(VersionOrder.Compare("26.08.19.0", "260819") == 0,
     "Equivalent dotted and compact release-date versions were treated as different.");
 Assert(ManufacturerDriverService.NormalizeNvidiaVersion("32.0.16.1088") == "610.88",
     "NVIDIA Windows driver version normalization failed.");
+Assert(ManufacturerDriverService.NvidiaDriverHomeForCulture("de-DE").AbsoluteUri == "https://www.nvidia.com/de-de/drivers/" &&
+       ManufacturerDriverService.NvidiaDetailsUri("123456", "de-DE").AbsoluteUri == "https://www.nvidia.com/de-de/drivers/details/123456/" &&
+       ManufacturerDriverService.NvidiaDetailsUri("123456", "en-US").AbsoluteUri == "https://www.nvidia.com/en-us/drivers/details/123456/",
+    "NVIDIA user-facing driver links do not follow the selected app region.");
 Assert(ManufacturerDriverService.NormalizeTpLinkVersion("5102.24.126.4") == "24.126.4",
     "TP-Link platform-prefix normalization failed.");
 Assert(ManufacturerDriverService.ProjectTpLinkVersion("5002.24.126.4", "5102.24.126.4") == "5102.24.126.4",
@@ -71,7 +75,7 @@ using (var intelClient = new HttpClient(new StubHttpMessageHandler(_ => new Http
     var intelUpdate = await intelService.CheckIntelI219Async(intelDriver, CancellationToken.None);
     Assert(intelUpdate.Status == ManufacturerDriverStatus.Available &&
            intelUpdate.AvailableVersion is { } intelAvailable &&
-           intelAvailable.StartsWith("12.19.2.64", StringComparison.Ordinal) &&
+           intelAvailable == "Intel 31.2.2 · e1d.inf 12.19.2.64" &&
            intelUpdate.ExecutableUpdate?.ExecutionPlan is
            {
                Kind: UpdateExecutionKind.DownloadedZipDriver,

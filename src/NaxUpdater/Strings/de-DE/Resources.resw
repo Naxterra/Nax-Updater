@@ -57,6 +57,12 @@
   <data name="ProviderWingetFallbackVerified"><value>Keine installierte oder herstellereigene Quelle hat diese Anwendung übernommen. Die exakte WinGet-Rückfallidentität liefert einen kompatiblen HTTPS-Installer und SHA-256-Hash; NaxUpdater prüft vor der Ausführung weiterhin den installierten Herausgeber.</value></data>
   <data name="ProviderWingetFallbackBlocked"><value>WinGet hat eine mögliche neuere Version gefunden, aber die Rückfallquelle konnte keinen vollständig verifizierten Installationsplan erstellen. Die Installation bleibt gesperrt.</value></data>
   <data name="DriversButtonText.Text"><value>Treiber</value></data>
+  <data name="CheckDriversTop"><value>Herstellertreiber prüfen</value></data>
+  <data name="DriverFilterPlaceholder"><value>Nach Gerät, Hersteller, installierter oder verfügbarer Version, Quelle oder Status filtern</value></data>
+  <data name="DriverGroupsSummary"><value>Gerätegruppen</value></data>
+  <data name="OfficialPackagesSummary"><value>Offizielle Pakete geprüft</value></data>
+  <data name="InstallableDriverUpdatesSummary"><value>Installierbare Updates</value></data>
+  <data name="DriverIssuesSummary"><value>Prüfprobleme</value></data>
   <data name="ManufacturerDriversHeader.Text"><value>Herstellertreiber</value></data>
   <data name="DriverCountText.Text"><value>Nicht geprüft</value></data>
   <data name="DriverDeviceHeader.Text"><value>Gerät</value></data>
