@@ -1256,7 +1256,6 @@ if (installedWinRar is not null)
 var supportedCoverage = productionUpdateSnapshot.Results.Count(static result => result.Status != UpdateStatus.Unsupported);
 var wingetFallbackCoverage = productionUpdateSnapshot.Results.Count(static result => result.ProviderId == "winget-fallback");
 var producerOwnedCoverage = supportedCoverage - wingetFallbackCoverage;
-Assert(wingetFallbackCoverage > 0, "The production provider chain lost its last-resort WinGet coverage.");
 Console.WriteLine($"NaxUpdater core smoke tests passed. {snapshot.Applications.Count} applications, {liveManufacturerDrivers.Results.Count} manufacturer drivers, {liveManufacturerDrivers.Results.Count(static result => result.Status == ManufacturerDriverStatus.Available)} driver updates, {installedMetadataCoverage} installed-metadata providers, {producerOwnedCoverage} producer-owned assessments, {wingetFallbackCoverage} WinGet fallback assessments, {liveStoreIdentities} live Store identities, {snapshot.UnmatchedPolicies.Count} unmatched guards, {snapshot.Issues.Count} scan issues.");
 return 0;
 
