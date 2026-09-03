@@ -31,7 +31,10 @@ The inventory engine:
 
 ## Update providers
 
-Version 0.15.18 includes:
+Version 0.15.19 includes:
+
+- producer-first provider selection for every application: installed/native and producer-owned sources win, Microsoft Store handles Store-owned packages, and WinGet is consulted only when none of those sources claims the application;
+- WinGet remains a verified last-resort fallback through exact product-code, MSI upgrade-family, or package-family correlation; it cannot override a producer source and Scoop is no longer consulted;
 
 - ChatGPT checks against OpenAI's official Windows update manifest for the exact `OpenAI.Codex` package and Store product, instead of relying on WinGet's `Unknown` Store version;
 - ChatGPT process detection before deployment, so an open ChatGPT/Codex instance produces a clear close-first message rather than a false success;
@@ -51,7 +54,7 @@ Version 0.15.18 includes:
 - producer-owned GitHub CLI releases from `cli/cli`, using GitHub's release-asset SHA-256 digest, the exact x64 MSI, and the `GitHub, Inc.` Authenticode signer;
 - producer-owned Git for Windows releases from `git-for-windows/git`, using GitHub's release-asset SHA-256 digest, the exact x64 installer, and Johannes Schindelin's Authenticode signer;
 - WinRAR checks and language-matched installers directly from RARLAB's official download page; the original producer download is SHA-256 pinned during the check and must carry the `win.rar GmbH` Authenticode signature;
-- no WinGet community index, WinGet manifest, or Scoop manifest in the production provider chain; applications without an official producer feed are shown honestly as **No verifiable update source**;
+- WinGet fallback coverage for applications without a producer adapter, while applications not safely correlated with either source remain explicitly **No verifiable update source**;
 - a complete assessment result for every visible application, including an explicit **No verifiable update source** status instead of silently omitting unsupported software;
 - registered non-MSI product-code correlation for installer technologies such as Inno Setup;
 - vendor-native GOG Galaxy updates read from GOG's own `autoupdate-verified` state, with the staged updater version matched to its metadata and its GOG Authenticode signature validated; because Windows intentionally denies direct execution inside that protected directory, the complete vendor-verified tree is copied to a fresh temporary execution directory and merged with GOG's installed `redists` runtime dependencies without replacing the new updater, then the copied updater is revalidated and GOG's own elevated command is used;
@@ -97,7 +100,7 @@ The native **Drivers / Treiber** view does not use Windows Update. It correlates
 - The driver workspace fills maximized and ultrawide windows while the device-name column remains capped, keeping surplus width after the action column instead of centering a narrow table island.
 - Applications and Updates now use the same full-width table/details workspace. Their name columns share the same responsive 280–600 px constraint, while surplus ultrawide space is placed after the last data/action column instead of inside the application name.
 
-Provider authority is producer-owned: installed native/self-updaters and signed updater metadata, official vendor download feeds, producer-controlled GitHub releases, and Microsoft Store only for Store-owned packages. Community package-manager catalogs are not consulted.
+Provider priority is strict: installed native/self-updaters and signed updater metadata, official vendor download feeds, producer-controlled GitHub releases, Microsoft Store for Store-owned packages, and finally the exact-identity WinGet fallback. A fallback result never replaces or downgrades a producer-owned result.
 
 The single **Scan and check updates** action rebuilds the installed-application list and then checks every supported provider. The **Updates (N)** control shows both available updates and the checked/installed coverage; it only switches to the results and never starts a second check.
 
@@ -150,7 +153,7 @@ From this directory:
 dotnet build NaxUpdater.slnx
 dotnet run --project tests/NaxUpdater.Core.SmokeTests/NaxUpdater.Core.SmokeTests.csproj
 dotnet publish src/NaxUpdater/NaxUpdater.csproj -c Release -r win-x64 --self-contained true -o artifacts/NaxUpdater-win-x64
-./scripts/package-release.ps1 -Version 0.15.18
+./scripts/package-release.ps1 -Version 0.15.19
 ```
 
 The desktop project uses .NET 11, WinUI 3, and the Windows App SDK. It is not an Electron or WebView application.

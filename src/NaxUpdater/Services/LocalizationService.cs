@@ -37,6 +37,7 @@ public static partial class LocalizationService
         if (update.ProviderId == "installed-updater-metadata") return Get("ProviderInstalledMetadata");
         if (update.ProviderId == "gog-galaxy-native") return Get("ProviderGogGalaxyNative");
         if (update.ProviderId == "rarlab-winrar") return Get("ProviderWinRar");
+        if (update.ProviderId == "winget-fallback") return Get("ProviderWingetFallback");
         if (update.ProviderId.StartsWith("github:", StringComparison.Ordinal))
         {
             return Format("ProviderGitHub", update.ProviderId[7..]);
@@ -62,6 +63,12 @@ public static partial class LocalizationService
         if (update.ProviderId == "rarlab-winrar") return update.Status == UpdateStatus.Available
             ? Get("ProviderWinRarAvailable")
             : Get("ProviderWinRarCurrent");
+        if (update.ProviderId == "winget-fallback") return update.Status switch
+        {
+            UpdateStatus.Current => Get("ProviderWingetFallbackCurrent"),
+            UpdateStatus.Available when update.ExecutionPlan is not null => Get("ProviderWingetFallbackVerified"),
+            _ => Get("ProviderWingetFallbackBlocked")
+        };
         if (update.ProviderId.StartsWith("github:", StringComparison.Ordinal)) return Get("ProviderGitHubNote");
         if (update.ProviderId == "zero-install")
         {
