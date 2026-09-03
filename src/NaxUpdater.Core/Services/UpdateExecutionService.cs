@@ -208,6 +208,10 @@ public sealed class UpdateExecutionService
         CancellationToken cancellationToken = default)
     {
         var plan = update.ExecutionPlan ?? throw new InvalidOperationException("The update has no execution plan.");
+        if (plan.Kind == UpdateExecutionKind.ApplicationOwnedUpdater)
+        {
+            return await new ApplicationOwnedUpdateService().ExecuteAsync(update, cancellationToken);
+        }
         var running = FindRunningProcesses(update);
         if (running.Count > 0)
         {

@@ -3,6 +3,7 @@ using NaxUpdater.Core.Services;
 using Microsoft.Data.Sqlite;
 using Microsoft.Win32;
 using System.IO.Compression;
+using System.Diagnostics;
 using System.Management;
 using System.Net;
 using System.Net.Http.Headers;
@@ -861,11 +862,20 @@ if (installedChatGpt is not null)
     Assert(chatGptAssessment.Status is UpdateStatus.Current or UpdateStatus.Available,
         $"ChatGPT Store assessment failed: {chatGptAssessment.Status} · {chatGptAssessment.Message}");
     Assert(chatGptAssessment.Status != UpdateStatus.Available ||
-           (chatGptAssessment.ExecutionPlan is { Kind: UpdateExecutionKind.StorePackage } && chatGptAssessment.IsInstallable),
+           (chatGptAssessment.ExecutionPlan is { Kind: UpdateExecutionKind.ApplicationOwnedUpdater } && chatGptAssessment.IsInstallable),
         "ChatGPT reports an update without an executable Store update plan.");
     Assert(chatGptAssessment.Status == UpdateStatus.Available ||
            (chatGptAssessment.ExecutionPlan is null && !chatGptAssessment.IsInstallable),
         "ChatGPT received a Store action even though no applicable update was reported.");
+    using (var chatGptProcess = Process.GetProcessesByName("ChatGPT")
+               .FirstOrDefault(static process => process.MainWindowHandle != IntPtr.Zero))
+    {
+        if (chatGptAssessment.Status == UpdateStatus.Available && chatGptProcess is not null)
+        {
+            Assert(ApplicationOwnedUpdateService.HasUpdateAction(chatGptProcess.MainWindowHandle),
+                "ChatGPT reports an update, but its accessible Update/Aktualisieren action was not found.");
+        }
+    }
     using var openAiManifestClient = new HttpClient(new StubHttpMessageHandler(_ => JsonResponse("""
         {
           "schemaVersion": 1,
@@ -888,7 +898,7 @@ if (installedChatGpt is not null)
                AvailableVersion: "26.901.1978.0",
                ExecutionPlan:
                {
-                   Kind: UpdateExecutionKind.StorePackage,
+                   Kind: UpdateExecutionKind.ApplicationOwnedUpdater,
                    StoreProductId: "9PLM9XGG6VKS",
                    StorePackageFamilyName: "OpenAI.Codex_2p2nqsd0c76g0"
                } manifestPlan
@@ -908,7 +918,7 @@ if (installedChatGpt is not null)
            VersionOrder.Compare(observedPreUpdateAssessment.AvailableVersion, "26.825.4187.0") > 0 &&
            observedPreUpdateAssessment.ExecutionPlan is
            {
-               Kind: UpdateExecutionKind.StorePackage,
+               Kind: UpdateExecutionKind.ApplicationOwnedUpdater,
                StoreProductId: "9PLM9XGG6VKS",
                StorePackageFamilyName: "OpenAI.Codex_2p2nqsd0c76g0"
            },
