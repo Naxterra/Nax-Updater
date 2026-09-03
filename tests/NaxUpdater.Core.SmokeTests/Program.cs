@@ -1,5 +1,6 @@
 using NaxUpdater.Core.Models;
 using NaxUpdater.Core.Services;
+using Microsoft.Data.Sqlite;
 using Microsoft.Win32;
 using System.IO.Compression;
 using System.Management;
@@ -533,6 +534,62 @@ try
                }
            } && winRarFixtureHash == Convert.ToHexString(SHA256.HashData(winRarPayload)),
         "WinRAR did not receive its German producer-owned RARLAB installer plan.");
+
+    var wingetIndexPath = Path.Combine(firefoxFixture, "winget-fallback-index.db");
+    await using (var fallbackConnection = new SqliteConnection($"Data Source={wingetIndexPath};Pooling=False"))
+    {
+        await fallbackConnection.OpenAsync();
+        await using var fallbackCommand = fallbackConnection.CreateCommand();
+        fallbackCommand.CommandText = """
+            CREATE TABLE packages(rowid INTEGER PRIMARY KEY, id TEXT NOT NULL, name TEXT NOT NULL, moniker TEXT, latest_version TEXT NOT NULL);
+            CREATE TABLE productcodes2(productcode TEXT NOT NULL, package INTEGER NOT NULL);
+            INSERT INTO packages(rowid, id, name, moniker, latest_version) VALUES(1, 'Fixture.FallbackApp', 'Fallback App', '', '2.0.0');
+            INSERT INTO productcodes2(productcode, package) VALUES('{11111111-2222-3333-4444-555555555555}', 1);
+            """;
+        await fallbackCommand.ExecuteNonQueryAsync();
+    }
+    var fallbackHash = new string('c', 64);
+    using var fallbackClient = new HttpClient(new StubHttpMessageHandler(_ => new HttpResponseMessage(HttpStatusCode.OK)
+    {
+        Content = new StringContent($$"""
+            InstallerType: msi
+            Installers:
+            - Architecture: x64
+              InstallerUrl: https://downloads.example.test/fallback-app-2.0.0-x64.msi
+              InstallerSha256: {{fallbackHash}}
+            """, Encoding.UTF8, "text/yaml")
+    }));
+    var fallbackApplication = CreateApplication(
+        "winget-fallback-test",
+        "Fallback App",
+        "Fallback Publisher",
+        "1.0.0",
+        Path.Combine(Environment.SystemDirectory, "cmd.exe"),
+        InstallScope.Machine,
+        ManagementMode.WindowsInstaller) with
+    {
+        RemovalPlan = new RemovalPlan(
+            RemovalKind.WindowsInstaller,
+            Path.Combine(Environment.SystemDirectory, "msiexec.exe"),
+            "/x {11111111-2222-3333-4444-555555555555}",
+            null,
+            true)
+    };
+    var wingetFallback = new WingetFallbackUpdateProvider(fallbackClient, wingetIndexPath);
+    Assert(wingetFallback.CanHandle(fallbackApplication), "The exact-product WinGet fallback was not discovered.");
+    var fallbackUpdate = await wingetFallback.CheckAsync(fallbackApplication, CancellationToken.None);
+    Assert(fallbackUpdate is
+           {
+               ProviderId: "winget-fallback",
+               Status: UpdateStatus.Available,
+               AvailableVersion: "2.0.0",
+               ExecutionPlan:
+               {
+                   Kind: UpdateExecutionKind.DownloadedMsi,
+                   Sha256: var parsedFallbackHash
+               }
+           } && parsedFallbackHash == fallbackHash,
+        "The exact-product WinGet fallback did not retain its manifest hash and MSI plan.");
 
     var archiveFixturePath = Path.Combine(firefoxFixture, "nested-installer.nupkg");
     var nestedPayload = Encoding.UTF8.GetBytes("nested MSI fixture");
@@ -1178,9 +1235,8 @@ var productionUpdateSnapshot = await new UpdateCheckService(capabilityClient, pr
     .CheckAsync(snapshot, CancellationToken.None);
 Assert(productionUpdateSnapshot.Results.All(static result =>
         result.ProviderId != "federated-public-catalogs" &&
-        !result.ProviderDisplayName.Contains("WinGet", StringComparison.OrdinalIgnoreCase) &&
         !result.ProviderDisplayName.Contains("Scoop", StringComparison.OrdinalIgnoreCase)),
-    "The production update chain still exposed a community package-manager catalog.");
+    "The production update chain still exposed the retired federated/Scoop path.");
 if (installedGitHubCli is not null)
 {
     Assert(productionUpdateSnapshot.Results.Single(result => result.ApplicationIdentity == installedGitHubCli.Identity).ProviderId == "github:cli/cli",
@@ -1192,8 +1248,16 @@ if (installedGit is not null)
     Assert(productionUpdateSnapshot.Results.Single(result => result.ApplicationIdentity == installedGit.Identity).ProviderId == "github:git-for-windows/git",
         "The production provider chain did not route Git directly to the producer-owned Git for Windows release.");
 }
-var producerOwnedCoverage = productionUpdateSnapshot.Results.Count(static result => result.Status != UpdateStatus.Unsupported);
-Console.WriteLine($"NaxUpdater core smoke tests passed. {snapshot.Applications.Count} applications, {liveManufacturerDrivers.Results.Count} manufacturer drivers, {liveManufacturerDrivers.Results.Count(static result => result.Status == ManufacturerDriverStatus.Available)} driver updates, {installedMetadataCoverage} installed-metadata providers, {producerOwnedCoverage} producer-owned assessments, {liveStoreIdentities} live Store identities, {snapshot.UnmatchedPolicies.Count} unmatched guards, {snapshot.Issues.Count} scan issues.");
+if (installedWinRar is not null)
+{
+    Assert(productionUpdateSnapshot.Results.Single(result => result.ApplicationIdentity == installedWinRar.Identity).ProviderId == "rarlab-winrar",
+        "The production provider chain did not route WinRAR directly to RARLAB.");
+}
+var supportedCoverage = productionUpdateSnapshot.Results.Count(static result => result.Status != UpdateStatus.Unsupported);
+var wingetFallbackCoverage = productionUpdateSnapshot.Results.Count(static result => result.ProviderId == "winget-fallback");
+var producerOwnedCoverage = supportedCoverage - wingetFallbackCoverage;
+Assert(wingetFallbackCoverage > 0, "The production provider chain lost its last-resort WinGet coverage.");
+Console.WriteLine($"NaxUpdater core smoke tests passed. {snapshot.Applications.Count} applications, {liveManufacturerDrivers.Results.Count} manufacturer drivers, {liveManufacturerDrivers.Results.Count(static result => result.Status == ManufacturerDriverStatus.Available)} driver updates, {installedMetadataCoverage} installed-metadata providers, {producerOwnedCoverage} producer-owned assessments, {wingetFallbackCoverage} WinGet fallback assessments, {liveStoreIdentities} live Store identities, {snapshot.UnmatchedPolicies.Count} unmatched guards, {snapshot.Issues.Count} scan issues.");
 return 0;
 
 static void AssertProtectedApplication(
@@ -1210,7 +1274,7 @@ static void AssertProtectedApplication(
     }
 
     Assert(application.ManagementMode == expectedMode, $"{displayName} has unexpected management mode {application.ManagementMode}.");
-    Assert(application.BlockedProviders.Count == 0, $"{displayName} still carries obsolete community-catalog guards.");
+    Assert(application.BlockedProviders.Contains("WinGet fallback", StringComparer.OrdinalIgnoreCase), $"{displayName} lost its producer-first fallback guard.");
     Assert(application.PrimaryInstallPath?.EndsWith(expectedPathFileName, StringComparison.OrdinalIgnoreCase) == true, $"{displayName} executable path was not resolved: {application.PrimaryInstallPath}");
     if (requireVersion)
     {

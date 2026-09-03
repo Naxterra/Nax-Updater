@@ -23,6 +23,9 @@ public sealed class UpdateCheckService
         };
         providers.AddRange(catalog.GitHub.Select(recipe => new GitHubReleaseUpdateProvider(httpClient, recipe)));
         providers.Add(new MsixStoreUpdateProvider(httpClient));
+        // WinGet is deliberately last: it supplies coverage only when no installed or
+        // producer-owned provider claims the application.
+        providers.Add(new WingetFallbackUpdateProvider(httpClient));
         _providers = providers;
     }
 

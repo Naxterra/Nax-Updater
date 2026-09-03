@@ -49,8 +49,13 @@
         <RegistryValue Root="HKLM" Key="Software\Microsoft\Windows\CurrentVersion\App Paths\NaxUpdater.exe" Name="Path" Value="[APPLICATIONFOLDER]" Type="string" />
       </Component>
 
+      <Component Id="SqliteNativeRuntime" Directory="APPLICATIONFOLDER" Guid="{1CC9632D-F194-4A41-81E9-3CCDD1E2EFDB}">
+        <File Source="!(bindpath.Publish)\e_sqlite3.dll" DefaultLanguage="1033" />
+      </Component>
+
       <Files Directory="APPLICATIONFOLDER" Include="!(bindpath.Publish)\**">
         <Exclude Files="!(bindpath.Publish)\NaxUpdater.exe" />
+        <Exclude Files="!(bindpath.Publish)\e_sqlite3.dll" />
         <Exclude Files="!(bindpath.Publish)\**\*.pdb" />
       </Files>
     </Feature>

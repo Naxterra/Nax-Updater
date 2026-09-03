@@ -4,17 +4,17 @@
       "id": "DeepL.DeepL",
       "displayName": "DeepL",
       "publisherContains": "DeepL",
-      "blockedProviders": [],
+      "blockedProviders": [ "WinGet fallback" ],
       "managementMode": "ZeroInstall",
       "preferredProvider": "Zero Install native feed",
       "appliesWhenAbsent": false,
-      "reason": "The installed app is content-addressed by its Zero Install feed; no community catalog fallback is used."
+      "reason": "The installed app is content-addressed by its Zero Install feed, which takes precedence over the WinGet fallback."
     },
     {
       "id": "Nextcloud.NextcloudDesktop",
       "displayName": "Nextcloud",
       "publisherContains": "Nextcloud",
-      "blockedProviders": [],
+      "blockedProviders": [ "WinGet fallback" ],
       "managementMode": "DirectVendor",
       "preferredProvider": "Official Nextcloud GitHub release and signed MSI",
       "versionNormalization": "FirstThreeNumericComponents",
@@ -25,21 +25,21 @@
       "id": "Blizzard.BattleNet",
       "displayName": "Battle.net",
       "publisherContains": "Blizzard",
-      "blockedProviders": [],
+      "blockedProviders": [ "WinGet fallback" ],
       "managementMode": "NativeSelfUpdater",
       "preferredProvider": "Blizzard native updater",
       "appliesWhenAbsent": false,
-      "reason": "Battle.net owns its update lifecycle through Blizzard's installed updater."
+      "reason": "Battle.net owns its update lifecycle through Blizzard's installed updater; the WinGet fallback is blocked."
     },
     {
       "id": "Brave.BraveOrigin.Nightly",
       "displayName": "Brave Origin",
       "publisherContains": "Brave",
-      "blockedProviders": [],
+      "blockedProviders": [ "WinGet fallback" ],
       "managementMode": "NativeSelfUpdater",
       "preferredProvider": "Brave native update channel",
       "appliesWhenAbsent": false,
-      "reason": "Brave Origin keeps its installed native update channel."
+      "reason": "Brave Origin keeps its installed native update channel; the WinGet fallback cannot replace its channel."
     }
   ]
 }
