@@ -329,21 +329,37 @@ public sealed class StorePackageDeploymentService
                 }
             }
 
-            var installOptions = new InstallOptions
-            {
-                AcceptPackageAgreements = true,
-                AllowUpgradeToUnknownVersion = true,
-                PackageInstallMode = PackageInstallMode.Silent,
-                PackageInstallScope = PackageInstallScope.Any,
-                CorrelationData = "{\"caller\":\"NaxUpdater\"}"
-            };
             var result = useInstallFallback
-                ? await manager.InstallPackageAsync(package, installOptions).AsTask(cancellationToken)
-                : await manager.UpgradePackageAsync(package, installOptions).AsTask(cancellationToken);
-            var success = result.Status is InstallResultStatus.Ok or InstallResultStatus.NoApplicableUpgrade;
+                ? await manager.InstallPackageAsync(package, CreateInstallOptions(force: true)).AsTask(cancellationToken)
+                : await manager.UpgradePackageAsync(package, CreateInstallOptions(force: false)).AsTask(cancellationToken);
+
+            // The update catalog can lag behind the Store product metadata. If its upgrade route
+            // rejects a package that the product catalog still reports as newer, retry the exact
+            // Store product through install --force semantics. This is how WinGet bypasses a
+            // non-security applicability mismatch without weakening identity or hash checks.
+            if (!useInstallFallback && result.Status == InstallResultStatus.NoApplicableUpgrade)
+            {
+                (manager, catalog) = await GetStoreConnectionAsync(cancellationToken);
+                var installPackage = await FindExactPackageAsync(
+                    catalog,
+                    productId,
+                    packageFamilyName,
+                    installedDisplayName,
+                    installedPublisher,
+                    cancellationToken);
+                if (installPackage is not null)
+                {
+                    result = await manager.InstallPackageAsync(installPackage, CreateInstallOptions(force: true))
+                        .AsTask(cancellationToken);
+                }
+            }
+
+            var success = result.Status == InstallResultStatus.Ok;
             var error = success
                 ? null
-                : $"Microsoft Store deployment returned {result.Status}: {result.ExtendedErrorCode?.Message}";
+                : result.Status == InstallResultStatus.NoApplicableUpgrade
+                    ? $"{NoApplicableUpdateMessage} The installed package was not changed."
+                    : $"Microsoft Store deployment returned {result.Status}: {result.ExtendedErrorCode?.Message}";
             return new UpdateExecutionResult(
                 result.RebootRequired ? 3010 : unchecked((int)result.InstallerErrorCode),
                 success,
@@ -354,6 +370,16 @@ public sealed class StorePackageDeploymentService
             return new UpdateExecutionResult(-1, false, exception.Message);
         }
     }
+
+    internal static InstallOptions CreateInstallOptions(bool force) => new()
+    {
+        AcceptPackageAgreements = true,
+        AllowUpgradeToUnknownVersion = true,
+        Force = force,
+        PackageInstallMode = PackageInstallMode.Silent,
+        PackageInstallScope = PackageInstallScope.Any,
+        CorrelationData = "{\"caller\":\"NaxUpdater\"}"
+    };
 
     private static async Task<CatalogPackage?> FindExactPackageAsync(
         PackageCatalog catalog,

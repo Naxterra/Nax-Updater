@@ -45,6 +45,9 @@
   <data name="SecurityMicrosoftStoreIdentity"><value>Verifizierte Store-Katalogidentität · Bereitstellung durch Microsoft Store</value></data>
   <data name="ProviderMsixStoreAvailable"><value>Die exakte installierte Paketfamilie wurde dem Microsoft Store zugeordnet. Der Store meldet ein anwendbares Update, das NaxUpdater direkt übermittelt.</value></data>
   <data name="ProviderMsixStoreCurrent"><value>Die exakte installierte Paketfamilie wurde im Microsoft Store geprüft. Derzeit wird kein anwendbares Update gemeldet.</value></data>
+  <data name="ProviderOpenAiStore"><value>OpenAI-Updatemanifest + Microsoft Store</value></data>
+  <data name="ProviderOpenAiStoreAvailable"><value>Das offizielle Windows-Manifest von OpenAI meldet diesen neueren Build. Schließen Sie zuerst ChatGPT; NaxUpdater stellt dann das exakte Store-Produkt bereit und wiederholt den Vorgang bei einem veralteten Updatekatalog mit dem erzwungenen Installationsmodus des Stores.</value></data>
+  <data name="ProviderOpenAiStoreCurrent"><value>Das offizielle Windows-Manifest von OpenAI meldet, dass dieses Paket aktuell ist.</value></data>
   <data name="DriversButtonText.Text"><value>Treiber</value></data>
   <data name="ManufacturerDriversHeader.Text"><value>Herstellertreiber</value></data>
   <data name="DriverCountText.Text"><value>Nicht geprüft</value></data>
@@ -100,8 +103,6 @@
   <data name="EvidenceLabelMsixArchitecture"><value>MSIX-Paketarchitektur</value></data>
   <data name="StatusLabel"><value>Status</value></data>
   <data name="DriverDeviceLabel"><value>Gerät</value></data>
-  <data name="StoreAlreadyCurrentTitle"><value>{0} ist bereits aktuell</value></data>
-  <data name="StoreAlreadyCurrentMessage"><value>Der Microsoft Store hat das Paket erneut geprüft und meldet kein anwendbares Update mehr. NaxUpdater hat das Ergebnis aktualisiert, statt dies als Installationsfehler zu behandeln.</value></data>
   <data name="ProviderGogGalaxyNative"><value>Anwendungseigener GOG-Galaxy-Updater</value></data>
   <data name="ProviderGogGalaxyNativeNote"><value>GOG Galaxy hat dieses Update im herstellerverifizierten Updateordner bereitgestellt. NaxUpdater validiert den signierten GOG-Updater und verwendet anschließend den GOG-eigenen Updatemechanismus.</value></data>
   <data name="LanguageSourceGogGalaxy"><value>Wird durch den signierten GOG-Galaxy-Updater bewahrt</value></data>
