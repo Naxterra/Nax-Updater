@@ -1,6 +1,5 @@
 using NaxUpdater.Core.Models;
 using NaxUpdater.Core.Services;
-using Microsoft.Data.Sqlite;
 using Microsoft.Win32;
 using System.IO.Compression;
 using System.Management;
@@ -302,6 +301,11 @@ try
     var updateCatalogPath = Path.Combine(AppContext.BaseDirectory, "Configuration", "update-providers.json");
     var updateCatalog = await UpdateProviderCatalogLoader.LoadAsync(updateCatalogPath);
     var nextcloudRecipe = updateCatalog.GitHub.Single(recipe => recipe.Id == "Nextcloud.NextcloudDesktop");
+    var gitHubCliRecipe = updateCatalog.GitHub.Single(recipe => recipe.Id == "GitHub.cli");
+    var gitRecipe = updateCatalog.GitHub.Single(recipe => recipe.Id == "Git.Git");
+    Assert(gitHubCliRecipe.Repository == "cli/cli" && gitHubCliRecipe.ExpectedSigner == "GitHub, Inc." &&
+           gitRecipe.Repository == "git-for-windows/git" && gitRecipe.ExpectedSigner == "Johannes Schindelin",
+        "Producer-owned GitHub CLI or Git release recipes are missing their exact repository/signer policy.");
     var nextcloudHash = new string('b', 64);
     using var githubClient = new HttpClient(new StubHttpMessageHandler(_ => JsonResponse($$"""
         {
@@ -327,6 +331,42 @@ try
     Assert(nextcloudUpdate.Status == UpdateStatus.Available && nextcloudUpdate.AvailableVersion == "34.0.4", "Nextcloud GitHub update detection failed.");
     Assert(nextcloudUpdate.Language == "neutral" && nextcloudUpdate.ExecutionPlan?.Kind == UpdateExecutionKind.DownloadedMsi,
         "Nextcloud multi-language MSI plan is incorrect.");
+
+    var gitHubCliHash = new string('a', 64);
+    using var gitHubCliClient = new HttpClient(new StubHttpMessageHandler(_ => JsonResponse($$"""
+        {
+          "tag_name":"v2.100.0",
+          "html_url":"https://github.com/cli/cli/releases/tag/v2.100.0",
+          "assets":[{
+            "name":"gh_2.100.0_windows_amd64.msi",
+            "browser_download_url":"https://github.com/cli/cli/releases/download/v2.100.0/gh_2.100.0_windows_amd64.msi",
+            "digest":"sha256:{{gitHubCliHash}}"
+          }]
+        }
+        """)));
+    var gitHubCliFixture = CreateApplication(
+        "github-cli-test",
+        "GitHub CLI",
+        "GitHub, Inc.",
+        "2.99.0",
+        Path.Combine(firefoxFixture, "gh.exe"),
+        InstallScope.Machine,
+        ManagementMode.WindowsInstaller);
+    var directGitHubCliUpdate = await new GitHubReleaseUpdateProvider(gitHubCliClient, gitHubCliRecipe)
+        .CheckAsync(gitHubCliFixture, CancellationToken.None);
+    Assert(directGitHubCliUpdate is
+           {
+               ProviderId: "github:cli/cli",
+               Status: UpdateStatus.Available,
+               AvailableVersion: "2.100.0",
+               ExecutionPlan:
+               {
+                   Kind: UpdateExecutionKind.DownloadedMsi,
+                   Sha256: var directGitHubCliHash,
+                   ExpectedSigner: "GitHub, Inc."
+               }
+           } && directGitHubCliHash == gitHubCliHash,
+        "GitHub CLI did not receive a producer-owned digest-backed MSI plan.");
 
     using var rateLimitedGitHubClient = new HttpClient(new StubHttpMessageHandler(request =>
     {
@@ -449,116 +489,51 @@ try
         .DownloadAndVerifyAsync(metadataUpdate, Path.Combine(firefoxFixture, "metadata-cache"));
     Assert(File.ReadAllBytes(metadataInstaller.Path).SequenceEqual(metadataPayload), "SHA-512 verified metadata installer download failed.");
 
-    var catalogIndexPath = Path.Combine(firefoxFixture, "catalog-index.db");
-    await using (var catalogConnection = new SqliteConnection($"Data Source={catalogIndexPath};Pooling=False"))
-    {
-        await catalogConnection.OpenAsync();
-        await using var catalogCommand = catalogConnection.CreateCommand();
-        catalogCommand.CommandText = """
-            CREATE TABLE packages(rowid INTEGER PRIMARY KEY, id TEXT NOT NULL, name TEXT NOT NULL, moniker TEXT, latest_version TEXT NOT NULL);
-            CREATE TABLE productcodes2(productcode TEXT NOT NULL, package INTEGER NOT NULL);
-            CREATE TABLE upgradecodes2(upgradecode TEXT NOT NULL, package INTEGER NOT NULL);
-            CREATE TABLE norm_names2(norm_name TEXT NOT NULL, package INTEGER NOT NULL);
-            CREATE TABLE norm_publishers2(norm_publisher TEXT NOT NULL, package INTEGER NOT NULL);
-            CREATE TABLE pfns2(pfn TEXT NOT NULL, package INTEGER NOT NULL);
-            INSERT INTO packages(rowid, id, name, moniker, latest_version) VALUES(1, 'Fixture.CatalogApp', 'Catalog App', '', '2.0.0');
-            INSERT INTO productcodes2(productcode, package) VALUES('{11111111-2222-3333-4444-555555555555}', 1);
-            INSERT INTO packages(rowid, id, name, moniker, latest_version) VALUES(2, 'Fixture.UniqueApp', 'Unique App', '', '3.0.0');
-            INSERT INTO norm_names2(norm_name, package) VALUES('uniqueapp', 2);
-            INSERT INTO norm_publishers2(norm_publisher, package) VALUES('uniquepublisherllc', 2);
-            INSERT INTO packages(rowid, id, name, moniker, latest_version) VALUES(3, 'Fixture.StoreApp', 'Store App', '', '4.0.0');
-            INSERT INTO pfns2(pfn, package) VALUES('Fixture.StoreApp_1234567890abc', 3);
-            INSERT INTO packages(rowid, id, name, moniker, latest_version) VALUES(4, 'Fixture.ArchiveMsi', 'Archive MSI', '', '2.0.0');
-            INSERT INTO upgradecodes2(upgradecode, package) VALUES('{AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE}', 4);
-            INSERT INTO norm_names2(norm_name, package) VALUES('archivemsi', 4);
-            INSERT INTO packages(rowid, id, name, moniker, latest_version) VALUES(5, 'RARLab.WinRAR', 'WinRAR', '', '7.23.0');
-            INSERT INTO productcodes2(productcode, package) VALUES('WinRAR archiver', 5);
-            INSERT INTO norm_names2(norm_name, package) VALUES('winrar', 5);
-            INSERT INTO norm_publishers2(norm_publisher, package) VALUES('winrar', 5);
-            """;
-        await catalogCommand.ExecuteNonQueryAsync();
-    }
-    var catalogHash = new string('c', 64);
-    var archiveHash = new string('d', 64);
-    using var catalogClient = new HttpClient(new StubHttpMessageHandler(request => new HttpResponseMessage(HttpStatusCode.OK)
-    {
-        Content = new StringContent(
-            request.RequestUri?.AbsoluteUri.Contains("ArchiveMsi", StringComparison.Ordinal) == true
-                ? $$"""
-                    InstallerType: zip
-                    NestedInstallerType: msi
-                    NestedInstallerFiles:
-                    - RelativeFilePath: redist\ArchiveRedist.msi
-                    Installers:
-                    - Architecture: x64
-                      InstallerUrl: https://downloads.example.test/archive-msi.2.0.0.nupkg
-                      InstallerSha256: {{archiveHash}}
-                    """
-                : $$"""
-                    InstallerType: msi
-                    Installers:
-                    - Architecture: x64
-                      InstallerUrl: https://downloads.example.test/catalog-app-2.0.0-x64.msi
-                      InstallerSha256: {{catalogHash}}
-                    """,
-            Encoding.UTF8,
-            "text/yaml")
-    }));
-    var catalogApplication = CreateApplication(
-        "catalog-test",
-        "Catalog App",
-        "Example Publisher",
-        "1.0.0",
-        Path.Combine(Environment.SystemDirectory, "cmd.exe"),
+    var winRarFixtureDirectory = Directory.CreateDirectory(Path.Combine(firefoxFixture, "winrar-de"));
+    var winRarFixtureExecutable = Path.Combine(winRarFixtureDirectory.FullName, "WinRAR.exe");
+    await File.WriteAllBytesAsync(winRarFixtureExecutable, [1]);
+    await File.WriteAllTextAsync(
+        Path.Combine(winRarFixtureDirectory.FullName, "winrar.lng"),
+        "; WinRAR 7.23\n; Deutsche Übersetzung\n");
+    var winRarPayload = Encoding.UTF8.GetBytes("original RARLAB installer fixture");
+    using var winRarClient = new HttpClient(new StubHttpMessageHandler(request =>
+        request.RequestUri?.AbsolutePath.EndsWith("download.htm", StringComparison.OrdinalIgnoreCase) == true
+            ? new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent("""
+                    <a href="/rar/winrar-x64-724.exe">English</a>
+                    <a href="/rar/winrar-x64-724d.exe">German</a>
+                    """, Encoding.UTF8, "text/html")
+            }
+            : new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new ByteArrayContent(winRarPayload)
+            }));
+    var winRarFixtureApplication = CreateApplication(
+        "winrar-producer-test",
+        "WinRAR 7.23 (64-bit)",
+        "win.rar GmbH",
+        "7.23.0",
+        winRarFixtureExecutable,
         InstallScope.Machine,
-        ManagementMode.WindowsInstaller) with
-    {
-        RemovalPlan = new RemovalPlan(
-            RemovalKind.WindowsInstaller,
-            Path.Combine(Environment.SystemDirectory, "msiexec.exe"),
-            "/x {11111111-2222-3333-4444-555555555555}",
-            null,
-            true)
-    };
-    var deterministicCatalog = new FederatedCatalogUpdateProvider(catalogClient, catalogIndexPath);
-    Assert(deterministicCatalog.CanHandle(catalogApplication), "Exact MSI product-code catalog matching failed.");
-    var catalogUpdate = await deterministicCatalog.CheckAsync(catalogApplication, CancellationToken.None);
-    Assert(catalogUpdate.Status == UpdateStatus.Available && catalogUpdate.AvailableVersion == "2.0.0",
-        "Deterministic catalog update detection failed.");
-    Assert(catalogUpdate.ExecutionPlan?.Sha256 == catalogHash &&
-           catalogUpdate.ExecutionPlan.Kind == UpdateExecutionKind.DownloadedMsi &&
-           catalogUpdate.ExecutionPlan.Arguments.Contains("/qn") &&
-           catalogUpdate.ExecutionPlan.RunningProcessNames.Count == 0 &&
-           catalogUpdate.ExecutionPlan.AllowHashVerifiedRedirects,
-        "Deterministic catalog update plan lost its hash, MSI policy, or verified-redirect policy.");
-    var archiveApplication = CreateApplication(
-        "archive-msi-test",
-        "Archive MSI",
-        "Example Publisher",
-        "1.0.0",
-        Path.Combine(firefoxFixture, "ArchiveMsi.exe"),
-        InstallScope.Machine,
-        ManagementMode.WindowsInstaller) with
-    {
-        Evidence =
-        [
-            new ApplicationEvidence(
-                EvidenceKind.Registry,
-                "Windows Installer upgrade family",
-                "{AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE}",
-                true)
-        ]
-    };
-    Assert(deterministicCatalog.CanHandle(archiveApplication), "Exact MSI upgrade-code catalog matching failed.");
-    var archiveUpdate = await deterministicCatalog.CheckAsync(archiveApplication, CancellationToken.None);
-    Assert(archiveUpdate.Status == UpdateStatus.Available &&
-           archiveUpdate.ExecutionPlan is
+        ManagementMode.Registry);
+    var winRarDirectUpdate = await new WinRarUpdateProvider(winRarClient)
+        .CheckAsync(winRarFixtureApplication, CancellationToken.None);
+    Assert(winRarDirectUpdate is
            {
-               Kind: UpdateExecutionKind.DownloadedZipMsi,
-               Sha256: var parsedArchiveHash,
-               NestedInstallerRelativePath: "redist\\ArchiveRedist.msi"
-           } && parsedArchiveHash == archiveHash,
-        "The verified nested-MSI archive plan was not preserved.");
+               ProviderId: "rarlab-winrar",
+               Status: UpdateStatus.Available,
+               AvailableVersion: "7.24",
+               Language: "de",
+               ExecutionPlan:
+               {
+                   DownloadUri.AbsoluteUri: "https://www.rarlab.com/rar/winrar-x64-724d.exe",
+                   ExpectedSigner: "win.rar GmbH",
+                   Sha256: var winRarFixtureHash
+               }
+           } && winRarFixtureHash == Convert.ToHexString(SHA256.HashData(winRarPayload)),
+        "WinRAR did not receive its German producer-owned RARLAB installer plan.");
+
     var archiveFixturePath = Path.Combine(firefoxFixture, "nested-installer.nupkg");
     var nestedPayload = Encoding.UTF8.GetBytes("nested MSI fixture");
     using (var archive = ZipFile.Open(archiveFixturePath, ZipArchiveMode.Create))
@@ -615,42 +590,6 @@ try
            File.Exists(Path.Combine(driverExtraction.FullName, "e1d.cat")) &&
            File.Exists(Path.Combine(driverExtraction.FullName, "e1dmsg.dll")),
         "The exact hardware-matched Intel INF package was not extracted and verified.");
-    var uniqueCatalogApplication = CreateApplication(
-        "unique-catalog-test",
-        "Unique App 1.0.0",
-        "Unique Publisher LLC",
-        "1.0.0",
-        Path.Combine(firefoxFixture, "UniqueApp.exe"),
-        InstallScope.CurrentUser,
-        ManagementMode.Registry);
-    Assert(deterministicCatalog.CanHandle(uniqueCatalogApplication), "Unique normalized name-and-publisher catalog matching failed.");
-    var uniqueCatalogUpdate = await deterministicCatalog.CheckAsync(uniqueCatalogApplication, CancellationToken.None);
-    Assert(uniqueCatalogUpdate.Status == UpdateStatus.Available && uniqueCatalogUpdate.AvailableVersion == "3.0.0" && uniqueCatalogUpdate.ExecutionPlan is null,
-        "A unique weak catalog match should detect the update but remain non-installable.");
-    var winRarCatalogApplication = CreateApplication(
-        "winrar-catalog-test",
-        "WinRAR 7.23 (64-Bit)",
-        "win.rar GmbH",
-        "7.23.0",
-        Path.Combine(firefoxFixture, "WinRAR.exe"),
-        InstallScope.Machine,
-        ManagementMode.Registry) with
-    {
-        Evidence =
-        [
-            new ApplicationEvidence(
-                EvidenceKind.Registry,
-                "Uninstall registry",
-                "LocalMachine Registry64 · WinRAR archiver",
-                true)
-        ]
-    };
-    Assert(deterministicCatalog.CanHandle(winRarCatalogApplication),
-        "A unique WinRAR name plus legal-suffix-normalized publisher did not resolve its catalog source.");
-    var winRarCatalogUpdate = await deterministicCatalog.CheckAsync(winRarCatalogApplication, CancellationToken.None);
-    Assert(winRarCatalogUpdate.Status == UpdateStatus.Current && winRarCatalogUpdate.AvailableVersion == "7.23.0",
-        "WinRAR's verified catalog source did not recognize the installed current version.");
-
     var storeCatalogApplication = CreateApplication(
         "msix:Fixture.StoreApp_1234567890abc",
         "Store App",
@@ -659,11 +598,6 @@ try
         Path.Combine(firefoxFixture, "StoreApp"),
         InstallScope.CurrentUser,
         ManagementMode.Msix);
-    Assert(deterministicCatalog.CanHandle(storeCatalogApplication), "Exact MSIX package-family catalog matching failed.");
-    var storeCatalogUpdate = await deterministicCatalog.CheckAsync(storeCatalogApplication, CancellationToken.None);
-    Assert(storeCatalogUpdate.Status == UpdateStatus.Available && storeCatalogUpdate.AvailableVersion == "4.0.0" && storeCatalogUpdate.ExecutionPlan is null,
-        "An exact MSIX package-family match should report the catalog update without inventing a sideload plan.");
-
     var unsupportedApplication = CreateApplication(
         "unsupported-test",
         "Uncatalogued Fixture",
@@ -688,23 +622,6 @@ try
            storeAssessment.Results[0].ExecutionPlan is null &&
            storeAssessment.UnsupportedApplicationCount == 0,
         "An unmatched MSIX package was incorrectly labelled actionable, unknown, or unsupported.");
-
-    var nativeUpdaterApplication = catalogApplication with
-    {
-        Identity = "native-updater-precedence-test",
-        DisplayName = "Catalog App",
-        ManagementMode = ManagementMode.NativeSelfUpdater
-    };
-    Assert(deterministicCatalog.CanHandle(nativeUpdaterApplication),
-        "The native-updater precedence fixture did not also match the public catalog provider.");
-    var nativeUpdaterAssessment = await new UpdateCheckService([deterministicCatalog])
-        .CheckAsync(new InventorySnapshot(DateTimeOffset.Now, [nativeUpdaterApplication], [], []));
-    Assert(nativeUpdaterAssessment.Results.Count == 1 &&
-           nativeUpdaterAssessment.Results[0].Status == UpdateStatus.ManagedExternally &&
-           nativeUpdaterAssessment.Results[0].ProviderId == "native-updater" &&
-           nativeUpdaterAssessment.Results[0].AvailableVersion is null &&
-           nativeUpdaterAssessment.Results[0].ExecutionPlan is null,
-        "An explicit native updater was overridden by an incidental public-catalog match.");
 
     var installerPayload = Encoding.UTF8.GetBytes("verified installer fixture");
     var installerHash = Convert.ToHexString(SHA256.HashData(installerPayload));
@@ -987,33 +904,6 @@ if (installedComfy is not null)
     }
 }
 
-using var liveCatalogClient = new HttpClient { Timeout = TimeSpan.FromSeconds(30) };
-var federatedCatalog = new FederatedCatalogUpdateProvider(liveCatalogClient);
-var installedLibreOffice = snapshot.Applications.FirstOrDefault(app => app.DisplayName.StartsWith("LibreOffice", StringComparison.OrdinalIgnoreCase));
-if (installedLibreOffice is not null && federatedCatalog.CanHandle(installedLibreOffice))
-{
-    var libreOfficeUpdate = await federatedCatalog.CheckAsync(installedLibreOffice, CancellationToken.None);
-    Assert(libreOfficeUpdate.Status is UpdateStatus.Current or UpdateStatus.Available,
-        $"LibreOffice catalog assessment failed: {libreOfficeUpdate.Message}");
-    if (libreOfficeUpdate.Status == UpdateStatus.Available)
-    {
-        Assert(VersionOrder.Compare(libreOfficeUpdate.AvailableVersion, installedLibreOffice.NormalizedVersion) > 0 &&
-               libreOfficeUpdate.ExecutionPlan?.Sha256?.Length == 64 &&
-               libreOfficeUpdate.ExecutionPlan.AllowHashVerifiedRedirects,
-            $"LibreOffice update lacks a mirror-safe verified catalog installer plan: {libreOfficeUpdate.Message}");
-    }
-}
-
-var installedNode = snapshot.Applications.FirstOrDefault(app => app.DisplayName.Equals("Node.js", StringComparison.OrdinalIgnoreCase));
-if (installedNode is not null && federatedCatalog.CanHandle(installedNode))
-{
-    var nodeUpdate = await federatedCatalog.CheckAsync(installedNode, CancellationToken.None);
-    Assert(nodeUpdate.Status == UpdateStatus.Available && VersionOrder.Compare(nodeUpdate.AvailableVersion, installedNode.NormalizedVersion) > 0,
-        $"The fresher Node.js catalog update was not detected: {nodeUpdate.Message}");
-    Assert(nodeUpdate.ExecutionPlan?.Sha256?.Length == 64 && nodeUpdate.ExecutionPlan.RunningProcessNames.Count == 0,
-        $"Node.js update lacks an official checksum-backed non-blocking MSI plan: {nodeUpdate.Message}");
-}
-
 var installedGog = snapshot.Applications.FirstOrDefault(app => app.DisplayName.Equals("GOG GALAXY", StringComparison.OrdinalIgnoreCase));
 if (installedGog is not null)
 {
@@ -1043,22 +933,27 @@ if (installedWinRar is not null)
             evidence.Label == "Attached MSIX integration package" &&
             evidence.Value.Contains("WinRAR.ShellExtension", StringComparison.OrdinalIgnoreCase)),
         "WinRAR lost the evidence for its attached MSIX shell extension.");
-    Assert(federatedCatalog.CanHandle(installedWinRar),
-        $"WinRAR was not correlated with its verified public catalog identity: {installedWinRar.DisplayName} · {installedWinRar.Publisher}.");
-    var winRarUpdate = await federatedCatalog.CheckAsync(installedWinRar, CancellationToken.None);
-    Assert(winRarUpdate.Status is UpdateStatus.Current or UpdateStatus.Available &&
-           winRarUpdate.ProviderId == "federated-public-catalogs" &&
-           winRarUpdate.Message?.Contains("WinGet", StringComparison.OrdinalIgnoreCase) == true,
-        $"WinRAR did not receive a verified catalog assessment: installed {winRarUpdate.InstalledVersion} · available {winRarUpdate.AvailableVersion} · {winRarUpdate.Status} · {winRarUpdate.Message}");
+    using var liveWinRarClient = new HttpClient { Timeout = TimeSpan.FromSeconds(30) };
+    var liveWinRarUpdate = await new WinRarUpdateProvider(liveWinRarClient)
+        .CheckAsync(installedWinRar, CancellationToken.None);
+    Assert(liveWinRarUpdate.Status is UpdateStatus.Current or UpdateStatus.Available &&
+           liveWinRarUpdate.ProviderId == "rarlab-winrar" &&
+           liveWinRarUpdate.ReleaseNotesUrl == "https://www.rarlab.com/download.htm",
+        $"WinRAR was not checked directly against RARLAB: {liveWinRarUpdate.Status} · {liveWinRarUpdate.Message}");
 }
 
 var installedGitHubCli = snapshot.Applications.FirstOrDefault(app =>
     app.DisplayName.Equals("GitHub CLI", StringComparison.OrdinalIgnoreCase));
-if (installedGitHubCli is not null && federatedCatalog.CanHandle(installedGitHubCli))
+if (installedGitHubCli is not null)
 {
-    var gitHubCliUpdate = await federatedCatalog.CheckAsync(installedGitHubCli, CancellationToken.None);
+    var producerCatalog = await UpdateProviderCatalogLoader.LoadAsync(
+        Path.Combine(AppContext.BaseDirectory, "Configuration", "update-providers.json"));
+    var gitHubCliRecipe = producerCatalog.GitHub.Single(recipe => recipe.Id == "GitHub.cli");
+    using var liveGitHubCliClient = new HttpClient { Timeout = TimeSpan.FromSeconds(30) };
+    var gitHubCliUpdate = await new GitHubReleaseUpdateProvider(liveGitHubCliClient, gitHubCliRecipe)
+        .CheckAsync(installedGitHubCli, CancellationToken.None);
     Assert(gitHubCliUpdate.Status is UpdateStatus.Current or UpdateStatus.Available,
-        $"GitHub CLI's exact MSI upgrade family was not assessed: {gitHubCliUpdate.Message}");
+        $"GitHub CLI's producer-owned release was not assessed: {gitHubCliUpdate.Message}");
     if (gitHubCliUpdate.Status == UpdateStatus.Available)
     {
         Assert(gitHubCliUpdate.ExecutionPlan is
@@ -1068,29 +963,7 @@ if (installedGitHubCli is not null && federatedCatalog.CanHandle(installedGitHub
                    DownloadUri.Host: "github.com"
                } &&
                gitHubCliUpdate.ExecutionPlan.DownloadUri.AbsoluteUri.Contains("/cli/cli/releases/", StringComparison.OrdinalIgnoreCase),
-            $"GitHub CLI {gitHubCliUpdate.AvailableVersion} was detected without its official checksum-backed MSI plan: {gitHubCliUpdate.Message}");
-    }
-}
-
-var installedGameInput = snapshot.Applications.FirstOrDefault(app =>
-    app.DisplayName.Equals("Microsoft GameInput", StringComparison.OrdinalIgnoreCase));
-if (installedGameInput is not null)
-{
-    Assert(federatedCatalog.CanHandle(installedGameInput),
-        "Microsoft GameInput was not correlated through its exact installed MSI identity.");
-    var gameInputUpdate = await federatedCatalog.CheckAsync(installedGameInput, CancellationToken.None);
-    Assert(gameInputUpdate.Status is UpdateStatus.Current or UpdateStatus.Available,
-        $"Microsoft GameInput was not assessed from its exact catalog identity: {gameInputUpdate.Status} · {gameInputUpdate.Message}");
-    if (gameInputUpdate.Status == UpdateStatus.Available)
-    {
-        Assert(VersionOrder.Compare(gameInputUpdate.AvailableVersion, installedGameInput.NormalizedVersion) > 0 &&
-               gameInputUpdate.ExecutionPlan is
-               {
-                   Kind: UpdateExecutionKind.DownloadedZipMsi,
-                   Sha256.Length: 64,
-                   NestedInstallerRelativePath: "redist\\GameInputRedist.msi"
-               },
-            $"Microsoft GameInput's newer nested-MSI catalog plan is incomplete: {gameInputUpdate.Message}");
+            $"GitHub CLI {gitHubCliUpdate.AvailableVersion} was detected without its producer-owned digest-backed MSI plan: {gitHubCliUpdate.Message}");
     }
 }
 
@@ -1100,12 +973,8 @@ var installedOpenSslEntries = snapshot.Applications
 Assert(installedOpenSslEntries.Length <= 1,
     $"Multiple installed versions from one OpenSSL MSI upgrade family were not collapsed: {string.Join(", ", installedOpenSslEntries.Select(static app => app.InstalledVersion))}");
 var installedOpenSsl = installedOpenSslEntries.FirstOrDefault();
-if (installedOpenSsl is not null && federatedCatalog.CanHandle(installedOpenSsl))
+if (installedOpenSsl is not null)
 {
-    var openSslUpdate = await federatedCatalog.CheckAsync(installedOpenSsl, CancellationToken.None);
-    Assert(openSslUpdate.Status == UpdateStatus.Current ||
-           (openSslUpdate.Status == UpdateStatus.Available && openSslUpdate.ExecutionPlan is { RequireAuthenticode: false }),
-        $"OpenSSL was neither current nor supplied with an exact-product-code hash-only plan: {openSslUpdate.Message}");
     if (installedOpenSsl.Evidence.Count(static evidence => evidence.Label == "Registry version") > 1)
     {
         var highestRegisteredVersion = installedOpenSsl.Evidence
@@ -1158,20 +1027,11 @@ var installedBrave = snapshot.Applications.FirstOrDefault(app =>
     app.DisplayName.Equals("Brave Origin", StringComparison.OrdinalIgnoreCase));
 if (installedBrave is not null)
 {
-    var braveAssessment = await new UpdateCheckService([federatedCatalog])
+    var braveAssessment = await new UpdateCheckService([])
         .CheckAsync(new InventorySnapshot(DateTimeOffset.Now, [installedBrave], [], []));
     Assert(braveAssessment.Results.Single().Status == UpdateStatus.ManagedExternally &&
            braveAssessment.Results.Single().AvailableVersion is null,
         "Brave's native updater was replaced by a Chromium/catalog version comparison.");
-}
-
-var installedPotPlayer = snapshot.Applications.FirstOrDefault(app =>
-    app.DisplayName.StartsWith("PotPlayer", StringComparison.OrdinalIgnoreCase));
-if (installedPotPlayer is not null && federatedCatalog.CanHandle(installedPotPlayer))
-{
-    var potPlayerAssessment = await federatedCatalog.CheckAsync(installedPotPlayer, CancellationToken.None);
-    Assert(potPlayerAssessment.Status == UpdateStatus.Current,
-        $"PotPlayer's equivalent dotted and compact release date was reported as an update: {potPlayerAssessment.InstalledVersion} -> {potPlayerAssessment.AvailableVersion}.");
 }
 
 var nextcloud = snapshot.Applications.FirstOrDefault(app => app.DisplayName.Equals("Nextcloud", StringComparison.OrdinalIgnoreCase));
@@ -1312,8 +1172,28 @@ if (intelChipsetGroup is not null)
 
 using var capabilityClient = new HttpClient();
 var installedMetadataCoverage = snapshot.Applications.Count(new ElectronBuilderUpdateProvider(capabilityClient).CanHandle);
-var federatedCatalogCoverage = snapshot.Applications.Count(new FederatedCatalogUpdateProvider(capabilityClient).CanHandle);
-Console.WriteLine($"NaxUpdater core smoke tests passed. {snapshot.Applications.Count} applications, {liveManufacturerDrivers.Results.Count} manufacturer drivers, {liveManufacturerDrivers.Results.Count(static result => result.Status == ManufacturerDriverStatus.Available)} driver updates, {installedMetadataCoverage} installed-metadata providers, {federatedCatalogCoverage} catalog identities, {liveStoreIdentities} live Store identities, {snapshot.UnmatchedPolicies.Count} unmatched guards, {snapshot.Issues.Count} scan issues.");
+var productionProviderCatalog = await UpdateProviderCatalogLoader.LoadAsync(
+    Path.Combine(AppContext.BaseDirectory, "Configuration", "update-providers.json"));
+var productionUpdateSnapshot = await new UpdateCheckService(capabilityClient, productionProviderCatalog)
+    .CheckAsync(snapshot, CancellationToken.None);
+Assert(productionUpdateSnapshot.Results.All(static result =>
+        result.ProviderId != "federated-public-catalogs" &&
+        !result.ProviderDisplayName.Contains("WinGet", StringComparison.OrdinalIgnoreCase) &&
+        !result.ProviderDisplayName.Contains("Scoop", StringComparison.OrdinalIgnoreCase)),
+    "The production update chain still exposed a community package-manager catalog.");
+if (installedGitHubCli is not null)
+{
+    Assert(productionUpdateSnapshot.Results.Single(result => result.ApplicationIdentity == installedGitHubCli.Identity).ProviderId == "github:cli/cli",
+        "The production provider chain did not route GitHub CLI directly to its producer-owned release.");
+}
+var installedGit = snapshot.Applications.FirstOrDefault(app => app.DisplayName.Equals("Git", StringComparison.OrdinalIgnoreCase));
+if (installedGit is not null)
+{
+    Assert(productionUpdateSnapshot.Results.Single(result => result.ApplicationIdentity == installedGit.Identity).ProviderId == "github:git-for-windows/git",
+        "The production provider chain did not route Git directly to the producer-owned Git for Windows release.");
+}
+var producerOwnedCoverage = productionUpdateSnapshot.Results.Count(static result => result.Status != UpdateStatus.Unsupported);
+Console.WriteLine($"NaxUpdater core smoke tests passed. {snapshot.Applications.Count} applications, {liveManufacturerDrivers.Results.Count} manufacturer drivers, {liveManufacturerDrivers.Results.Count(static result => result.Status == ManufacturerDriverStatus.Available)} driver updates, {installedMetadataCoverage} installed-metadata providers, {producerOwnedCoverage} producer-owned assessments, {liveStoreIdentities} live Store identities, {snapshot.UnmatchedPolicies.Count} unmatched guards, {snapshot.Issues.Count} scan issues.");
 return 0;
 
 static void AssertProtectedApplication(
@@ -1330,7 +1210,7 @@ static void AssertProtectedApplication(
     }
 
     Assert(application.ManagementMode == expectedMode, $"{displayName} has unexpected management mode {application.ManagementMode}.");
-    Assert(application.BlockedProviders.Contains("WinGet", StringComparer.OrdinalIgnoreCase), $"{displayName} lost its WinGet safety guard.");
+    Assert(application.BlockedProviders.Count == 0, $"{displayName} still carries obsolete community-catalog guards.");
     Assert(application.PrimaryInstallPath?.EndsWith(expectedPathFileName, StringComparison.OrdinalIgnoreCase) == true, $"{displayName} executable path was not resolved: {application.PrimaryInstallPath}");
     if (requireVersion)
     {

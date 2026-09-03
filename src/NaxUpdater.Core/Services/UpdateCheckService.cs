@@ -18,11 +18,11 @@ public sealed class UpdateCheckService
             new FirefoxUpdateProvider(httpClient, firefoxMetadataDetector ?? new FirefoxMetadataDetector()),
             new ZeroInstallUpdateProvider(new ProcessQueryRunner()),
             new ElectronBuilderUpdateProvider(httpClient),
-            new GogGalaxyUpdateProvider()
+            new GogGalaxyUpdateProvider(),
+            new WinRarUpdateProvider(httpClient)
         };
         providers.AddRange(catalog.GitHub.Select(recipe => new GitHubReleaseUpdateProvider(httpClient, recipe)));
         providers.Add(new MsixStoreUpdateProvider(httpClient));
-        providers.Add(new FederatedCatalogUpdateProvider(httpClient));
         _providers = providers;
     }
 
@@ -36,9 +36,8 @@ public sealed class UpdateCheckService
 
         foreach (var application in inventory.Applications.Where(static application => !application.IsSystemComponent))
         {
-            // Native-updater ownership is an explicit application policy and must win over
-            // any incidental public-catalog name match. Otherwise catalog versions (for
-            // example Chromium's version for Brave) can be presented as application updates.
+            // Native-updater ownership is an explicit application policy. The application
+            // remains the update authority instead of being replaced by a third-party source.
             if (application.ManagementMode == ManagementMode.NativeSelfUpdater)
             {
                 supportedIdentities.Add(application.Identity);

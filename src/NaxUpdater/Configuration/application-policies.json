@@ -4,11 +4,11 @@
       "id": "DeepL.DeepL",
       "displayName": "DeepL",
       "publisherContains": "DeepL",
-      "blockedProviders": [ "WinGet" ],
+      "blockedProviders": [],
       "managementMode": "ZeroInstall",
       "preferredProvider": "Zero Install native feed",
       "appliesWhenAbsent": false,
-      "reason": "The installed app is content-addressed by Zero Install; WinGet sees an unknown version and uses a mutable bootstrapper URL."
+      "reason": "The installed app is content-addressed by its Zero Install feed; no community catalog fallback is used."
     },
     {
       "id": "Nextcloud.NextcloudDesktop",
@@ -25,21 +25,21 @@
       "id": "Blizzard.BattleNet",
       "displayName": "Battle.net",
       "publisherContains": "Blizzard",
-      "blockedProviders": [ "WinGet" ],
+      "blockedProviders": [],
       "managementMode": "NativeSelfUpdater",
       "preferredProvider": "Blizzard native updater",
       "appliesWhenAbsent": false,
-      "reason": "The WinGet pin is an intentional safety guard; Battle.net owns its update lifecycle."
+      "reason": "Battle.net owns its update lifecycle through Blizzard's installed updater."
     },
     {
       "id": "Brave.BraveOrigin.Nightly",
       "displayName": "Brave Origin",
       "publisherContains": "Brave",
-      "blockedProviders": [ "WinGet" ],
+      "blockedProviders": [],
       "managementMode": "NativeSelfUpdater",
       "preferredProvider": "Brave native update channel",
       "appliesWhenAbsent": false,
-      "reason": "The WinGet pin is an intentional safety guard for the Origin/Nightly channel."
+      "reason": "Brave Origin keeps its installed native update channel."
     }
   ]
 }
