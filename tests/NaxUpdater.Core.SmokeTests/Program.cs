@@ -211,6 +211,13 @@ var germanResources = LoadResources(Path.Combine(AppContext.BaseDirectory, "Loca
 Assert(englishResources.Keys.ToHashSet(StringComparer.Ordinal).SetEquals(germanResources.Keys),
     "English and German resource keys differ.");
 Assert(germanResources["CheckUpdatesButtonText.Text"] == "Nach Updates suchen", "German update-button translation is missing.");
+Assert(germanResources["ApplicationScanText"] == "Scannen und Updates prüfen", "German runtime application scan label is missing.");
+Assert(germanResources["ApplicationFilterPlaceholder"].StartsWith("Nach Name", StringComparison.Ordinal), "German runtime application filter label is missing.");
+Assert(germanResources["ApplicationDetectedSummary"] == "Erkannt" &&
+       germanResources["ApplicationVersionsSummary"] == "Versionen ermittelt" &&
+       germanResources["ApplicationPathsSummary"] == "Pfade ermittelt" &&
+       germanResources["ApplicationGuardsSummary"] == "Anbietersperren",
+    "German runtime application summary labels are incomplete.");
 Assert(germanResources["ProviderFirefoxLanguageOverride"].Contains("Firefox fordert jedoch aktiv", StringComparison.Ordinal),
     "German Firefox language-preservation explanation is missing.");
 
