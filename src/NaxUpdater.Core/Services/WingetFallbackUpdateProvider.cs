@@ -352,7 +352,7 @@ public sealed partial class WingetFallbackUpdateProvider(HttpClient httpClient, 
         var path = string.Join('/', segments);
         var uri = $"https://raw.githubusercontent.com/microsoft/winget-pkgs/master/manifests/{char.ToLowerInvariant(identity.Id[0])}/{path}/{Uri.EscapeDataString(identity.LatestVersion)}/{Uri.EscapeDataString(identity.Id)}.installer.yaml";
         using var request = new HttpRequestMessage(HttpMethod.Get, uri);
-        request.Headers.UserAgent.ParseAdd("NaxUpdater/0.15.19");
+        request.Headers.UserAgent.ParseAdd("NaxUpdater/0.15.20");
         using var response = await httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
         if (!response.IsSuccessStatusCode)
         {

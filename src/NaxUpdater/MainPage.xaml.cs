@@ -855,11 +855,37 @@ public sealed partial class MainPage : Page
         var running = _updateExecutionService.FindRunningProcesses(row.Source);
         if (running.Count > 0)
         {
-            UpdateBar.Title = LocalizationService.Format("CloseFirstTitle", row.Name);
-            UpdateBar.Message = LocalizationService.Format("CloseProcessesMessage", string.Join(", ", running));
-            UpdateBar.Severity = InfoBarSeverity.Warning;
-            UpdateBar.IsOpen = true;
-            return false;
+            SetUpdateBusy(true, LocalizationService.Format("ClosingApplications", row.Name));
+            if (button is not null)
+            {
+                button.IsEnabled = false;
+            }
+            ApplicationCloseResult closeResult;
+            try
+            {
+                closeResult = await _updateExecutionService.CloseForUpdateAsync(
+                    row.Source,
+                    TimeSpan.FromSeconds(5),
+                    TimeSpan.FromSeconds(10));
+            }
+            finally
+            {
+                if (button is not null)
+                {
+                    button.IsEnabled = row.CanInstall;
+                }
+                SetUpdateBusy(false, null);
+            }
+            if (!closeResult.AllClosed)
+            {
+                UpdateBar.Title = LocalizationService.Format("CloseFirstTitle", row.Name);
+                UpdateBar.Message = LocalizationService.Format(
+                    "CloseRequestFailed",
+                    string.Join(", ", closeResult.RemainingProcessNames));
+                UpdateBar.Severity = InfoBarSeverity.Warning;
+                UpdateBar.IsOpen = true;
+                return false;
+            }
         }
 
         var plan = row.Source.ExecutionPlan;

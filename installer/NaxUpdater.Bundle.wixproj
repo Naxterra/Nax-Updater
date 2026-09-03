@@ -6,7 +6,7 @@
     <InstallerPlatform>x64</InstallerPlatform>
     <OutputName>NaxUpdater-Setup-x64</OutputName>
     <OutputPath>$(MSBuildProjectDirectory)\..\artifacts\bundle\</OutputPath>
-    <NaxUpdaterVersion Condition="'$(NaxUpdaterVersion)' == ''">0.15.19</NaxUpdaterVersion>
+    <NaxUpdaterVersion Condition="'$(NaxUpdaterVersion)' == ''">0.15.20</NaxUpdaterVersion>
     <DefineConstants>NaxUpdaterVersion=$(NaxUpdaterVersion)</DefineConstants>
   </PropertyGroup>
   <ItemGroup>
