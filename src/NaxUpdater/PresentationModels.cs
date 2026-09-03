@@ -223,9 +223,49 @@ public sealed class UpdateRow
     });
 }
 
-public sealed class ManufacturerDriverRow(ManufacturerDriverResult source)
+public sealed class DriverColumnLayout : INotifyPropertyChanged
+{
+    private GridLength _nameWidth = new(300);
+    private GridLength _installedWidth = new(125);
+    private GridLength _availableWidth = new(175);
+    private GridLength _sourceWidth = new(200);
+    private GridLength _statusWidth = new(240);
+    private GridLength _actionWidth = new(165);
+
+    public GridLength NameWidth { get => _nameWidth; private set => Set(ref _nameWidth, value); }
+    public GridLength InstalledWidth { get => _installedWidth; private set => Set(ref _installedWidth, value); }
+    public GridLength AvailableWidth { get => _availableWidth; private set => Set(ref _availableWidth, value); }
+    public GridLength SourceWidth { get => _sourceWidth; private set => Set(ref _sourceWidth, value); }
+    public GridLength StatusWidth { get => _statusWidth; private set => Set(ref _statusWidth, value); }
+    public GridLength ActionWidth { get => _actionWidth; private set => Set(ref _actionWidth, value); }
+
+    public void Synchronize(double name, double installed, double available, double source, double status, double action)
+    {
+        NameWidth = new GridLength(name);
+        InstalledWidth = new GridLength(installed);
+        AvailableWidth = new GridLength(available);
+        SourceWidth = new GridLength(source);
+        StatusWidth = new GridLength(status);
+        ActionWidth = new GridLength(action);
+    }
+
+    public event PropertyChangedEventHandler? PropertyChanged;
+
+    private void Set(ref GridLength field, GridLength value, [CallerMemberName] string? propertyName = null)
+    {
+        if (field.Equals(value))
+        {
+            return;
+        }
+        field = value;
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
+    }
+}
+
+public sealed class ManufacturerDriverRow(ManufacturerDriverResult source, DriverColumnLayout layout)
 {
     public ManufacturerDriverResult Source { get; } = source;
+    public DriverColumnLayout Layout { get; } = layout;
     public string Name => Source.Driver.DeviceName;
     private bool IsRazerSuite => Source.Driver.Identity.EndsWith(":razer:suite", StringComparison.OrdinalIgnoreCase);
     private bool IsIntelPackageGroup => Source.Driver.Identity.EndsWith(":intel:chipset", StringComparison.OrdinalIgnoreCase) ||

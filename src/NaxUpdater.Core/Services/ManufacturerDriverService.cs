@@ -11,7 +11,8 @@ namespace NaxUpdater.Core.Services;
 public sealed partial class ManufacturerDriverService(HttpClient httpClient)
 {
     private const string DriverClassPath = @"SYSTEM\CurrentControlSet\Control\Class";
-    private static readonly Uri NvidiaDriverHome = new("https://www.nvidia.com/Download/index.aspx");
+    private static readonly Uri NvidiaDriverHomeEn = new("https://www.nvidia.com/en-us/drivers/");
+    private static readonly Uri NvidiaDriverHomeDe = new("https://www.nvidia.com/de-de/drivers/");
     private static readonly Uri IntelDsaHome = new("https://www.intel.com/content/www/us/en/support/detect.html");
     private static readonly Uri IntelChipsetSoftware = new("https://www.intel.com/content/www/us/en/download/19347/chipset-inf-utility.html");
     private static readonly Uri IntelManagementEngine = new("https://www.intel.com/content/www/us/en/download/682431/intel-management-engine-drivers-for-windows-10-and-windows-11.html");
@@ -171,10 +172,11 @@ public sealed partial class ManufacturerDriverService(HttpClient httpClient)
         InstalledHardwareDriver driver,
         CancellationToken cancellationToken)
     {
+        var regionalHome = NvidiaDriverHomeForCulture(CultureInfo.CurrentUICulture.Name);
         var seriesId = NvidiaSeriesId(driver.DeviceName);
         if (seriesId is null)
         {
-            return NoVerifiedCatalog(driver, "NVIDIA", NvidiaDriverHome,
+            return NoVerifiedCatalog(driver, "NVIDIA", regionalHome,
                 "The NVIDIA device is present, but its product series is not mapped to NVIDIA's official driver search.");
         }
 
@@ -191,7 +193,7 @@ public sealed partial class ManufacturerDriverService(HttpClient httpClient)
             var availableVersion = match.Groups["version"].Value;
             var resultId = match.Groups["id"].Value;
             var installedVersion = NormalizeNvidiaVersion(driver.InstalledVersion);
-            var detailsUri = new Uri($"https://www.nvidia.com/en-us/drivers/details/{resultId}/");
+            var detailsUri = NvidiaDetailsUri(resultId, CultureInfo.CurrentUICulture.Name);
             if (VersionOrder.Compare(availableVersion, installedVersion) <= 0)
             {
                 return Current(driver with { InstalledVersion = installedVersion }, availableVersion, "NVIDIA", detailsUri,
@@ -244,7 +246,7 @@ public sealed partial class ManufacturerDriverService(HttpClient httpClient)
         }
         catch (Exception exception)
         {
-            return Error(driver, "NVIDIA", NvidiaDriverHome, exception.Message);
+            return Error(driver, "NVIDIA", regionalHome, exception.Message);
         }
     }
 
@@ -359,7 +361,7 @@ public sealed partial class ManufacturerDriverService(HttpClient httpClient)
                     $"Intel publishes Ethernet package {releaseVersion}, but its exact Windows 11 I219 INF payload has not been independently mapped yet. No version mismatch is claimed.");
             }
 
-            var displayedAvailable = $"{payload.DriverVersion} · Intel {releaseVersion}";
+            var displayedAvailable = $"Intel {releaseVersion} · e1d.inf {payload.DriverVersion}";
             if (VersionOrder.Compare(payload.DriverVersion, driver.InstalledVersion) <= 0)
             {
                 return Current(driver, displayedAvailable, "Intel Ethernet I219", IntelEthernetWindows11Page,
@@ -451,7 +453,7 @@ public sealed partial class ManufacturerDriverService(HttpClient httpClient)
     private async Task<string> GetStringAsync(Uri uri, CancellationToken cancellationToken)
     {
         using var request = new HttpRequestMessage(HttpMethod.Get, uri);
-        request.Headers.UserAgent.ParseAdd("NaxUpdater/0.15.21");
+        request.Headers.UserAgent.ParseAdd("NaxUpdater/0.15.22");
         using var response = await httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
         response.EnsureSuccessStatusCode();
         return await response.Content.ReadAsStringAsync(cancellationToken);
@@ -862,6 +864,19 @@ public sealed partial class ManufacturerDriverService(HttpClient httpClient)
             return $"{compact[..3]}.{compact[3..]}";
         }
         return version;
+    }
+
+    internal static Uri NvidiaDriverHomeForCulture(string? cultureName) =>
+        cultureName?.StartsWith("de", StringComparison.OrdinalIgnoreCase) == true
+            ? NvidiaDriverHomeDe
+            : NvidiaDriverHomeEn;
+
+    internal static Uri NvidiaDetailsUri(string resultId, string? cultureName)
+    {
+        var region = cultureName?.StartsWith("de", StringComparison.OrdinalIgnoreCase) == true
+            ? "de-de"
+            : "en-us";
+        return new Uri($"https://www.nvidia.com/{region}/drivers/details/{Uri.EscapeDataString(resultId)}/");
     }
 
     internal static string NormalizeTpLinkVersion(string version)

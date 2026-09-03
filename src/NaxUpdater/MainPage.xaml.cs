@@ -20,6 +20,7 @@ public sealed partial class MainPage : Page
     private readonly ApplicationRemovalService _applicationRemovalService = new();
     private readonly ApplicationIconService _applicationIconService = new();
     private readonly ManufacturerDriverService _manufacturerDriverService;
+    public DriverColumnLayout DriverLayout { get; } = new();
     private IReadOnlyList<ApplicationRow> _allApplications = [];
     private IReadOnlyList<UpdateRow> _allUpdates = [];
     private IReadOnlyList<ManufacturerDriverRow> _allDrivers = [];
@@ -64,10 +65,19 @@ public sealed partial class MainPage : Page
         await ScanAndCheckAsync();
     }
 
-    private async void ScanButton_Click(object sender, RoutedEventArgs e) => await ScanAndCheckAsync();
+    private async void ScanButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (DriversWorkspace.Visibility == Visibility.Visible)
+        {
+            await CheckManufacturerDriversAsync();
+            return;
+        }
+        await ScanAndCheckAsync();
+    }
 
     private async Task ScanAndCheckAsync()
     {
+        ConfigureApplicationHeader();
         InventoryWorkspace.Visibility = Visibility.Visible;
         UpdatesWorkspace.Visibility = Visibility.Collapsed;
         DriversWorkspace.Visibility = Visibility.Collapsed;
@@ -626,6 +636,7 @@ public sealed partial class MainPage : Page
 
     private void ShowApplicationsButton_Click(object sender, RoutedEventArgs e)
     {
+        ConfigureApplicationHeader();
         InventoryWorkspace.Visibility = Visibility.Visible;
         UpdatesWorkspace.Visibility = Visibility.Collapsed;
         DriversWorkspace.Visibility = Visibility.Collapsed;
@@ -638,6 +649,7 @@ public sealed partial class MainPage : Page
 
     private void ShowUpdatesWorkspace()
     {
+        ConfigureApplicationHeader();
         InventoryWorkspace.Visibility = Visibility.Collapsed;
         UpdatesWorkspace.Visibility = Visibility.Visible;
         DriversWorkspace.Visibility = Visibility.Collapsed;
@@ -655,6 +667,7 @@ public sealed partial class MainPage : Page
         InventoryWorkspace.Visibility = Visibility.Collapsed;
         UpdatesWorkspace.Visibility = Visibility.Collapsed;
         DriversWorkspace.Visibility = Visibility.Visible;
+        ConfigureDriverHeader();
         FilterBox.IsEnabled = true;
         ShowSystemComponentsCheckBox.IsEnabled = false;
         await CheckManufacturerDriversAsync();
@@ -667,7 +680,7 @@ public sealed partial class MainPage : Page
         try
         {
             var snapshot = await _manufacturerDriverService.CheckAsync();
-            _allDrivers = snapshot.Results.Select(static result => new ManufacturerDriverRow(result)).ToArray();
+            _allDrivers = snapshot.Results.Select(result => new ManufacturerDriverRow(result, DriverLayout)).ToArray();
             ApplyDriverFilter();
             var direct = snapshot.Results.Count(static result => result.ExecutableUpdate?.IsInstallable == true);
             var manufacturerDownloads = snapshot.Results.Count(static result =>
@@ -675,6 +688,7 @@ public sealed partial class MainPage : Page
             var checkedPackages = snapshot.Results.Count(static result =>
                 result.Status == ManufacturerDriverStatus.OfficialSourceOnly && result.AvailableVersion is not null);
             var available = direct + manufacturerDownloads;
+            UpdateDriverSummary(snapshot, checkedPackages, direct);
             UpdateBar.Title = available == 0
                 ? LocalizationService.Format("DriversCheckedNoUpdates", checkedPackages)
                 : LocalizationService.Format("DriverUpdatesAvailable", direct, manufacturerDownloads);
@@ -697,6 +711,64 @@ public sealed partial class MainPage : Page
         {
             SetUpdateBusy(false, null);
         }
+    }
+
+    private void ConfigureApplicationHeader()
+    {
+        ScanButtonLabel.Text = LocalizationService.Get("ScanButtonText.Text");
+        FilterBox.PlaceholderText = LocalizationService.Get("FilterBox.PlaceholderText");
+        ShowSystemComponentsCheckBox.Visibility = Visibility.Visible;
+        DriversButton.Visibility = Visibility.Visible;
+        DetectedSummaryLabel.Text = LocalizationService.Get("DetectedLabel.Text");
+        VersionSummaryLabel.Text = LocalizationService.Get("VersionsResolvedLabel.Text");
+        PathSummaryLabel.Text = LocalizationService.Get("PathsResolvedLabel.Text");
+        GuardSummaryLabel.Text = LocalizationService.Get("ProviderGuardsLabel.Text");
+        if (_snapshot is not null)
+        {
+            UpdateSummary(_snapshot);
+        }
+    }
+
+    private void ConfigureDriverHeader()
+    {
+        ScanButtonLabel.Text = LocalizationService.Get("CheckDriversTop");
+        FilterBox.PlaceholderText = LocalizationService.Get("DriverFilterPlaceholder");
+        ShowSystemComponentsCheckBox.Visibility = Visibility.Collapsed;
+        DriversButton.Visibility = Visibility.Collapsed;
+        DetectedSummaryLabel.Text = LocalizationService.Get("DriverGroupsSummary");
+        VersionSummaryLabel.Text = LocalizationService.Get("OfficialPackagesSummary");
+        PathSummaryLabel.Text = LocalizationService.Get("InstallableDriverUpdatesSummary");
+        GuardSummaryLabel.Text = LocalizationService.Get("DriverIssuesSummary");
+        DetectedCountText.Text = _allDrivers.Count == 0 ? "—" : _allDrivers.Count.ToString("N0");
+        VersionCountText.Text = "—";
+        PathCountText.Text = "—";
+        GuardCountText.Text = "—";
+    }
+
+    private void UpdateDriverSummary(ManufacturerDriverSnapshot snapshot, int checkedPackages, int installableUpdates)
+    {
+        DetectedCountText.Text = snapshot.Results.Count.ToString("N0");
+        VersionCountText.Text = checkedPackages.ToString("N0");
+        PathCountText.Text = installableUpdates.ToString("N0");
+        GuardCountText.Text = snapshot.Issues.Count.ToString("N0");
+    }
+
+    private void DriverHeaderGrid_SizeChanged(object sender, SizeChangedEventArgs e)
+    {
+        if (DriversWorkspace.Visibility != Visibility.Visible ||
+            DriverNameColumn.ActualWidth <= 0 || DriverInstalledColumn.ActualWidth <= 0 ||
+            DriverAvailableColumn.ActualWidth <= 0 || DriverSourceColumn.ActualWidth <= 0 ||
+            DriverStatusColumn.ActualWidth <= 0 || DriverActionColumn.ActualWidth <= 0)
+        {
+            return;
+        }
+        DriverLayout.Synchronize(
+            DriverNameColumn.ActualWidth,
+            DriverInstalledColumn.ActualWidth,
+            DriverAvailableColumn.ActualWidth,
+            DriverSourceColumn.ActualWidth,
+            DriverStatusColumn.ActualWidth,
+            DriverActionColumn.ActualWidth);
     }
 
     private async void DriverRowButton_Click(object sender, RoutedEventArgs e)

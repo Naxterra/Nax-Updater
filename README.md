@@ -31,7 +31,12 @@ The inventory engine:
 
 ## Update providers
 
-Version 0.15.21 includes:
+Version 0.15.22 includes:
+
+- a genuinely driver-specific top workspace: the scan action, filter hint, visibility, four labels, and four counters now represent driver groups, official packages checked, installable driver updates, and driver-check issues rather than repeating application inventory statistics;
+- draggable driver-table column splitters for Device, Installed, Available, Manufacturer source, Status, and Action, with widths synchronized across every row;
+- Intel Ethernet presentation that separates the official Windows 11 package (`31.2.2`) from its applicable I219 `e1d.inf` driver (`12.19.2.64`) instead of presenting the INF as the package version;
+- NVIDIA support and driver-detail links localized to `nvidia.com/de-de` when German is selected and `nvidia.com/en-us` for English, while the verified international installer continues to use NVIDIA's official signed download CDN;
 
 - ChatGPT updates now invoke the enabled **Update/Aktualisieren** action exposed by the installed signed `ChatGPT.exe`, letting ChatGPT's own packaged updater perform the account-free update that its UI already offers; NaxUpdater waits for the installed `OpenAI.Codex` package version to reach the exact OpenAI-manifest target;
 
@@ -157,7 +162,7 @@ From this directory:
 dotnet build NaxUpdater.slnx
 dotnet run --project tests/NaxUpdater.Core.SmokeTests/NaxUpdater.Core.SmokeTests.csproj
 dotnet publish src/NaxUpdater/NaxUpdater.csproj -c Release -r win-x64 --self-contained true -o artifacts/NaxUpdater-win-x64
-./scripts/package-release.ps1 -Version 0.15.21
+./scripts/package-release.ps1 -Version 0.15.22
 ```
 
 The desktop project uses .NET 11, WinUI 3, and the Windows App SDK. It is not an Electron or WebView application.
