@@ -425,7 +425,7 @@
                             <TextBlock x:Name="UpdateMessageText" TextWrapping="Wrap" />
 
                             <ProgressBar x:Name="UpdateProgress" Visibility="Collapsed" Margin="0,18,0,8" Minimum="0" Maximum="100" />
-                            <TextBlock x:Uid="CloseAppsHint" Text="Applications must be closed manually before installation. NaxUpdater never terminates them." Style="{StaticResource MutedTextStyle}" FontSize="11" TextWrapping="Wrap" Margin="0,7,0,0" />
+                            <TextBlock x:Uid="CloseAppsHint" Text="Starting an update authorizes NaxUpdater to close its listed application processes and force-terminate them if necessary." Style="{StaticResource MutedTextStyle}" FontSize="11" TextWrapping="Wrap" Margin="0,7,0,0" />
                         </StackPanel>
                     </StackPanel>
                 </ScrollViewer>

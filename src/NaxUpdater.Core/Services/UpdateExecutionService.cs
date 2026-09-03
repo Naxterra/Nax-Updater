@@ -22,12 +22,30 @@ public sealed class UpdateExecutionService
         {
             return [];
         }
+        using var currentProcess = Process.GetCurrentProcess();
+        var currentSession = currentProcess.SessionId;
         var running = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         foreach (var processName in plan.RunningProcessNames)
         {
             try
             {
-                if (Process.GetProcessesByName(processName).Length > 0)
+                var processes = Process.GetProcessesByName(processName);
+                var found = false;
+                foreach (var process in processes)
+                {
+                    using (process)
+                    {
+                        try
+                        {
+                            found |= !process.HasExited && process.Id != currentProcess.Id && process.SessionId == currentSession;
+                        }
+                        catch
+                        {
+                            // Ignore processes that exit while their state is inspected.
+                        }
+                    }
+                }
+                if (found)
                 {
                     running.Add(processName);
                 }
@@ -38,6 +56,150 @@ public sealed class UpdateExecutionService
             }
         }
         return running.Order(StringComparer.CurrentCultureIgnoreCase).ToArray();
+    }
+
+    public async Task<ApplicationCloseResult> CloseForUpdateAsync(
+        UpdateCheckResult update,
+        TimeSpan gracefulTimeout,
+        TimeSpan forcedTimeout,
+        CancellationToken cancellationToken = default)
+    {
+        var plan = update.ExecutionPlan;
+        if (plan is null || plan.RunningProcessNames.Count == 0)
+        {
+            return new ApplicationCloseResult(true, false, []);
+        }
+
+        using var updaterProcess = Process.GetCurrentProcess();
+        var updaterProcessId = updaterProcess.Id;
+        var currentSession = updaterProcess.SessionId;
+
+        var closeRequested = false;
+        foreach (var processName in plan.RunningProcessNames.Distinct(StringComparer.OrdinalIgnoreCase))
+        {
+            Process[] processes;
+            try
+            {
+                processes = Process.GetProcessesByName(processName);
+            }
+            catch
+            {
+                continue;
+            }
+            foreach (var process in processes)
+            {
+                using (process)
+                {
+                    try
+                    {
+                        if (!process.HasExited && process.Id != updaterProcessId &&
+                            process.SessionId == currentSession && process.MainWindowHandle != IntPtr.Zero)
+                        {
+                            closeRequested |= process.CloseMainWindow();
+                        }
+                    }
+                    catch (Exception exception) when (exception is InvalidOperationException or NotSupportedException)
+                    {
+                        // A process without an accessible main window cannot be closed gracefully here.
+                    }
+                }
+            }
+        }
+
+        var gracefulDeadline = DateTimeOffset.UtcNow + gracefulTimeout;
+        var remaining = FindRunningProcesses(update);
+        while (remaining.Count > 0 && DateTimeOffset.UtcNow < gracefulDeadline)
+        {
+            await Task.Delay(250, cancellationToken);
+            remaining = FindRunningProcesses(update);
+        }
+
+        if (remaining.Count == 0)
+        {
+            return new ApplicationCloseResult(true, false, []);
+        }
+
+        var forcedTerminationUsed = false;
+        var elevationRequiredPids = new List<int>();
+        foreach (var processName in plan.RunningProcessNames.Distinct(StringComparer.OrdinalIgnoreCase))
+        {
+            Process[] processes;
+            try
+            {
+                processes = Process.GetProcessesByName(processName);
+            }
+            catch
+            {
+                continue;
+            }
+            foreach (var process in processes)
+            {
+                using (process)
+                {
+                    try
+                    {
+                        if (!process.HasExited && process.Id != updaterProcessId && process.SessionId == currentSession)
+                        {
+                            process.Kill(entireProcessTree: true);
+                            forcedTerminationUsed = true;
+                        }
+                    }
+                    catch (Exception exception) when (exception is Win32Exception or InvalidOperationException or NotSupportedException)
+                    {
+                        try
+                        {
+                            if (!process.HasExited && process.Id != updaterProcessId && process.SessionId == currentSession)
+                            {
+                                elevationRequiredPids.Add(process.Id);
+                            }
+                        }
+                        catch
+                        {
+                            // The process exited between the termination attempt and the fallback check.
+                        }
+                    }
+                }
+            }
+        }
+
+        if (elevationRequiredPids.Count > 0)
+        {
+            forcedTerminationUsed = true;
+            var taskKill = new ProcessStartInfo(Path.Combine(Environment.SystemDirectory, "taskkill.exe"))
+            {
+                UseShellExecute = true,
+                Verb = "runas"
+            };
+            foreach (var pid in elevationRequiredPids.Distinct())
+            {
+                taskKill.ArgumentList.Add("/PID");
+                taskKill.ArgumentList.Add(pid.ToString(System.Globalization.CultureInfo.InvariantCulture));
+            }
+            taskKill.ArgumentList.Add("/T");
+            taskKill.ArgumentList.Add("/F");
+            try
+            {
+                using var elevatedKill = Process.Start(taskKill);
+                if (elevatedKill is not null)
+                {
+                    await elevatedKill.WaitForExitAsync(cancellationToken);
+                }
+            }
+            catch (Win32Exception exception) when (exception.NativeErrorCode == 1223)
+            {
+                return new ApplicationCloseResult(closeRequested, forcedTerminationUsed, FindRunningProcesses(update));
+            }
+        }
+
+        var forcedDeadline = DateTimeOffset.UtcNow + forcedTimeout;
+        remaining = FindRunningProcesses(update);
+        while (remaining.Count > 0 && DateTimeOffset.UtcNow < forcedDeadline)
+        {
+            await Task.Delay(250, cancellationToken);
+            remaining = FindRunningProcesses(update);
+        }
+
+        return new ApplicationCloseResult(closeRequested, forcedTerminationUsed, remaining);
     }
 
     public async Task<UpdateExecutionResult> ExecuteAsync(
@@ -443,6 +605,14 @@ public sealed class UpdateExecutionService
 internal sealed record NativeStagingResult(string Executable, string WorkingDirectory, string Root);
 
 public sealed record UpdateExecutionResult(int ExitCode, bool IsSuccess, string? Error);
+
+public sealed record ApplicationCloseResult(
+    bool CloseRequested,
+    bool ForcedTerminationUsed,
+    IReadOnlyList<string> RemainingProcessNames)
+{
+    public bool AllClosed => RemainingProcessNames.Count == 0;
+}
 
 public sealed class ApplicationStillRunningException(IReadOnlyList<string> processNames)
     : InvalidOperationException($"Close the following application processes before updating: {string.Join(", ", processNames)}")

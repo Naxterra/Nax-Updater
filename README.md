@@ -31,13 +31,15 @@ The inventory engine:
 
 ## Update providers
 
-Version 0.15.19 includes:
+Version 0.15.20 includes:
+
+- clicking **Update** or **Update all** now authorizes the complete close-and-update flow: NaxUpdater requests a normal application shutdown, waits briefly, force-terminates remaining same-session process trees, requests UAC for an elevated `taskkill` fallback when Windows requires it, verifies that the processes are gone, and then runs the update;
 
 - producer-first provider selection for every application: installed/native and producer-owned sources win, Microsoft Store handles Store-owned packages, and WinGet is consulted only when none of those sources claims the application;
 - WinGet remains a verified last-resort fallback through exact product-code, MSI upgrade-family, or package-family correlation; it cannot override a producer source and Scoop is no longer consulted;
 
 - ChatGPT checks against OpenAI's official Windows update manifest for the exact `OpenAI.Codex` package and Store product, instead of relying on WinGet's `Unknown` Store version;
-- ChatGPT process detection before deployment, so an open ChatGPT/Codex instance produces a clear close-first message rather than a false success;
+- ChatGPT/Codex process handling before deployment, including graceful close, forced process-tree termination when required, Store deployment, and the final version rescan;
 - exact Store-product retry with the Windows Package Manager force option when Store metadata proves an update but the composite update catalog is stale; `NoApplicableUpgrade` is no longer reported as “already current”;
 - a full-width driver workspace matching the applications and updates views: the fixed centered 1260-pixel island is removed, the device-name column remains bounded, and surplus ultra-wide space follows the action column;
 
@@ -134,7 +136,7 @@ NaxUpdater never falls back to an English Firefox installer when the detected lo
 - Every installation requires an explicit confirmation.
 - Downloaded installers require HTTPS, an allow-listed final host, the release SHA-256, a valid Windows Authenticode signature, and the expected publisher name.
 - The application, architecture, channel, locale, scope, and install directory are fixed in the execution plan.
-- Running applications must be closed manually; NaxUpdater never terminates them.
+- Starting an update authorizes NaxUpdater to close the update plan's listed application processes and force-terminate their same-session process trees when necessary; protected processes trigger a Windows UAC request through `taskkill`.
 - NaxUpdater does not run bulk WinGet, Chocolatey, or Scoop commands and never uninstalls without exact user confirmation.
 
 ## Application removal
@@ -153,7 +155,7 @@ From this directory:
 dotnet build NaxUpdater.slnx
 dotnet run --project tests/NaxUpdater.Core.SmokeTests/NaxUpdater.Core.SmokeTests.csproj
 dotnet publish src/NaxUpdater/NaxUpdater.csproj -c Release -r win-x64 --self-contained true -o artifacts/NaxUpdater-win-x64
-./scripts/package-release.ps1 -Version 0.15.19
+./scripts/package-release.ps1 -Version 0.15.20
 ```
 
 The desktop project uses .NET 11, WinUI 3, and the Windows App SDK. It is not an Electron or WebView application.

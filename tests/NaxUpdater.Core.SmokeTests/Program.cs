@@ -368,6 +368,17 @@ try
                }
            } && directGitHubCliHash == gitHubCliHash,
         "GitHub CLI did not receive a producer-owned digest-backed MSI plan.");
+    var closeFixture = directGitHubCliUpdate with
+    {
+        ExecutionPlan = directGitHubCliUpdate.ExecutionPlan! with
+        {
+            RunningProcessNames = ["NaxUpdaterDefinitelyNotRunningFixture"]
+        }
+    };
+    var closeFixtureResult = await new UpdateExecutionService()
+        .CloseForUpdateAsync(closeFixture, TimeSpan.Zero, TimeSpan.Zero, CancellationToken.None);
+    Assert(closeFixtureResult.AllClosed && !closeFixtureResult.ForcedTerminationUsed,
+        "The close-and-update path did not recognize an already stopped application.");
 
     using var rateLimitedGitHubClient = new HttpClient(new StubHttpMessageHandler(request =>
     {
