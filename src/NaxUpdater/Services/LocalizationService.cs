@@ -33,6 +33,7 @@ public static partial class LocalizationService
         if (update.ProviderId == "native-updater") return Get("ProviderNative");
         if (update.ProviderId == "unverified") return Get("ProviderUnverified");
         if (update.ProviderId == "msix-store") return Get("ProviderMsixStore");
+        if (update.ProviderId == "openai-codex-store") return Get("ProviderOpenAiStore");
         if (update.ProviderId == "installed-updater-metadata") return Get("ProviderInstalledMetadata");
         if (update.ProviderId == "gog-galaxy-native") return Get("ProviderGogGalaxyNative");
         if (update.ProviderId == "federated-public-catalogs") return Get("ProviderFederatedCatalogs");
@@ -53,6 +54,9 @@ public static partial class LocalizationService
             UpdateStatus.Current => Get("ProviderMsixStoreCurrent"),
             _ => Get("ProviderMsixStoreNote")
         };
+        if (update.ProviderId == "openai-codex-store") return update.Status == UpdateStatus.Available
+            ? Get("ProviderOpenAiStoreAvailable")
+            : Get("ProviderOpenAiStoreCurrent");
         if (update.ProviderId == "installed-updater-metadata") return Get("ProviderInstalledMetadataNote");
         if (update.ProviderId == "gog-galaxy-native") return Get("ProviderGogGalaxyNativeNote");
         if (update.ProviderId == "federated-public-catalogs")

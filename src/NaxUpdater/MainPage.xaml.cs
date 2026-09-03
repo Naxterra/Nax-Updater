@@ -892,20 +892,6 @@ public sealed partial class MainPage : Page
             var result = await _updateExecutionService.ExecuteAsync(row.Source, installer);
             if (!result.IsSuccess)
             {
-                if (plan.Kind == UpdateExecutionKind.StorePackage &&
-                    string.Equals(result.Error, StorePackageDeploymentService.NoApplicableUpdateMessage, StringComparison.Ordinal))
-                {
-                    UpdateBar.Title = LocalizationService.Format("StoreAlreadyCurrentTitle", row.Name);
-                    UpdateBar.Message = LocalizationService.Get("StoreAlreadyCurrentMessage");
-                    UpdateBar.Severity = InfoBarSeverity.Informational;
-                    UpdateBar.IsOpen = true;
-                    if (rescanAfterSuccess)
-                    {
-                        await ScanAsync();
-                        await CheckUpdatesAsync(showWorkspace: true);
-                    }
-                    return true;
-                }
                 throw new InvalidOperationException(result.Error ?? $"Installer exited with code {result.ExitCode}.");
             }
 

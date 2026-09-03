@@ -27,6 +27,30 @@ Assert(!ManufacturerDriverService.RealtekCatalogIsNewer("10.80.50.407", "2026-07
     "Realtek's matching installed driver branch was incorrectly treated as older because of the package date.");
 Assert(ManufacturerDriverService.RealtekCatalogIsNewer("10.80.50.407", "2026-07-04", "10.81.1", "2026-08-28"),
     "A genuinely newer Realtek driver branch was not detected.");
+var normalStoreInstallOptions = StorePackageDeploymentService.CreateInstallOptions(force: false);
+var forcedStoreInstallOptions = StorePackageDeploymentService.CreateInstallOptions(force: true);
+Assert(!normalStoreInstallOptions.Force && forcedStoreInstallOptions.Force &&
+       forcedStoreInstallOptions.AllowUpgradeToUnknownVersion &&
+       forcedStoreInstallOptions.PackageInstallMode == Microsoft.Management.Deployment.PackageInstallMode.Silent,
+    "The exact Store fallback is not configured to force a silent update through a stale applicability result.");
+using (var openAiManifestFixture = JsonDocument.Parse("""
+{
+  "schemaVersion": 1,
+  "buildVersion": "26.901.1978.0",
+  "storeProductId": "9PLM9XGG6VKS",
+  "packageIdentity": "OpenAI.Codex"
+}
+"""))
+{
+    var manifest = MsixStoreUpdateProvider.ParseOpenAiManifest(openAiManifestFixture.RootElement);
+    Assert(manifest is
+           {
+               BuildVersion: "26.901.1978.0",
+               StoreProductId: "9PLM9XGG6VKS",
+               PackageIdentity: "OpenAI.Codex"
+           },
+        "OpenAI's official Windows update manifest was not accepted for the exact ChatGPT Store identity.");
+}
 using (var intelClient = new HttpClient(new StubHttpMessageHandler(_ => new HttpResponseMessage(HttpStatusCode.OK)
 {
     Content = new StringContent("Intel(R) Network Connections Software, Release 31.2.2\nJuly 2026\nIntel(R) Ethernet Connection I219")
@@ -857,6 +881,38 @@ if (installedChatGpt is not null)
     Assert(chatGptAssessment.Status == UpdateStatus.Available ||
            (chatGptAssessment.ExecutionPlan is null && !chatGptAssessment.IsInstallable),
         "ChatGPT received a Store action even though no applicable update was reported.");
+    using var openAiManifestClient = new HttpClient(new StubHttpMessageHandler(_ => JsonResponse("""
+        {
+          "schemaVersion": 1,
+          "buildVersion": "26.901.1978.0",
+          "storeProductId": "9PLM9XGG6VKS",
+          "packageIdentity": "OpenAI.Codex"
+        }
+        """)));
+    var officialManifestAssessment = await new MsixStoreUpdateProvider(openAiManifestClient).CheckAsync(
+        installedChatGpt with
+        {
+            InstalledVersion = "26.831.2377.0",
+            NormalizedVersion = "26.831.2377.0"
+        },
+        CancellationToken.None);
+    Assert(officialManifestAssessment is
+           {
+               ProviderId: "openai-codex-store",
+               Status: UpdateStatus.Available,
+               AvailableVersion: "26.901.1978.0",
+               ExecutionPlan:
+               {
+                   Kind: UpdateExecutionKind.StorePackage,
+                   StoreProductId: "9PLM9XGG6VKS",
+                   StorePackageFamilyName: "OpenAI.Codex_2p2nqsd0c76g0"
+               } manifestPlan
+           } && manifestPlan.RunningProcessNames.Contains("ChatGPT") &&
+                manifestPlan.RunningProcessNames.Contains("Codex"),
+        $"ChatGPT did not receive its official-manifest Store plan and close-first process guard: " +
+        $"{officialManifestAssessment.ProviderId} · {officialManifestAssessment.Status} · " +
+        $"{officialManifestAssessment.AvailableVersion} · {officialManifestAssessment.Message} · " +
+        $"{string.Join(',', officialManifestAssessment.ExecutionPlan?.RunningProcessNames ?? [])}");
     var observedPreUpdateChatGpt = installedChatGpt with
     {
         InstalledVersion = "26.825.4187.0",
