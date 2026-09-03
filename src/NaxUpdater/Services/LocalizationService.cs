@@ -36,7 +36,7 @@ public static partial class LocalizationService
         if (update.ProviderId == "openai-codex-store") return Get("ProviderOpenAiStore");
         if (update.ProviderId == "installed-updater-metadata") return Get("ProviderInstalledMetadata");
         if (update.ProviderId == "gog-galaxy-native") return Get("ProviderGogGalaxyNative");
-        if (update.ProviderId == "federated-public-catalogs") return Get("ProviderFederatedCatalogs");
+        if (update.ProviderId == "rarlab-winrar") return Get("ProviderWinRar");
         if (update.ProviderId.StartsWith("github:", StringComparison.Ordinal))
         {
             return Format("ProviderGitHub", update.ProviderId[7..]);
@@ -59,13 +59,9 @@ public static partial class LocalizationService
             : Get("ProviderOpenAiStoreCurrent");
         if (update.ProviderId == "installed-updater-metadata") return Get("ProviderInstalledMetadataNote");
         if (update.ProviderId == "gog-galaxy-native") return Get("ProviderGogGalaxyNativeNote");
-        if (update.ProviderId == "federated-public-catalogs")
-        {
-            if (update.Status == UpdateStatus.Current) return Get("ProviderFederatedCatalogCurrent");
-            return update.ExecutionPlan is not null
-                ? Get("ProviderFederatedCatalogVerified")
-                : Get("ProviderFederatedCatalogBlocked");
-        }
+        if (update.ProviderId == "rarlab-winrar") return update.Status == UpdateStatus.Available
+            ? Get("ProviderWinRarAvailable")
+            : Get("ProviderWinRarCurrent");
         if (update.ProviderId.StartsWith("github:", StringComparison.Ordinal)) return Get("ProviderGitHubNote");
         if (update.ProviderId == "zero-install")
         {
@@ -99,6 +95,7 @@ public static partial class LocalizationService
             "Preserved by GOG Galaxy's staged updater" or "Preserved by GOG Galaxy's updater" => Get("LanguageSourceGogGalaxy"),
         "Preserved by the application's updater" => Get("LanguageSourceNative"),
         "Preserved by Microsoft Store/MSIX package" => Get("LanguageSourceMsixStore"),
+        "Installed WinRAR language file" => Get("LanguageSourceWinRar"),
         "Check failed before language could be verified" => Get("LanguageSourceFailed"),
         _ => source
     };

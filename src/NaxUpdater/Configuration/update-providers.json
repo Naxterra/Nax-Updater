@@ -13,6 +13,34 @@
       "installerArguments": [ "/qn", "/norestart" ],
       "runningProcessNames": [ "nextcloud" ],
       "requiresElevation": true
+    },
+    {
+      "id": "GitHub.cli",
+      "displayName": "GitHub CLI",
+      "publisherContains": "GitHub",
+      "repository": "cli/cli",
+      "assetNamePattern": "^gh_(?<version>[0-9]+(?:\\.[0-9]+)+)_windows_amd64\\.msi$",
+      "architecture": "x64",
+      "language": "neutral",
+      "expectedSigner": "GitHub, Inc.",
+      "installerKind": "DownloadedMsi",
+      "installerArguments": [ "/qn", "/norestart" ],
+      "runningProcessNames": [],
+      "requiresElevation": true
+    },
+    {
+      "id": "Git.Git",
+      "displayName": "Git",
+      "publisherContains": "Git",
+      "repository": "git-for-windows/git",
+      "assetNamePattern": "^Git-(?<version>[0-9]+(?:\\.[0-9]+)+)-64-bit\\.exe$",
+      "architecture": "x64",
+      "language": "neutral",
+      "expectedSigner": "Johannes Schindelin",
+      "installerKind": "DownloadedExe",
+      "installerArguments": [ "/VERYSILENT", "/NORESTART", "/NOCANCEL", "/SP-" ],
+      "runningProcessNames": [],
+      "requiresElevation": true
     }
   ]
 }

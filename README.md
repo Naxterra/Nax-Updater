@@ -31,7 +31,7 @@ The inventory engine:
 
 ## Update providers
 
-Version 0.15.17 includes:
+Version 0.15.18 includes:
 
 - ChatGPT checks against OpenAI's official Windows update manifest for the exact `OpenAI.Codex` package and Store product, instead of relying on WinGet's `Unknown` Store version;
 - ChatGPT process detection before deployment, so an open ChatGPT/Codex instance produces a clear close-first message rather than a false success;
@@ -47,27 +47,22 @@ Version 0.15.17 includes:
 - native-updater policy precedence over incidental public-catalog matches, preventing component versions such as Brave's Chromium build from appearing as a Brave application update;
 - capability-based discovery of standard `app-update.yml` metadata shipped with installed applications, supporting generic HTTPS and GitHub feeds without application-name recipes;
 - SHA-512 verification from those installed update feeds in addition to SHA-256 and Authenticode verification;
-- exact MSI product-code correlation against WinGet's signed local catalog index without using WinGet's installed-version or path detection;
-- exact MSI UpgradeCode plus exact normalized product-name correlation when a vendor rotates its ProductCode between releases;
-- fresher-version comparison with Scoop manifests, with official same-host installer derivation allowed only when a vendor publishes a matching `SHASUMS256.txt`;
 - trusted signer inheritance from already-installed, validly signed executables when an installed updater configuration omits its publisher;
-- unique normalized name-and-publisher catalog correlation when no stable package identifier is available; ambiguous matches are rejected and weak matches never produce an install button;
-- GitHub CLI promotion from the installed exact MSI upgrade family to GitHub's newer official release MSI, verified with the versioned `gh_*_checksums.txt` asset so a detected update receives a real Update button;
+- producer-owned GitHub CLI releases from `cli/cli`, using GitHub's release-asset SHA-256 digest, the exact x64 MSI, and the `GitHub, Inc.` Authenticode signer;
+- producer-owned Git for Windows releases from `git-for-windows/git`, using GitHub's release-asset SHA-256 digest, the exact x64 installer, and Johannes Schindelin's Authenticode signer;
+- WinRAR checks and language-matched installers directly from RARLAB's official download page; the original producer download is SHA-256 pinned during the check and must carry the `win.rar GmbH` Authenticode signature;
+- no WinGet community index, WinGet manifest, or Scoop manifest in the production provider chain; applications without an official producer feed are shown honestly as **No verifiable update source**;
 - a complete assessment result for every visible application, including an explicit **No verifiable update source** status instead of silently omitting unsupported software;
 - registered non-MSI product-code correlation for installer technologies such as Inno Setup;
 - vendor-native GOG Galaxy updates read from GOG's own `autoupdate-verified` state, with the staged updater version matched to its metadata and its GOG Authenticode signature validated; because Windows intentionally denies direct execution inside that protected directory, the complete vendor-verified tree is copied to a fresh temporary execution directory and merged with GOG's installed `redists` runtime dependencies without replacing the new updater, then the copied updater is revalidated and GOG's own elevated command is used;
-- catalog comparison against the highest credible executable and registered package version, preventing false repeated updates when an executable embeds an older component version;
-- explicitly labelled SHA-256-only update plans for unsigned vendor installers, limited to exact registered product-code matches;
-- exact MSIX package-family correlation against catalog PFNs;
 - Microsoft Store/MSIX ownership classification for unmatched packaged applications, including application-managed language and Store/MSIX servicing status instead of unknown/unsupported labels;
-- SHA-256-enforced HTTPS mirror redirects for exact catalog plans, supporting vendors such as LibreOffice that rotate downloads across official mirrors;
 - MSI execution without process-name prechecks, preventing unrelated runtimes with the same filename from blocking Windows Installer updates;
 - direct Microsoft Store catalog and deployment integration through the official Windows Package Manager COM API;
 - installed PFN to Store Product ID resolution with exact package-family revalidation before silent install/update submission;
 - Store update applicability checks through an exact installed package-family → Store Product ID → architecture-matched Store package-version comparison, avoiding false negatives when the composite catalog omits its installed-version object or reports a stale applicability flag;
 - conservative Store package comparison that excludes encrypted duplicate bundles and rejects unrelated outer-bundle version schemes, preventing satellite revisions such as `.70` and calendar/rank bundle versions from becoming false application updates;
 - a direct **Update** row action only when Microsoft Store reports a real applicable upgrade; current or uncorrelated Store packages remain labelled as Store-managed without a misleading button;
-- an exact Microsoft Store product-install fallback when package metadata proves a newer applicable version but the composite update catalog exposes no upgrade candidate; Windows applies the exact Store product as an upgrade to the installed package family, while a genuinely withdrawn update is refreshed as already current instead of shown as a red failure;
+- an exact Microsoft Store product-install fallback when package metadata proves a newer applicable version but the composite update catalog exposes no upgrade candidate; `NoApplicableUpgrade` remains a failure instead of being converted to a false current result;
 - launchable MSIX app-entry naming ahead of package identities, so Store packages such as `OpenAI.Codex` are presented by their user-facing app name, `ChatGPT`;
 - six-way parallel ranged downloads for installers of at least 64 MB when the server advertises byte-range support, followed by complete reconstruction and whole-file hash verification;
 - SHA-256-verified ZIP/NuGet packages containing an explicitly declared nested MSI, with exact-entry extraction, traversal rejection, and silent MSI execution;
@@ -77,7 +72,6 @@ Version 0.15.17 includes:
 - Store package migration matching through a unique exact product-name and publisher pair when the Store product intentionally publishes a replacement PFN;
 - MSI upgrade-family correlation that collapses side-by-side product generations and retains the newest registered version, preventing a successful MSI install from being offered repeatedly because the vendor left an older product registration behind.
 - twelve-way bounded Store catalog checking, reducing the complete local application scan and update check from roughly 27 seconds to about 7–8 seconds on the validated workstation without omitting packages.
-- exact registered non-MSI product-code matching plus legal-entity publisher normalization, allowing packages such as WinRAR to resolve their verified catalog source without app-name whitelists;
 - version/architecture-aware MSIX integration correlation, attaching WinRAR's shell-extension package to the real Win32 installation instead of displaying a duplicate source-less package row;
 - equivalent compact and dotted date-release versions such as PotPlayer `260819` and `26.08.19.0` are treated as the same release;
 
@@ -100,12 +94,10 @@ The native **Drivers / Treiber** view does not use Windows Update. It correlates
 - BIOS, UEFI, device firmware, beta drivers, and Windows Update driver packages are excluded.
 - Large segmented downloads are resumable. Completed segments survive interruption, merge progress is displayed separately from download progress, and a freshly downloaded file is not hashed twice before signature verification.
 - Independent manufacturer source checks run concurrently, and the driver table distinguishes verified installed vendor-software ownership from rows that only have an official source and still require hardware applicability validation. Neither state claims a manually installed driver is outdated.
-- The driver grid is width-capped on maximized and ultrawide windows so the device name column no longer expands into a large empty middle area.
+- The driver workspace fills maximized and ultrawide windows while the device-name column remains capped, keeping surplus width after the action column instead of centering a narrow table island.
 - Applications and Updates now use the same full-width table/details workspace. Their name columns share the same responsive 280–600 px constraint, while surplus ultrawide space is placed after the last data/action column instead of inside the application name.
 
-Catalogs provide candidates, never installed state. NaxUpdater still decides the installed version, location, architecture, channel, and scope from its independent inventory. A package-manager match is accepted only through a stable identifier such as an exact MSI product code; name-only search results are not installable.
-
-Provider priority is vendor-first: installed native/self-updaters and installed signed updater metadata, official direct release channels, Microsoft Store for Store packages, and only then federated public catalogs as a fallback. A verified native vendor channel such as GOG Galaxy therefore overrides a stale WinGet version.
+Provider authority is producer-owned: installed native/self-updaters and signed updater metadata, official vendor download feeds, producer-controlled GitHub releases, and Microsoft Store only for Store-owned packages. Community package-manager catalogs are not consulted.
 
 The single **Scan and check updates** action rebuilds the installed-application list and then checks every supported provider. The **Updates (N)** control shows both available updates and the checked/installed coverage; it only switches to the results and never starts a second check.
 
@@ -158,7 +150,7 @@ From this directory:
 dotnet build NaxUpdater.slnx
 dotnet run --project tests/NaxUpdater.Core.SmokeTests/NaxUpdater.Core.SmokeTests.csproj
 dotnet publish src/NaxUpdater/NaxUpdater.csproj -c Release -r win-x64 --self-contained true -o artifacts/NaxUpdater-win-x64
-./scripts/package-release.ps1 -Version 0.15.17
+./scripts/package-release.ps1 -Version 0.15.18
 ```
 
 The desktop project uses .NET 11, WinUI 3, and the Windows App SDK. It is not an Electron or WebView application.

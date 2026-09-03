@@ -66,7 +66,7 @@ public sealed class StorePackageDeploymentService
             }
             catch
             {
-                // The supported WinGet deployment catalog remains the fallback if Store metadata is unavailable.
+                // The Microsoft Store deployment catalog remains the fallback if Store metadata is unavailable.
             }
 
             if (Version.TryParse(installedVersion, out _) && Version.TryParse(catalogVersion, out _))
@@ -335,7 +335,7 @@ public sealed class StorePackageDeploymentService
 
             // The update catalog can lag behind the Store product metadata. If its upgrade route
             // rejects a package that the product catalog still reports as newer, retry the exact
-            // Store product through install --force semantics. This is how WinGet bypasses a
+            // Store product through install --force semantics. The deployment API bypasses a
             // non-security applicability mismatch without weakening identity or hash checks.
             if (!useInstallFallback && result.Status == InstallResultStatus.NoApplicableUpgrade)
             {
