@@ -45,8 +45,8 @@
   <data name="SecurityMicrosoftStoreIdentity"><value>Verified Store catalog identity · deployed by Microsoft Store</value></data>
   <data name="ProviderMsixStoreAvailable"><value>The exact installed package family was correlated with Microsoft Store, which reports an applicable update. NaxUpdater will submit that update directly.</value></data>
   <data name="ProviderMsixStoreCurrent"><value>The exact installed package family was checked against Microsoft Store. No applicable update is currently reported.</value></data>
-  <data name="ProviderOpenAiStore"><value>OpenAI update manifest + Microsoft Store</value></data>
-  <data name="ProviderOpenAiStoreAvailable"><value>OpenAI's official Windows manifest reports this newer build. NaxUpdater closes the ChatGPT/Codex process tree, then deploys the exact Store product and retries with the Store's forced-install mode if its update catalog is stale.</value></data>
+  <data name="ProviderOpenAiStore"><value>OpenAI update manifest + ChatGPT updater</value></data>
+  <data name="ProviderOpenAiStoreAvailable"><value>OpenAI's official Windows manifest reports this newer build. NaxUpdater invokes ChatGPT's own accessible Update action and waits until the installed OpenAI.Codex package reaches this exact version.</value></data>
   <data name="ProviderOpenAiStoreCurrent"><value>OpenAI's official Windows manifest reports that this package is current.</value></data>
   <data name="ProviderWinRar"><value>Official RARLAB download</value></data>
   <data name="ProviderWinRarAvailable"><value>RARLAB reports a newer release in the installed WinRAR language. NaxUpdater hashes the original producer download and requires the win.rar GmbH signature before installation.</value></data>

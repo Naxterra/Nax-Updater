@@ -16,6 +16,7 @@ public enum UpdateExecutionKind
     DownloadedZipMsi,
     DownloadedZipDriver,
     NativeCommand,
+    ApplicationOwnedUpdater,
     StorePackage
 }
 

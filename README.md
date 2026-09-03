@@ -31,7 +31,9 @@ The inventory engine:
 
 ## Update providers
 
-Version 0.15.20 includes:
+Version 0.15.21 includes:
+
+- ChatGPT updates now invoke the enabled **Update/Aktualisieren** action exposed by the installed signed `ChatGPT.exe`, letting ChatGPT's own packaged updater perform the account-free update that its UI already offers; NaxUpdater waits for the installed `OpenAI.Codex` package version to reach the exact OpenAI-manifest target;
 
 - clicking **Update** or **Update all** now authorizes the complete close-and-update flow: NaxUpdater requests a normal application shutdown, waits briefly, force-terminates remaining same-session process trees, requests UAC for an elevated `taskkill` fallback when Windows requires it, verifies that the processes are gone, and then runs the update;
 
@@ -39,7 +41,7 @@ Version 0.15.20 includes:
 - WinGet remains a verified last-resort fallback through exact product-code, MSI upgrade-family, or package-family correlation; it cannot override a producer source and Scoop is no longer consulted;
 
 - ChatGPT checks against OpenAI's official Windows update manifest for the exact `OpenAI.Codex` package and Store product, instead of relying on WinGet's `Unknown` Store version;
-- ChatGPT/Codex process handling before deployment, including graceful close, forced process-tree termination when required, Store deployment, and the final version rescan;
+- generic application process handling before conventional installer deployment, including graceful close, forced process-tree termination when required, installation, and the final version rescan;
 - exact Store-product retry with the Windows Package Manager force option when Store metadata proves an update but the composite update catalog is stale; `NoApplicableUpgrade` is no longer reported as “already current”;
 - a full-width driver workspace matching the applications and updates views: the fixed centered 1260-pixel island is removed, the device-name column remains bounded, and surplus ultra-wide space follows the action column;
 
@@ -155,7 +157,7 @@ From this directory:
 dotnet build NaxUpdater.slnx
 dotnet run --project tests/NaxUpdater.Core.SmokeTests/NaxUpdater.Core.SmokeTests.csproj
 dotnet publish src/NaxUpdater/NaxUpdater.csproj -c Release -r win-x64 --self-contained true -o artifacts/NaxUpdater-win-x64
-./scripts/package-release.ps1 -Version 0.15.20
+./scripts/package-release.ps1 -Version 0.15.21
 ```
 
 The desktop project uses .NET 11, WinUI 3, and the Windows App SDK. It is not an Electron or WebView application.

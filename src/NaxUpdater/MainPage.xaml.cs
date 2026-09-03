@@ -853,7 +853,7 @@ public sealed partial class MainPage : Page
         }
 
         var running = _updateExecutionService.FindRunningProcesses(row.Source);
-        if (running.Count > 0)
+        if (running.Count > 0 && row.Source.ExecutionPlan.Kind != UpdateExecutionKind.ApplicationOwnedUpdater)
         {
             SetUpdateBusy(true, LocalizationService.Format("ClosingApplications", row.Name));
             if (button is not null)
@@ -895,7 +895,7 @@ public sealed partial class MainPage : Page
             button.IsEnabled = false;
         }
         UpdateProgress.Visibility = Visibility.Visible;
-        UpdateProgress.IsIndeterminate = plan.Kind is UpdateExecutionKind.NativeCommand or UpdateExecutionKind.StorePackage;
+        UpdateProgress.IsIndeterminate = plan.Kind is UpdateExecutionKind.NativeCommand or UpdateExecutionKind.ApplicationOwnedUpdater or UpdateExecutionKind.StorePackage;
         UpdateProgress.Value = 0;
         try
         {

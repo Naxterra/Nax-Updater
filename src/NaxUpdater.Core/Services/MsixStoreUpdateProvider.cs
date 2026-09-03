@@ -106,7 +106,7 @@ public sealed class MsixStoreUpdateProvider : IUpdateProvider
             var updateAvailable = VersionOrder.Compare(manifest.BuildVersion, application.NormalizedVersion) > 0;
             var plan = updateAvailable
                 ? new UpdateExecutionPlan(
-                    UpdateExecutionKind.StorePackage,
+                    UpdateExecutionKind.ApplicationOwnedUpdater,
                     null,
                     null,
                     null,
@@ -127,7 +127,7 @@ public sealed class MsixStoreUpdateProvider : IUpdateProvider
                 updateAvailable ? manifest.BuildVersion : null,
                 updateAvailable ? UpdateStatus.Available : UpdateStatus.Current,
                 "openai-codex-store",
-                "OpenAI update manifest + Microsoft Store",
+                "OpenAI update manifest + ChatGPT updater",
                 "application-managed",
                 "Preserved by Microsoft Store/MSIX package",
                 "provider-selected",
