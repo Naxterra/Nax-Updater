@@ -120,4 +120,10 @@
   <data name="ProviderGogGalaxyNative"><value>GOG Galaxy native updater</value></data>
   <data name="ProviderGogGalaxyNativeNote"><value>GOG Galaxy staged this update in its vendor-verified update directory. NaxUpdater validates the signed GOG updater and then uses GOG's own update mechanism.</value></data>
   <data name="LanguageSourceGogGalaxy"><value>Preserved by GOG Galaxy's signed native updater</value></data>
+  <data name="ApplicationScanText"><value>Scan and check updates</value></data>
+  <data name="ApplicationFilterPlaceholder"><value>Filter name, publisher, version, provider, or path</value></data>
+  <data name="ApplicationDetectedSummary"><value>Detected</value></data>
+  <data name="ApplicationVersionsSummary"><value>Versions resolved</value></data>
+  <data name="ApplicationPathsSummary"><value>Paths resolved</value></data>
+  <data name="ApplicationGuardsSummary"><value>Provider guards</value></data>
 </root>

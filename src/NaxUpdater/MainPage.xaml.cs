@@ -715,14 +715,14 @@ public sealed partial class MainPage : Page
 
     private void ConfigureApplicationHeader()
     {
-        ScanButtonLabel.Text = LocalizationService.Get("ScanButtonText.Text");
-        FilterBox.PlaceholderText = LocalizationService.Get("FilterBox.PlaceholderText");
+        ScanButtonLabel.Text = LocalizationService.Get("ApplicationScanText");
+        FilterBox.PlaceholderText = LocalizationService.Get("ApplicationFilterPlaceholder");
         ShowSystemComponentsCheckBox.Visibility = Visibility.Visible;
         DriversButton.Visibility = Visibility.Visible;
-        DetectedSummaryLabel.Text = LocalizationService.Get("DetectedLabel.Text");
-        VersionSummaryLabel.Text = LocalizationService.Get("VersionsResolvedLabel.Text");
-        PathSummaryLabel.Text = LocalizationService.Get("PathsResolvedLabel.Text");
-        GuardSummaryLabel.Text = LocalizationService.Get("ProviderGuardsLabel.Text");
+        DetectedSummaryLabel.Text = LocalizationService.Get("ApplicationDetectedSummary");
+        VersionSummaryLabel.Text = LocalizationService.Get("ApplicationVersionsSummary");
+        PathSummaryLabel.Text = LocalizationService.Get("ApplicationPathsSummary");
+        GuardSummaryLabel.Text = LocalizationService.Get("ApplicationGuardsSummary");
         if (_snapshot is not null)
         {
             UpdateSummary(_snapshot);
