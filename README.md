@@ -33,6 +33,8 @@ The inventory engine:
 
 The current implementation includes:
 
+- background provider discovery and catalog access, per-provider deadlines, a catalog-refresh deadline, progress counts and a cancel action, so slow native or network checks cannot hold the WinUI thread;
+- explicit Store-publication status for ChatGPT when OpenAI announces a build that Microsoft's exact package/architecture catalog does not yet publish; the German and English details show both versions rather than suggesting a local configuration problem;
 - regression tests for version padding, semantic build metadata, numeric prerelease ordering, compact release dates, architecture/scope mismatches, release/asset version disagreement, GitHub rate-limit recovery, truthful coverage, and the full WinGet transaction through a simulated package-manager boundary;
 - version comparison without fixed-width integer parsing, so long build identifiers cannot overflow the check or post-install verifier;
 - restored WinGet fallback installation through the official Windows Package Manager API, with installed product-code correlation and retained catalog, version, and installer variant through preparation and application;
@@ -186,7 +188,7 @@ From this directory:
 dotnet build NaxUpdater.slnx
 dotnet run --project tests/NaxUpdater.Core.SmokeTests/NaxUpdater.Core.SmokeTests.csproj
 dotnet publish src/NaxUpdater/NaxUpdater.csproj -c Release -r win-x64 --self-contained true -o artifacts/NaxUpdater-win-x64
-./scripts/package-release.ps1 -Version 0.16.4
+./scripts/package-release.ps1 -Version 0.16.5
 ```
 
 The desktop project uses .NET 11, WinUI 3, and the Windows App SDK. It is not an Electron or WebView application.

@@ -149,4 +149,10 @@
   <data name="ChecksIncomplete"><value>Einige Updateprüfungen konnten nicht abgeschlossen werden</value></data>
   <data name="ProviderManagedUnchecked"><value>Updates werden durch {0} verwaltet. NaxUpdater hat den Anbieter erkannt, aber dessen verfügbare Version nicht geprüft.</value></data>
   <data name="ProviderDriverWorkspace"><value>Herstellertreiber</value></data>
+  <data name="CancelProviderCheck"><value>Updateprüfung abbrechen</value></data>
+  <data name="RefreshingProviderCatalogs"><value>Updatekataloge werden aktualisiert… Sie können die Prüfung abbrechen.</value></data>
+  <data name="ProviderCheckProgress"><value>{0}/{1} Einträge verarbeitet · {2}</value></data>
+  <data name="ProviderCheckCanceled"><value>Updateprüfung abgebrochen. Die erkannten Anwendungen bleiben verfügbar.</value></data>
+  <data name="StatusStorePublicationPending"><value>Store-Veröffentlichung ausstehend</value></data>
+  <data name="StorePublicationPendingMessage"><value>OpenAI kündigt {0} an. Microsoft Store veröffentlicht für dieses Paket derzeit {1}; installiert: {2}. Das neuere Paket ist im Store noch nicht verfügbar. Prüfen Sie nach der Veröffentlichung erneut.</value></data>
 </root>

@@ -172,10 +172,26 @@ public sealed class MsixStoreUpdateProvider : IUpdateProvider
                 : manifestNewer
                     ? manifest.BuildVersion
                     : null;
+            string? publishedVersion = null;
+            if (manifestNewer && plan is null && !storeProductMismatch)
+            {
+                try
+                {
+                    publishedVersion = await new MicrosoftStoreProductMetadataClient(_httpClient).GetLatestPackageVersionAsync(
+                        manifest.StoreProductId, packageFamily, PackageArchitecture(application),
+                        application.NormalizedVersion, cancellationToken);
+                }
+                catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
+                catch { /* Optional rollout evidence must not hide the publisher's announcement. */ }
+            }
+            var awaitingPublication = publishedVersion is not null &&
+                VersionOrder.Compare(publishedVersion, manifest.BuildVersion) < 0;
             var message = storeProductMismatch
-                ? $"Microsoft Store resolved product {storeAvailability.ProductId}, but OpenAI's signed release identity requires {manifest.StoreProductId}. Installation is blocked."
+                ? $"Microsoft Store resolved product {storeAvailability.ProductId}, but OpenAI's official release identity requires {manifest.StoreProductId}. Installation is blocked."
                 : plan is not null
                     ? $"Microsoft Store confirms that build {storeAvailability.AvailableVersion} is applicable to this exact ChatGPT package family."
+                    : awaitingPublication
+                        ? $"OpenAI announces {manifest.BuildVersion}, but Microsoft Store currently publishes {publishedVersion} for this package. The newer Store package has not been published yet."
                     : manifestNewer
                         ? "OpenAI reports a newer build, but Microsoft Store does not currently offer a version-bound update to this exact package family."
                         : status == UpdateStatus.Error
@@ -196,7 +212,9 @@ public sealed class MsixStoreUpdateProvider : IUpdateProvider
                 OpenAiUpdateManifestUri.ToString(),
                 message,
                 plan,
-                Applicability: applicability);
+                Applicability: applicability,
+                AvailabilityReason: awaitingPublication ? UpdateAvailabilityReason.AwaitingStorePublication : UpdateAvailabilityReason.None,
+                PublishedPackageVersion: publishedVersion);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
