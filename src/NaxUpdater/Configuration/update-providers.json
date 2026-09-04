@@ -39,6 +39,8 @@
       "expectedSigner": "Johannes Schindelin",
       "installerKind": "DownloadedExe",
       "installerArguments": [ "/VERYSILENT", "/NORESTART", "/NOCANCEL", "/SP-" ],
+      "currentUserInstallerArguments": [ "/VERYSILENT", "/NORESTART", "/NOCANCEL", "/SP-", "/CURRENTUSER" ],
+      "installDirectoryArgument": "/DIR=",
       "runningProcessNames": [],
       "requiresElevation": true
     },
@@ -63,10 +65,14 @@
       "repository": "Windscribe/Desktop-App",
       "assetNamePattern": "^Windscribe_(?<version>[0-9]+(?:\\.[0-9]+)+)_amd64\\.exe$",
       "architecture": "x64",
+      "alternateArchitectureAssets": {
+        "arm64": "^Windscribe_(?<version>[0-9]+(?:\\.[0-9]+)+)_arm64\\.exe$"
+      },
       "language": "neutral",
       "expectedSigner": "Windscribe Limited",
       "installerKind": "DownloadedExe",
       "installerArguments": [ "-silent", "-no-auto-start" ],
+      "installDirectoryArgument": "-dir",
       "runningProcessNames": [ "Windscribe" ],
       "requiresElevation": true
     }

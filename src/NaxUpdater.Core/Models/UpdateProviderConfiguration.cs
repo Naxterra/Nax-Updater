@@ -22,4 +22,7 @@ public sealed class GitHubUpdateRecipe
     public List<string> InstallerArguments { get; init; } = [];
     public List<string> RunningProcessNames { get; init; } = [];
     public bool RequiresElevation { get; init; }
+    public Dictionary<string, string> AlternateArchitectureAssets { get; init; } = new(StringComparer.OrdinalIgnoreCase);
+    public List<string>? CurrentUserInstallerArguments { get; init; }
+    public string? InstallDirectoryArgument { get; init; }
 }

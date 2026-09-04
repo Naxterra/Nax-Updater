@@ -30,15 +30,18 @@ public sealed class IvpnUpdateProvider : IUpdateProvider
 
     private readonly HttpClient _httpClient;
     private readonly string _publicKeyPem;
+    private readonly Func<string, CancellationToken, Task<string?>>? _cliReader;
 
     public IvpnUpdateProvider(HttpClient httpClient) : this(httpClient, OfficialPublicKey)
     {
     }
 
-    internal IvpnUpdateProvider(HttpClient httpClient, string publicKeyPem)
+    internal IvpnUpdateProvider(HttpClient httpClient, string publicKeyPem,
+        Func<string, CancellationToken, Task<string?>>? cliReader = null)
     {
         _httpClient = httpClient;
         _publicKeyPem = publicKeyPem;
+        _cliReader = cliReader;
     }
 
     public string Id => "ivpn-signed-manual-feed";
@@ -99,20 +102,30 @@ public sealed class IvpnUpdateProvider : IUpdateProvider
                 null);
         }
 
+        var uiExecutable = ResolveUiExecutable(application);
+        var architecture = NodeJsUpdateProvider.DetectArchitecture(uiExecutable);
+        if (architecture is not ("x64" or "arm64") || application.Scope != InstallScope.Machine)
+            return Result(application, release.Version, UpdateStatus.NewerReleaseKnown, releasePage,
+                "IVPN has a newer release, but the installed architecture or scope has no matching supported installer.",
+                null, UpdateApplicability.NotApplicable);
+        if (architecture == "arm64")
+        {
+            var uri = new Uri($"https://repo.ivpn.net/windows/bin/IVPN-Client-v{release.Version}-arm64.exe");
+            release = release with { DownloadUri = uri, SignatureUri = new Uri(uri.AbsoluteUri + ".sign.sha256.base64") };
+        }
         var hash = await ReadOfficialReleaseHashAsync(release, cancellationToken);
         if (hash is null)
         {
             return Result(
                 application,
                 release.Version,
-                UpdateStatus.NewerReleaseKnown,
+                UpdateStatus.Error,
                 releasePage,
-                "IVPN's signed manual feed reports a newer version, but its exact SHA-256 could not be reconciled with the official producer release; automatic installation is blocked.",
+                "IVPN's signed manual feed reports a newer version, but the official release hash could not be retrieved. Retry the source check.",
                 null,
-                UpdateApplicability.NotApplicable);
+                UpdateApplicability.Unknown);
         }
 
-        var uiExecutable = ResolveUiExecutable(application);
         if (uiExecutable is null)
         {
             return Result(
@@ -143,13 +156,14 @@ public sealed class IvpnUpdateProvider : IUpdateProvider
             UpdateStatus.Available,
             releasePage,
             "IVPN's signed manual feed, official release SHA-256, and Authenticode publisher are all required before installation.",
-            plan);
+            plan) with
+        { Architecture = architecture };
     }
 
     private async Task<byte[]> GetBytesAsync(Uri uri, CancellationToken cancellationToken)
     {
         using var request = new HttpRequestMessage(HttpMethod.Get, uri);
-        request.Headers.UserAgent.ParseAdd("NaxUpdater/0.16.3");
+        request.Headers.UserAgent.ParseAdd("NaxUpdater/0.16.4");
         using var response = await _httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
         response.EnsureSuccessStatusCode();
         return await response.Content.ReadAsByteArrayAsync(cancellationToken);
@@ -157,19 +171,13 @@ public sealed class IvpnUpdateProvider : IUpdateProvider
 
     private async Task<string?> ReadOfficialReleaseHashAsync(IvpnRelease release, CancellationToken cancellationToken)
     {
-        using var request = new HttpRequestMessage(
-            HttpMethod.Get,
-            $"https://api.github.com/repos/ivpn/desktop-app/releases/tags/v{Uri.EscapeDataString(release.Version)}");
-        request.Headers.UserAgent.ParseAdd("NaxUpdater/0.16.3");
-        request.Headers.Accept.ParseAdd("application/vnd.github+json");
         try
         {
-            using var response = await _httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
-            if (!response.IsSuccessStatusCode)
-            {
-                return null;
-            }
-            using var document = JsonDocument.Parse(await response.Content.ReadAsStreamAsync(cancellationToken));
+            var json = await GitHubApiClient.ReadAsync(_httpClient,
+                $"repos/ivpn/desktop-app/releases/tags/v{Uri.EscapeDataString(release.Version)}",
+                cancellationToken, _cliReader);
+            if (json is null) return null;
+            using var document = JsonDocument.Parse(json);
             var root = document.RootElement;
             if (root.GetProperty("draft").GetBoolean() || root.GetProperty("prerelease").GetBoolean() ||
                 !root.GetProperty("tag_name").GetString()!.Equals($"v{release.Version}", StringComparison.OrdinalIgnoreCase))
@@ -233,6 +241,9 @@ public sealed class IvpnUpdateProvider : IUpdateProvider
     {
         try
         {
+            if (application.PrimaryInstallPath is { } path && File.Exists(path) &&
+                Path.GetFileName(path).Equals("IVPN Client.exe", StringComparison.OrdinalIgnoreCase))
+                return Path.GetFullPath(path);
             var root = string.IsNullOrWhiteSpace(application.PrimaryInstallPath)
                 ? null
                 : Directory.Exists(application.PrimaryInstallPath)

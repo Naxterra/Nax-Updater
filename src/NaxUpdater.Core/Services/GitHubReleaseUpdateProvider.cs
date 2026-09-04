@@ -56,102 +56,141 @@ public sealed class GitHubReleaseUpdateProvider : IUpdateProvider
                     $"GitHub API returned {(int)response.StatusCode} {response.ReasonPhrase}.",
                     cancellationToken);
             }
-        using var document = JsonDocument.Parse(await response.Content.ReadAsStreamAsync(cancellationToken));
+            using var document = JsonDocument.Parse(await response.Content.ReadAsStreamAsync(cancellationToken));
 
-        var root = document.RootElement;
-        var tag = root.TryGetProperty("tag_name", out var tagValue) ? tagValue.GetString()?.TrimStart('v', 'V') : null;
-        var releasePage = root.TryGetProperty("html_url", out var htmlValue) ? htmlValue.GetString() : null;
-        if (string.IsNullOrWhiteSpace(tag) || !root.TryGetProperty("assets", out var assets))
-        {
-            return Error(application, "The GitHub release did not contain a version or assets.");
-        }
-
-        var assetPattern = new Regex(recipe.AssetNamePattern, RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
-        JsonElement? selectedAsset = null;
-        Match? selectedMatch = null;
-        foreach (var asset in assets.EnumerateArray())
-        {
-            var name = asset.TryGetProperty("name", out var nameValue) ? nameValue.GetString() : null;
-            if (string.IsNullOrWhiteSpace(name))
+            var root = document.RootElement;
+            if ((root.TryGetProperty("draft", out var draft) && draft.ValueKind == JsonValueKind.True) ||
+                (root.TryGetProperty("prerelease", out var prerelease) && prerelease.ValueKind == JsonValueKind.True))
+                return Error(application, "The release is not a published stable release.");
+            var tag = root.TryGetProperty("tag_name", out var tagValue) ? tagValue.GetString()?.TrimStart('v', 'V') : null;
+            var releasePage = root.TryGetProperty("html_url", out var htmlValue) ? htmlValue.GetString() : null;
+            if (string.IsNullOrWhiteSpace(tag) || !root.TryGetProperty("assets", out var assets))
             {
-                continue;
+                return Error(application, "The GitHub release did not contain a version or assets.");
             }
-            var match = assetPattern.Match(name);
-            if (match.Success)
-            {
-                selectedAsset = asset;
-                selectedMatch = match;
-                break;
-            }
-        }
-        if (selectedAsset is null || selectedMatch is null)
-        {
-            return Error(application, $"No release asset matched {recipe.AssetNamePattern}.", tag);
-        }
 
-        var latestVersion = selectedMatch.Groups["version"].Success
-            ? selectedMatch.Groups["version"].Value
-            : tag;
-        var assetName = selectedAsset.Value.GetProperty("name").GetString()!;
-        var downloadUrl = selectedAsset.Value.GetProperty("browser_download_url").GetString();
-        var digest = selectedAsset.Value.TryGetProperty("digest", out var digestValue) ? digestValue.GetString() : null;
-        var sha256 = digest?.StartsWith("sha256:", StringComparison.OrdinalIgnoreCase) == true ? digest[7..] : null;
-        var status = VersionOrder.Compare(latestVersion, application.NormalizedVersion) > 0
-            ? UpdateStatus.Available
-            : UpdateStatus.Current;
-        if (status == UpdateStatus.Available &&
-            (string.IsNullOrWhiteSpace(downloadUrl) || sha256?.Length != 64 || string.IsNullOrWhiteSpace(recipe.ExpectedSigner)))
-        {
+            var installedArchitecture = InstalledApplicationMetadata.Architecture(application);
+            var architectureSupported = string.Equals(installedArchitecture, recipe.Architecture, StringComparison.OrdinalIgnoreCase) ||
+                installedArchitecture is not null && recipe.AlternateArchitectureAssets.ContainsKey(installedArchitecture);
+            var pattern = installedArchitecture is not null && recipe.AlternateArchitectureAssets.TryGetValue(installedArchitecture, out var alternate)
+                ? alternate : recipe.AssetNamePattern;
+            var assetPattern = new Regex(pattern, RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+            JsonElement? selectedAsset = null;
+            Match? selectedMatch = null;
+            foreach (var asset in assets.EnumerateArray())
+            {
+                var name = asset.TryGetProperty("name", out var nameValue) ? nameValue.GetString() : null;
+                if (string.IsNullOrWhiteSpace(name))
+                {
+                    continue;
+                }
+                var match = assetPattern.Match(name);
+                if (match.Success)
+                {
+                    selectedAsset = asset;
+                    selectedMatch = match;
+                    break;
+                }
+            }
+            if (selectedAsset is null || selectedMatch is null)
+            {
+                return Error(application, $"No release asset matched {recipe.AssetNamePattern}.", tag);
+            }
+
+            var latestVersion = selectedMatch.Groups["version"].Success
+                ? selectedMatch.Groups["version"].Value
+                : tag;
+            var releaseVersion = recipe.Repository.Equals("git-for-windows/git", StringComparison.OrdinalIgnoreCase) &&
+                tag.EndsWith(".windows.1", StringComparison.OrdinalIgnoreCase) ? tag[..^10] : tag;
+            if (VersionOrder.Compare(latestVersion, releaseVersion) != 0)
+                return Error(application, "The release tag and installer version disagree; the installer was not approved.", tag, releasePage);
+            var assetName = selectedAsset.Value.GetProperty("name").GetString()!;
+            var downloadUrl = selectedAsset.Value.GetProperty("browser_download_url").GetString();
+            var digest = selectedAsset.Value.TryGetProperty("digest", out var digestValue) ? digestValue.GetString() : null;
+            var sha256 = digest?.StartsWith("sha256:", StringComparison.OrdinalIgnoreCase) == true ? digest[7..] : null;
+            var status = VersionOrder.Compare(latestVersion, application.NormalizedVersion) > 0
+                ? UpdateStatus.Available
+                : UpdateStatus.Current;
+            var scopeSupported = application.Scope == InstallScope.Machine && recipe.RequiresElevation ||
+                application.Scope == InstallScope.CurrentUser && (!recipe.RequiresElevation || recipe.CurrentUserInstallerArguments is not null);
+            if (status == UpdateStatus.Available &&
+                (!architectureSupported || !scopeSupported || string.IsNullOrWhiteSpace(application.NormalizedVersion)))
+            {
+                return new UpdateCheckResult(
+                    application.Identity, application.DisplayName, application.NormalizedVersion, latestVersion,
+                    UpdateStatus.NewerReleaseKnown, Id, $"Official GitHub release · {recipe.Repository}",
+                    recipe.Language, "Installer language", installedArchitecture ?? "unknown", "stable", releasePage,
+                    !architectureSupported ? "No producer installer matches the verified installed architecture." :
+                    !scopeSupported ? "No producer installer configuration preserves the installed user/machine scope." :
+                    "The installed version must be resolved before updating.",
+                    null, Applicability: UpdateApplicability.NotApplicable);
+            }
+            if (status == UpdateStatus.Available &&
+                (string.IsNullOrWhiteSpace(downloadUrl) || sha256?.Length != 64 || string.IsNullOrWhiteSpace(recipe.ExpectedSigner)))
+            {
+                return new UpdateCheckResult(
+                    application.Identity,
+                    application.DisplayName,
+                    application.NormalizedVersion,
+                    latestVersion,
+                    UpdateStatus.NewerReleaseKnown,
+                    Id,
+                    $"Official GitHub release · {recipe.Repository}",
+                    recipe.Language,
+                    recipe.Language.Equals("neutral", StringComparison.OrdinalIgnoreCase)
+                        ? "Vendor multi-language installer"
+                        : "Recipe-pinned installer language",
+                    recipe.Architecture,
+                    "stable",
+                    releasePage,
+                    "A newer producer release is verified, but automatic installation is blocked until the release has a complete asset digest, download URL, and Authenticode signer policy.",
+                    null,
+                    Applicability: UpdateApplicability.NotApplicable);
+            }
+
+            var arguments = application.Scope == InstallScope.CurrentUser && recipe.CurrentUserInstallerArguments is not null
+                ? recipe.CurrentUserInstallerArguments.ToList() : recipe.InstallerArguments.ToList();
+            var installDirectory = InstalledApplicationMetadata.InstallDirectory(application);
+            if (recipe.InstallDirectoryArgument is not null && installDirectory is not null)
+            {
+                if (recipe.InstallDirectoryArgument.EndsWith('='))
+                    arguments.Add(recipe.InstallDirectoryArgument + installDirectory);
+                else
+                {
+                    arguments.Add(recipe.InstallDirectoryArgument);
+                    arguments.Add(installDirectory);
+                }
+            }
+            var plan = status == UpdateStatus.Available
+                ? new UpdateExecutionPlan(
+                    recipe.InstallerKind,
+                    new Uri(downloadUrl!),
+                    assetName,
+                    sha256,
+                    recipe.ExpectedSigner,
+                    null,
+                    arguments,
+                    application.Scope == InstallScope.Machine && recipe.RequiresElevation,
+                    ["github.com", "objects.githubusercontent.com", "release-assets.githubusercontent.com", "github-releases.githubusercontent.com"],
+                    recipe.RunningProcessNames.ToArray())
+                : null;
             return new UpdateCheckResult(
                 application.Identity,
                 application.DisplayName,
                 application.NormalizedVersion,
                 latestVersion,
-                UpdateStatus.NewerReleaseKnown,
+                status,
                 Id,
                 $"Official GitHub release · {recipe.Repository}",
                 recipe.Language,
                 recipe.Language.Equals("neutral", StringComparison.OrdinalIgnoreCase)
                     ? "Vendor multi-language installer"
                     : "Recipe-pinned installer language",
-                recipe.Architecture,
+                installedArchitecture ?? recipe.Architecture,
                 "stable",
                 releasePage,
-                "A newer producer release is verified, but automatic installation is blocked until the release has a complete asset digest, download URL, and Authenticode signer policy.",
-                null,
-                Applicability: UpdateApplicability.NotApplicable);
-        }
-
-        var plan = status == UpdateStatus.Available
-            ? new UpdateExecutionPlan(
-                recipe.InstallerKind,
-                new Uri(downloadUrl!),
-                assetName,
-                sha256,
-                recipe.ExpectedSigner,
-                null,
-                recipe.InstallerArguments.ToArray(),
-                recipe.RequiresElevation,
-                ["github.com", "objects.githubusercontent.com", "release-assets.githubusercontent.com", "github-releases.githubusercontent.com"],
-                recipe.RunningProcessNames.ToArray())
-            : null;
-        return new UpdateCheckResult(
-            application.Identity,
-            application.DisplayName,
-            application.NormalizedVersion,
-            latestVersion,
-            status,
-            Id,
-            $"Official GitHub release · {recipe.Repository}",
-            recipe.Language,
-            recipe.Language.Equals("neutral", StringComparison.OrdinalIgnoreCase)
-                ? "Vendor multi-language installer"
-                : "Recipe-pinned installer language",
-            recipe.Architecture,
-            "stable",
-            releasePage,
-            "The GitHub asset SHA-256 and Windows publisher signature are required before installation.",
-            plan);
+                "The GitHub asset SHA-256 and Windows publisher signature are required before installation.",
+                plan);
         }
     }
 
@@ -164,7 +203,7 @@ public sealed class GitHubReleaseUpdateProvider : IUpdateProvider
             using var request = new HttpRequestMessage(
                 HttpMethod.Get,
                 $"https://api.github.com/repos/{recipe.Repository}/releases/latest");
-            request.Headers.UserAgent.ParseAdd("NaxUpdater/0.16.3");
+            request.Headers.UserAgent.ParseAdd("NaxUpdater/0.16.4");
             request.Headers.Accept.ParseAdd("application/vnd.github+json");
             try
             {
@@ -199,46 +238,8 @@ public sealed class GitHubReleaseUpdateProvider : IUpdateProvider
         return response ?? throw new HttpRequestException("GitHub returned no response.");
     }
 
-    private async Task<string?> ReadReleaseThroughGitHubCliAsync(CancellationToken cancellationToken)
-    {
-        var executable = FindGitHubCli();
-        if (executable is null)
-        {
-            return null;
-        }
-        try
-        {
-            var result = await new ProcessQueryRunner().RunAsync(
-                executable,
-                ["api", "--header", "Accept: application/vnd.github+json", $"repos/{recipe.Repository}/releases/latest"],
-                TimeSpan.FromSeconds(20),
-                cancellationToken);
-            return result.ExitCode == 0 && !string.IsNullOrWhiteSpace(result.StandardOutput)
-                ? result.StandardOutput
-                : null;
-        }
-        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
-        {
-            throw;
-        }
-        catch
-        {
-            return null;
-        }
-    }
-
-    private static string? FindGitHubCli()
-    {
-        var candidates = new List<string>
-        {
-            Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "GitHub CLI", "gh.exe"),
-            Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Programs", "GitHub CLI", "gh.exe")
-        };
-        candidates.AddRange((Environment.GetEnvironmentVariable("PATH") ?? string.Empty)
-            .Split(Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
-            .Select(directory => Path.Combine(directory, "gh.exe")));
-        return candidates.FirstOrDefault(File.Exists);
-    }
+    private Task<string?> ReadReleaseThroughGitHubCliAsync(CancellationToken cancellationToken) =>
+        GitHubApiClient.ReadUsingCliAsync($"repos/{recipe.Repository}/releases/latest", cancellationToken);
 
     private async Task<UpdateCheckResult> CheckLatestTagFallbackAsync(
         InstalledApplication application,
@@ -248,7 +249,7 @@ public sealed class GitHubReleaseUpdateProvider : IUpdateProvider
         using var request = new HttpRequestMessage(
             HttpMethod.Get,
             $"https://github.com/{recipe.Repository}/releases/latest");
-        request.Headers.UserAgent.ParseAdd("NaxUpdater/0.16.3");
+        request.Headers.UserAgent.ParseAdd("NaxUpdater/0.16.4");
         using var response = await httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
         var finalUri = response.RequestMessage?.RequestUri;
         var match = finalUri is null

@@ -249,6 +249,9 @@ public sealed class UpdateCheckService
                 Applicability = applicability,
                 CorrelationKey = UpdateCorrelation.ForApplication(application)
             };
+            if (boundResult.Status == UpdateStatus.Current && boundResult.AvailableVersion is not null &&
+                VersionOrder.Compare(boundResult.AvailableVersion, boundResult.InstalledVersion) < 0)
+                boundResult = boundResult with { AvailableVersion = null };
             if (boundResult.ExecutionPlan is not null && boundResult.Status != UpdateStatus.Available)
             {
                 return ProviderContractError(

@@ -6,95 +6,127 @@ public static partial class VersionOrder
 {
     public static int Compare(string? left, string? right)
     {
-        if (string.Equals(left?.Trim(), right?.Trim(), StringComparison.OrdinalIgnoreCase))
-        {
-            return 0;
-        }
-        if (string.IsNullOrWhiteSpace(left))
-        {
-            return -1;
-        }
-        if (string.IsNullOrWhiteSpace(right))
-        {
-            return 1;
-        }
+        left = Clean(left);
+        right = Clean(right);
+        if (string.Equals(left, right, StringComparison.OrdinalIgnoreCase)) return 0;
+        if (left.Length == 0) return -1;
+        if (right.Length == 0) return 1;
 
-        if (TryParseCompactReleaseDate(left, out var leftDate) &&
-            TryParseCompactReleaseDate(right, out var rightDate) &&
-            leftDate == rightDate)
-        {
-            return 0;
-        }
+        if (TryReleaseDate(left, out var leftDate) && TryReleaseDate(right, out var rightDate))
+            return leftDate.CompareTo(rightDate);
 
-        var leftCore = PrereleaseRegex().Replace(left, string.Empty);
-        var rightCore = PrereleaseRegex().Replace(right, string.Empty);
-        var leftParts = NumericPartRegex().Matches(leftCore).Select(static match => long.Parse(match.Value)).ToArray();
-        var rightParts = NumericPartRegex().Matches(rightCore).Select(static match => long.Parse(match.Value)).ToArray();
-        var count = Math.Max(leftParts.Length, rightParts.Length);
+        var leftVersion = Parse(left);
+        var rightVersion = Parse(right);
+        if (leftVersion is null || rightVersion is null)
+            return string.Compare(left, right, StringComparison.OrdinalIgnoreCase);
+
+        var coreOrder = CompareParts(leftVersion.Value.Core, rightVersion.Value.Core);
+        if (coreOrder != 0) return coreOrder;
+        var leftPre = leftVersion.Value.Prerelease;
+        var rightPre = rightVersion.Value.Prerelease;
+        if (leftPre is null && rightPre is null) return 0;
+        if (leftPre is null) return 1;
+        if (rightPre is null) return -1;
+
+        var stageOrder = Stage(leftPre).CompareTo(Stage(rightPre));
+        if (stageOrder != 0) return stageOrder;
+        return CompareParts(Tokens(leftPre), Tokens(rightPre), prerelease: true);
+    }
+
+    private static string Clean(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value)) return string.Empty;
+        var result = value.Trim().Split('+', 2)[0];
+        result = Regex.Replace(result, @"^(?:version\s+|v(?=\d))", "",
+            RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+        // Git for Windows tags and Windows file versions use these equivalent forms.
+        return Regex.Replace(result, @"\.windows\.", ".", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+    }
+
+    private static (string[] Core, string? Prerelease)? Parse(string value)
+    {
+        var match = CoreRegex().Match(value);
+        if (!match.Success) return null;
+        var core = match.Groups["core"].Value.Split(['.', ','], StringSplitOptions.TrimEntries).ToList();
+        var suffix = match.Groups["suffix"].Value.Trim().TrimStart('-', '.');
+        if (suffix.Length == 0 || suffix.Equals("esr", StringComparison.OrdinalIgnoreCase) ||
+            suffix.StartsWith("build", StringComparison.OrdinalIgnoreCase))
+            return (core.ToArray(), null);
+        // Some native updaters publish a fourth numeric build using a dash.
+        if (suffix.All(char.IsAsciiDigit))
+        {
+            core.Add(suffix);
+            return (core.ToArray(), null);
+        }
+        return (core.ToArray(), suffix);
+    }
+
+    private static int CompareParts(string[] left, string[] right, bool prerelease = false)
+    {
+        var count = Math.Max(left.Length, right.Length);
         for (var index = 0; index < count; index++)
         {
-            var leftPart = index < leftParts.Length ? leftParts[index] : 0;
-            var rightPart = index < rightParts.Length ? rightParts[index] : 0;
-            var comparison = leftPart.CompareTo(rightPart);
-            if (comparison != 0)
+            if (prerelease && (index >= left.Length || index >= right.Length))
+                return left.Length.CompareTo(right.Length);
+            var l = index < left.Length ? left[index] : "0";
+            var r = index < right.Length ? right[index] : "0";
+            var lNumeric = l.All(char.IsAsciiDigit);
+            var rNumeric = r.All(char.IsAsciiDigit);
+            int comparison;
+            if (lNumeric && rNumeric)
             {
-                return comparison;
+                // Compare digit strings without parsing into a fixed-width integer.
+                l = l.TrimStart('0');
+                r = r.TrimStart('0');
+                comparison = l.Length.CompareTo(r.Length);
+                if (comparison == 0) comparison = string.CompareOrdinal(l, r);
             }
+            else if (prerelease && lNumeric != rNumeric)
+                comparison = lNumeric ? -1 : 1;
+            else
+                comparison = string.Compare(l, r, StringComparison.OrdinalIgnoreCase);
+            if (comparison != 0) return comparison;
         }
-
-        var leftIsPrerelease = IsPrerelease(left);
-        var rightIsPrerelease = IsPrerelease(right);
-        if (leftIsPrerelease != rightIsPrerelease)
-        {
-            return leftIsPrerelease ? -1 : 1;
-        }
-        return string.Compare(left, right, StringComparison.OrdinalIgnoreCase);
+        return 0;
     }
 
-    private static bool IsPrerelease(string value) => PrereleaseRegex().IsMatch(value) &&
-                                                       !value.Contains("esr", StringComparison.OrdinalIgnoreCase);
+    private static string[] Tokens(string suffix) =>
+        TokenRegex().Matches(suffix).Select(static match => match.Value).ToArray();
 
-    private static bool TryParseCompactReleaseDate(string value, out int releaseDate)
+    private static int Stage(string suffix)
     {
-        var compact = CompactReleaseDateRegex().Match(value.Trim());
-        if (compact.Success)
+        var token = Tokens(suffix).FirstOrDefault()?.ToLowerInvariant();
+        return token switch
         {
-            releaseDate = int.Parse(compact.Groups[1].Value);
-            return IsValidReleaseDate(releaseDate);
-        }
-
-        var dotted = DottedReleaseDateRegex().Match(value.Trim());
-        if (dotted.Success)
-        {
-            releaseDate = int.Parse(dotted.Groups[1].Value) * 10_000 +
-                          int.Parse(dotted.Groups[2].Value) * 100 +
-                          int.Parse(dotted.Groups[3].Value);
-            return IsValidReleaseDate(releaseDate);
-        }
-
-        releaseDate = 0;
-        return false;
+            "dev" or "nightly" => 0,
+            "a" or "alpha" => 1,
+            "b" or "beta" => 2,
+            "pre" or "preview" => 3,
+            "rc" => 4,
+            _ => 3
+        };
     }
 
-    private static bool IsValidReleaseDate(int releaseDate)
+    private static bool TryReleaseDate(string value, out DateOnly date)
     {
-        var year = releaseDate / 10_000;
-        var month = releaseDate / 100 % 100;
-        var day = releaseDate % 100;
-        return year is >= 0 and <= 99 &&
-               month is >= 1 and <= 12 &&
-               day is >= 1 and <= 31;
+        var compact = CompactReleaseDateRegex().Match(value);
+        var dotted = DottedReleaseDateRegex().Match(value);
+        string digits;
+        if (compact.Success) digits = compact.Groups[1].Value;
+        else if (dotted.Success)
+            digits = dotted.Groups[1].Value + dotted.Groups[2].Value + dotted.Groups[3].Value;
+        else { date = default; return false; }
+        return DateOnly.TryParseExact("20" + digits, "yyyyMMdd",
+            System.Globalization.CultureInfo.InvariantCulture,
+            System.Globalization.DateTimeStyles.None, out date);
     }
 
-    [GeneratedRegex(@"\d+", RegexOptions.CultureInvariant)]
-    private static partial Regex NumericPartRegex();
-
-    [GeneratedRegex(@"(?:alpha|beta|rc|a|b)\d*", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
-    private static partial Regex PrereleaseRegex();
-
-    [GeneratedRegex(@"^(\d{6})$")]
+    [GeneratedRegex(@"^(?<core>\d+(?:[.,]\s*\d+)*)(?<suffix>.*)$", RegexOptions.CultureInvariant)]
+    private static partial Regex CoreRegex();
+    [GeneratedRegex(@"\d+|[A-Za-z]+", RegexOptions.CultureInvariant)]
+    private static partial Regex TokenRegex();
+    [GeneratedRegex(@"^(\d{6})$", RegexOptions.CultureInvariant)]
     private static partial Regex CompactReleaseDateRegex();
-
-    [GeneratedRegex(@"^(\d{2})\.(\d{2})\.(\d{2})(?:\.0)?$")]
+    [GeneratedRegex(@"^(\d{2})\.(\d{2})\.(\d{2})(?:\.0)?$", RegexOptions.CultureInvariant)]
     private static partial Regex DottedReleaseDateRegex();
 }
