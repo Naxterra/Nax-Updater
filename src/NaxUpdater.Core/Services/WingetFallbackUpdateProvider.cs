@@ -13,6 +13,11 @@ public sealed partial class WingetFallbackUpdateProvider(HttpClient httpClient, 
     private readonly ConcurrentDictionary<string, CatalogIdentity> _identities = new(StringComparer.Ordinal);
 
     public string Id => "winget-fallback";
+    public UpdateProviderDescriptor Descriptor { get; } = new(
+        UpdateProviderAuthority.FallbackCatalog,
+        50,
+        "Fallback catalog used only when no installed or producer-owned source claims the application",
+        [ManagementMode.Unmanaged, ManagementMode.Registry, ManagementMode.WindowsInstaller, ManagementMode.DirectVendor]);
 
     public bool CanHandle(InstalledApplication application) => GetIdentity(application) is not null;
 
@@ -61,6 +66,17 @@ public sealed partial class WingetFallbackUpdateProvider(HttpClient httpClient, 
         }
 
         var signer = ResolveInstalledSigner(application, identity);
+        if (string.IsNullOrWhiteSpace(signer))
+        {
+            return Result(
+                application,
+                identity,
+                availableVersion,
+                UpdateStatus.Available,
+                source,
+                "A newer exact catalog version exists, but no trusted installed publisher could be bound to the downloaded installer. Automatic installation is blocked.",
+                null);
+        }
 
         var plan = new UpdateExecutionPlan(
             installer.Kind,
@@ -76,7 +92,7 @@ public sealed partial class WingetFallbackUpdateProvider(HttpClient httpClient, 
                 ? []
                 : RunningProcesses(application),
             null,
-            !string.IsNullOrWhiteSpace(signer),
+            true,
             true,
             NestedInstallerRelativePath: installer.NestedInstallerRelativePath);
         return Result(
@@ -352,7 +368,7 @@ public sealed partial class WingetFallbackUpdateProvider(HttpClient httpClient, 
         var path = string.Join('/', segments);
         var uri = $"https://raw.githubusercontent.com/microsoft/winget-pkgs/master/manifests/{char.ToLowerInvariant(identity.Id[0])}/{path}/{Uri.EscapeDataString(identity.LatestVersion)}/{Uri.EscapeDataString(identity.Id)}.installer.yaml";
         using var request = new HttpRequestMessage(HttpMethod.Get, uri);
-        request.Headers.UserAgent.ParseAdd("NaxUpdater/0.15.23");
+        request.Headers.UserAgent.ParseAdd("NaxUpdater/0.16.0");
         using var response = await httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
         if (!response.IsSuccessStatusCode)
         {
@@ -436,11 +452,12 @@ public sealed partial class WingetFallbackUpdateProvider(HttpClient httpClient, 
         return installers;
     }
 
-    private static CatalogInstaller? SelectInstaller(
+    internal static CatalogInstaller? SelectInstaller(
         IReadOnlyList<CatalogInstaller> installers,
         string architecture,
         string preferredLocale) =>
         installers
+            .Where(installer => LocaleCompatible(installer.Locale, preferredLocale))
             .OrderByDescending(installer =>
                 (installer.Architecture.Equals(architecture, StringComparison.OrdinalIgnoreCase) ? 100 :
                  installer.Architecture.Equals("neutral", StringComparison.OrdinalIgnoreCase) ? 10 : 0) +
@@ -448,6 +465,14 @@ public sealed partial class WingetFallbackUpdateProvider(HttpClient httpClient, 
             .FirstOrDefault(installer =>
                 installer.Architecture.Equals(architecture, StringComparison.OrdinalIgnoreCase) ||
                 installer.Architecture.Equals("neutral", StringComparison.OrdinalIgnoreCase));
+
+    private static bool LocaleCompatible(string? locale, string preferredLocale)
+    {
+        // The fallback catalog does not prove the language of the installed application.
+        // Only an installer explicitly declared neutral/multilingual is eligible.
+        return string.IsNullOrWhiteSpace(locale) ||
+               locale.Equals("neutral", StringComparison.OrdinalIgnoreCase);
+    }
 
     private static int LocaleScore(string? locale, string preferredLocale)
     {
@@ -650,7 +675,7 @@ public sealed partial class WingetFallbackUpdateProvider(HttpClient httpClient, 
     private static partial Regex ArchitectureSuffixRegex();
 
     private sealed record CatalogIdentity(string Id, string Name, string Moniker, string LatestVersion, string MatchKind);
-    private sealed record CatalogInstaller(
+    internal sealed record CatalogInstaller(
         string Architecture,
         string? Locale,
         UpdateExecutionKind Kind,

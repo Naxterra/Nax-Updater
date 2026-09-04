@@ -10,6 +10,11 @@ public sealed partial class ElectronBuilderUpdateProvider(HttpClient httpClient)
     private readonly ConcurrentDictionary<string, UpdateConfiguration> _configurations = new(StringComparer.Ordinal);
 
     public string Id => "installed-updater-metadata";
+    public UpdateProviderDescriptor Descriptor { get; } = new(
+        UpdateProviderAuthority.InstalledUpdateProtocol,
+        80,
+        "Updater metadata installed with the application",
+        [ManagementMode.Unmanaged, ManagementMode.Registry, ManagementMode.WindowsInstaller, ManagementMode.DirectVendor]);
 
     public bool CanHandle(InstalledApplication application) => GetConfiguration(application) is not null;
 

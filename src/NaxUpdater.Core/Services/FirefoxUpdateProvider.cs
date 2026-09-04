@@ -11,6 +11,11 @@ public sealed class FirefoxUpdateProvider(
     private const string ArchiveRoot = "https://archive.mozilla.org/pub/firefox/releases";
 
     public string Id => "mozilla-firefox";
+    public UpdateProviderDescriptor Descriptor { get; } = new(
+        UpdateProviderAuthority.ProducerRelease,
+        100,
+        "Exact Mozilla product, publisher, channel, language, and architecture match",
+        [ManagementMode.Unmanaged, ManagementMode.Registry, ManagementMode.WindowsInstaller, ManagementMode.DirectVendor]);
 
     public bool CanHandle(InstalledApplication application) =>
         application.DisplayName.StartsWith("Mozilla Firefox", StringComparison.OrdinalIgnoreCase) &&

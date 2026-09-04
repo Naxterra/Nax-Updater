@@ -1,4 +1,5 @@
 using NaxUpdater.Core.Models;
+using System.Diagnostics;
 using System.Text.Json;
 
 namespace NaxUpdater.Core.Services;
@@ -12,18 +13,28 @@ public sealed class MsixStoreUpdateProvider : IUpdateProvider
         "https://persistent.oaistatic.com/codex-app-prod/windows-store-update.json");
     private static readonly HttpClient SharedHttpClient = new() { Timeout = TimeSpan.FromSeconds(30) };
 
-    private readonly StorePackageDeploymentService _store;
+    private readonly IStorePackageDeploymentService _store;
     private readonly HttpClient _httpClient;
 
-    public MsixStoreUpdateProvider(HttpClient? httpClient = null)
+    public MsixStoreUpdateProvider(
+        HttpClient? httpClient = null,
+        IStorePackageDeploymentService? store = null)
     {
         _httpClient = httpClient ?? SharedHttpClient;
-        _store = new StorePackageDeploymentService(_httpClient);
+        _store = store ?? new StorePackageDeploymentService(_httpClient);
     }
 
     public string Id => "msix-store";
+    public UpdateProviderDescriptor Descriptor { get; } = new(
+        UpdateProviderAuthority.PlatformStore,
+        100,
+        "Exact installed MSIX package-family and Store product identity",
+        [ManagementMode.Msix]);
 
     public bool CanHandle(InstalledApplication application) => application.ManagementMode == ManagementMode.Msix;
+    public bool OwnsResultProviderId(string resultProviderId) =>
+        resultProviderId.Equals(Id, StringComparison.Ordinal) ||
+        resultProviderId.Equals("openai-codex-store", StringComparison.Ordinal);
 
     public async Task<UpdateCheckResult> CheckAsync(InstalledApplication application, CancellationToken cancellationToken)
     {
@@ -103,10 +114,29 @@ public sealed class MsixStoreUpdateProvider : IUpdateProvider
                 return null;
             }
 
-            var updateAvailable = VersionOrder.Compare(manifest.BuildVersion, application.NormalizedVersion) > 0;
-            var plan = updateAvailable
+            var manifestNewer = VersionOrder.Compare(manifest.BuildVersion, application.NormalizedVersion) > 0;
+            var storeAvailability = await _store.CheckForUpdateAsync(
+                packageFamily,
+                application.DisplayName,
+                application.Publisher,
+                application.NormalizedVersion,
+                PackageArchitecture(application),
+                cancellationToken);
+            var storeApplicable = storeAvailability is
+            {
+                IsResolved: true,
+                IsUpdateAvailable: true,
+                ProductId: not null
+            };
+            var storeProductMismatch = storeApplicable &&
+                                       !storeAvailability.ProductId!.Equals(manifest.StoreProductId, StringComparison.Ordinal);
+            var storeTargetNewer = storeApplicable &&
+                                   !string.IsNullOrWhiteSpace(storeAvailability.AvailableVersion) &&
+                                   VersionOrder.Compare(storeAvailability.AvailableVersion, application.NormalizedVersion) > 0;
+            var processBindings = ChatGptProcessBindings(application);
+            var plan = storeTargetNewer && !storeProductMismatch
                 ? new UpdateExecutionPlan(
-                    UpdateExecutionKind.ApplicationOwnedUpdater,
+                    UpdateExecutionKind.StorePackage,
                     null,
                     null,
                     null,
@@ -115,28 +145,58 @@ public sealed class MsixStoreUpdateProvider : IUpdateProvider
                     [],
                     false,
                     [],
-                    ["ChatGPT", "Codex"],
-                    StoreProductId: manifest.StoreProductId,
+                    processBindings.Names,
+                    StoreProductId: storeAvailability!.ProductId,
                     StorePackageFamilyName: packageFamily,
-                    StorePublisher: application.Publisher)
+                    StorePublisher: application.Publisher,
+                    RunningExecutablePaths: processBindings.Paths)
                 : null;
+            var status = storeProductMismatch
+                ? UpdateStatus.Error
+                : plan is not null
+                    ? UpdateStatus.Available
+                    : manifestNewer
+                        ? UpdateStatus.NewerReleaseKnown
+                        : storeApplicable && string.IsNullOrWhiteSpace(storeAvailability.AvailableVersion)
+                            ? UpdateStatus.Error
+                            : UpdateStatus.Current;
+            var applicability = plan is not null
+                ? UpdateApplicability.Applicable
+                : status == UpdateStatus.Current
+                    ? UpdateApplicability.NotRequired
+                    : storeAvailability.IsResolved
+                        ? UpdateApplicability.NotApplicable
+                        : UpdateApplicability.Unknown;
+            var availableVersion = plan is not null
+                ? storeAvailability.AvailableVersion
+                : manifestNewer
+                    ? manifest.BuildVersion
+                    : null;
+            var message = storeProductMismatch
+                ? $"Microsoft Store resolved product {storeAvailability.ProductId}, but OpenAI's signed release identity requires {manifest.StoreProductId}. Installation is blocked."
+                : plan is not null
+                    ? $"Microsoft Store confirms that build {storeAvailability.AvailableVersion} is applicable to this exact ChatGPT package family."
+                    : manifestNewer
+                        ? "OpenAI reports a newer build, but Microsoft Store does not currently offer a version-bound update to this exact package family."
+                        : status == UpdateStatus.Error
+                            ? "Microsoft Store reports an applicable update but did not expose a target package version; installation is blocked."
+                            : "OpenAI's official manifest and Microsoft Store report that this package is current.";
             return new UpdateCheckResult(
                 application.Identity,
                 application.DisplayName,
                 application.NormalizedVersion,
-                updateAvailable ? manifest.BuildVersion : null,
-                updateAvailable ? UpdateStatus.Available : UpdateStatus.Current,
+                availableVersion,
+                status,
                 "openai-codex-store",
-                "OpenAI update manifest + ChatGPT updater",
+                "OpenAI update manifest + Microsoft Store",
                 "application-managed",
                 "Preserved by Microsoft Store/MSIX package",
                 "provider-selected",
                 "stable",
                 OpenAiUpdateManifestUri.ToString(),
-                updateAvailable
-                    ? "OpenAI's official Windows update manifest reports a newer package; the exact Microsoft Store product will be deployed."
-                    : "OpenAI's official Windows update manifest reports that the installed package is current.",
-                plan);
+                message,
+                plan,
+                Applicability: applicability);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -200,6 +260,87 @@ public sealed class MsixStoreUpdateProvider : IUpdateProvider
 
     private static string? PackageArchitecture(InstalledApplication application) =>
         application.Evidence.FirstOrDefault(static item => item.Label == "MSIX package architecture")?.Value;
+
+    private static (IReadOnlyList<string> Names, IReadOnlyList<string> Paths) ChatGptProcessBindings(
+        InstalledApplication application)
+    {
+        var names = new List<string>();
+        var paths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var codexRoot = Path.GetFullPath(Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+            "OpenAI",
+            "Codex",
+            "bin")).TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar;
+        AddPath("ChatGPT", application.PrimaryInstallPath, requireCodexRoot: false);
+        try
+        {
+            if (Directory.Exists(codexRoot))
+            {
+                foreach (var codexPath in Directory.EnumerateFiles(codexRoot, "codex.exe", SearchOption.AllDirectories).Take(32))
+                {
+                    AddPath("Codex", codexPath, requireCodexRoot: true);
+                }
+            }
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+        {
+            // Dynamic process enumeration below can still bind a currently running helper.
+        }
+        using var current = Process.GetCurrentProcess();
+        foreach (var processName in new[] { "ChatGPT", "Codex" })
+        {
+            foreach (var process in Process.GetProcessesByName(processName))
+            {
+                using (process)
+                {
+                    try
+                    {
+                        if (!process.HasExited && process.SessionId == current.SessionId)
+                        {
+                            AddPath(processName, process.MainModule?.FileName, requireCodexRoot: processName == "Codex");
+                        }
+                    }
+                    catch
+                    {
+                        // Inaccessible processes are not added to an automatic close plan.
+                    }
+                }
+            }
+        }
+        return (names, paths.ToArray());
+
+        void AddPath(string processName, string? path, bool requireCodexRoot)
+        {
+            if (string.IsNullOrWhiteSpace(path) || !Path.GetExtension(path).Equals(".exe", StringComparison.OrdinalIgnoreCase))
+            {
+                return;
+            }
+            try
+            {
+                var fullPath = Path.GetFullPath(path);
+                if (!Path.GetFileNameWithoutExtension(fullPath).Equals(processName, StringComparison.OrdinalIgnoreCase))
+                {
+                    return;
+                }
+                if (requireCodexRoot)
+                {
+                    if (!fullPath.StartsWith(codexRoot, StringComparison.OrdinalIgnoreCase))
+                    {
+                        return;
+                    }
+                }
+                if (!names.Contains(processName, StringComparer.OrdinalIgnoreCase))
+                {
+                    names.Add(processName);
+                }
+                paths.Add(fullPath);
+            }
+            catch
+            {
+                // Invalid paths cannot participate in automatic process control.
+            }
+        }
+    }
 }
 
 internal sealed record OpenAiWindowsUpdateManifest(

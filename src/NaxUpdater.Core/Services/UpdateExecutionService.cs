@@ -2,17 +2,22 @@ using NaxUpdater.Core.Models;
 using System.ComponentModel;
 using System.Diagnostics;
 using System.IO.Compression;
+using System.Security.Cryptography;
+using System.Text;
 
 namespace NaxUpdater.Core.Services;
 
 public sealed class UpdateExecutionService
 {
-    private readonly StorePackageDeploymentService _storePackageDeploymentService = new();
+    private readonly IStorePackageDeploymentService _storePackageDeploymentService;
     private readonly IAuthenticodeVerifier _authenticodeVerifier;
 
-    public UpdateExecutionService(IAuthenticodeVerifier? authenticodeVerifier = null)
+    public UpdateExecutionService(
+        IAuthenticodeVerifier? authenticodeVerifier = null,
+        IStorePackageDeploymentService? storePackageDeploymentService = null)
     {
         _authenticodeVerifier = authenticodeVerifier ?? new NativeAuthenticodeVerifier();
+        _storePackageDeploymentService = storePackageDeploymentService ?? new StorePackageDeploymentService();
     }
 
     public IReadOnlyList<string> FindRunningProcesses(UpdateCheckResult update)
@@ -37,7 +42,11 @@ public sealed class UpdateExecutionService
                     {
                         try
                         {
-                            found |= !process.HasExited && process.Id != currentProcess.Id && process.SessionId == currentSession;
+                            if (!process.HasExited && process.Id != currentProcess.Id && process.SessionId == currentSession)
+                            {
+                                var matches = ProcessMatchesPlan(plan, process, out var identityKnown);
+                                found |= matches || !identityKnown;
+                            }
                         }
                         catch
                         {
@@ -93,7 +102,8 @@ public sealed class UpdateExecutionService
                     try
                     {
                         if (!process.HasExited && process.Id != updaterProcessId &&
-                            process.SessionId == currentSession && process.MainWindowHandle != IntPtr.Zero)
+                            process.SessionId == currentSession && process.MainWindowHandle != IntPtr.Zero &&
+                            ProcessMatchesPlan(plan, process, out _))
                         {
                             closeRequested |= process.CloseMainWindow();
                         }
@@ -120,7 +130,6 @@ public sealed class UpdateExecutionService
         }
 
         var forcedTerminationUsed = false;
-        var elevationRequiredPids = new List<int>();
         foreach (var processName in plan.RunningProcessNames.Distinct(StringComparer.OrdinalIgnoreCase))
         {
             Process[] processes;
@@ -138,7 +147,8 @@ public sealed class UpdateExecutionService
                 {
                     try
                     {
-                        if (!process.HasExited && process.Id != updaterProcessId && process.SessionId == currentSession)
+                        if (!process.HasExited && process.Id != updaterProcessId && process.SessionId == currentSession &&
+                            ProcessMatchesPlan(plan, process, out _))
                         {
                             process.Kill(entireProcessTree: true);
                             forcedTerminationUsed = true;
@@ -146,48 +156,10 @@ public sealed class UpdateExecutionService
                     }
                     catch (Exception exception) when (exception is Win32Exception or InvalidOperationException or NotSupportedException)
                     {
-                        try
-                        {
-                            if (!process.HasExited && process.Id != updaterProcessId && process.SessionId == currentSession)
-                            {
-                                elevationRequiredPids.Add(process.Id);
-                            }
-                        }
-                        catch
-                        {
-                            // The process exited between the termination attempt and the fallback check.
-                        }
+                        // Do not pass a stale PID across a UAC boundary. An inaccessible process
+                        // remains in the final verification result and blocks the update safely.
                     }
                 }
-            }
-        }
-
-        if (elevationRequiredPids.Count > 0)
-        {
-            forcedTerminationUsed = true;
-            var taskKill = new ProcessStartInfo(Path.Combine(Environment.SystemDirectory, "taskkill.exe"))
-            {
-                UseShellExecute = true,
-                Verb = "runas"
-            };
-            foreach (var pid in elevationRequiredPids.Distinct())
-            {
-                taskKill.ArgumentList.Add("/PID");
-                taskKill.ArgumentList.Add(pid.ToString(System.Globalization.CultureInfo.InvariantCulture));
-            }
-            taskKill.ArgumentList.Add("/T");
-            taskKill.ArgumentList.Add("/F");
-            try
-            {
-                using var elevatedKill = Process.Start(taskKill);
-                if (elevatedKill is not null)
-                {
-                    await elevatedKill.WaitForExitAsync(cancellationToken);
-                }
-            }
-            catch (Win32Exception exception) when (exception.NativeErrorCode == 1223)
-            {
-                return new ApplicationCloseResult(closeRequested, forcedTerminationUsed, FindRunningProcesses(update));
             }
         }
 
@@ -202,20 +174,30 @@ public sealed class UpdateExecutionService
         return new ApplicationCloseResult(closeRequested, forcedTerminationUsed, remaining);
     }
 
-    public async Task<UpdateExecutionResult> ExecuteAsync(
+    public async Task<PreparedUpdateExecution> PrepareAsync(
         UpdateCheckResult update,
         VerifiedInstaller? installer,
         CancellationToken cancellationToken = default)
     {
         var plan = update.ExecutionPlan ?? throw new InvalidOperationException("The update has no execution plan.");
-        if (plan.Kind == UpdateExecutionKind.ApplicationOwnedUpdater)
+        if (plan.Kind == UpdateExecutionKind.StorePackage)
         {
-            return await new ApplicationOwnedUpdateService().ExecuteAsync(update, cancellationToken);
-        }
-        var running = FindRunningProcesses(update);
-        if (running.Count > 0)
-        {
-            throw new ApplicationStillRunningException(running);
+            var availability = await _storePackageDeploymentService.CheckForUpdateAsync(
+                plan.StorePackageFamilyName ?? string.Empty,
+                update.DisplayName,
+                plan.StorePublisher,
+                update.InstalledVersion,
+                update.Architecture,
+                cancellationToken);
+            if (!availability.IsResolved ||
+                !availability.IsUpdateAvailable ||
+                !string.Equals(availability.ProductId, plan.StoreProductId, StringComparison.Ordinal) ||
+                !string.Equals(availability.AvailableVersion, update.AvailableVersion, StringComparison.OrdinalIgnoreCase))
+            {
+                throw new InvalidOperationException(
+                    availability.Error ?? "Microsoft Store no longer exposes the exact version-bound update prepared for this package family.");
+            }
+            return new PreparedUpdateExecution(installer, null, null, null, null);
         }
 
         if (plan.Kind == UpdateExecutionKind.NativeCommand)
@@ -226,85 +208,129 @@ public sealed class UpdateExecutionService
             }
             var nativeExecutable = plan.NativeExecutable;
             var nativeWorkingDirectory = plan.NativeWorkingDirectory;
-            string? nativeStagingDirectory = null;
+            var nativeLocks = AcquirePreparedContentLocks(nativeExecutable, null);
             try
             {
-                if (!string.IsNullOrWhiteSpace(plan.NativeStagingRoot))
+                if (plan.RequiresElevation)
                 {
-                    nativeStagingDirectory = Path.Combine(
-                        Path.GetTempPath(),
-                        "NaxUpdater",
-                        "Native",
-                        Guid.NewGuid().ToString("N"));
-                    var staged = StageNativeCommandFiles(plan, nativeStagingDirectory);
-                    nativeExecutable = staged.Executable;
-                    nativeWorkingDirectory = staged.WorkingDirectory;
-                    if (string.IsNullOrWhiteSpace(plan.ExpectedSigner))
-                    {
-                        throw new InvalidOperationException("The staged native updater has no signer policy.");
-                    }
-                    var signature = _authenticodeVerifier.Verify(nativeExecutable, plan.ExpectedSigner);
+                    var signature = _authenticodeVerifier.Verify(nativeExecutable, plan.ExpectedSigner!);
                     if (!signature.IsValid)
                     {
-                        throw new InvalidDataException(signature.Error ?? "The staged native updater signature is invalid.");
-                    }
-                    var stagedVersion = FileVersionInfo.GetVersionInfo(nativeExecutable).ProductVersion?.Trim();
-                    if (!string.Equals(stagedVersion, update.AvailableVersion, StringComparison.OrdinalIgnoreCase))
-                    {
-                        throw new InvalidDataException(
-                            $"The staged native updater version is {stagedVersion ?? "unknown"}; expected {update.AvailableVersion}.");
+                        throw new InvalidDataException(signature.Error ?? "The elevated native updater signature is invalid.");
                     }
                 }
-
-                if (plan.RequiresElevation || !string.IsNullOrWhiteSpace(nativeWorkingDirectory))
-                {
-                    var nativeStartInfo = new ProcessStartInfo(nativeExecutable)
-                    {
-                        UseShellExecute = true,
-                        WorkingDirectory = string.IsNullOrWhiteSpace(nativeWorkingDirectory)
-                            ? Path.GetDirectoryName(nativeExecutable) ?? string.Empty
-                            : nativeWorkingDirectory
-                    };
-                    if (plan.RequiresElevation)
-                    {
-                        nativeStartInfo.Verb = "runas";
-                    }
-                    foreach (var argument in plan.Arguments)
-                    {
-                        nativeStartInfo.ArgumentList.Add(argument);
-                    }
-                    try
-                    {
-                        using var process = Process.Start(nativeStartInfo) ?? throw new InvalidOperationException("The native update provider did not start.");
-                        await process.WaitForExitAsync(cancellationToken);
-                        return new UpdateExecutionResult(process.ExitCode, IsSuccessfulExitCode(process.ExitCode), null);
-                    }
-                    catch (Win32Exception exception) when (exception.NativeErrorCode == 1223)
-                    {
-                        return new UpdateExecutionResult(1223, false, "The Windows elevation prompt was cancelled.");
-                    }
-                }
-                var query = await new ProcessQueryRunner().RunAsync(
+                var nativeHash = await PreparedContentHashAsync(nativeExecutable, null, cancellationToken);
+                return new PreparedUpdateExecution(
+                    null,
                     nativeExecutable,
-                    plan.Arguments,
-                    TimeSpan.FromMinutes(20),
-                    cancellationToken);
-                return new UpdateExecutionResult(query.ExitCode, IsSuccessfulExitCode(query.ExitCode), query.StandardError.Trim());
+                    nativeWorkingDirectory,
+                    null,
+                    nativeHash,
+                    nativeLocks);
             }
-            finally
+            catch
             {
-                if (!string.IsNullOrWhiteSpace(nativeStagingDirectory) && Directory.Exists(nativeStagingDirectory))
+                DisposePreparedLocks(nativeLocks);
+                throw;
+            }
+        }
+
+        if (installer is null || !File.Exists(installer.Path))
+        {
+            throw new InvalidOperationException("The verified installer is missing.");
+        }
+
+        string? extractionDirectory = null;
+        var executableInstallerPath = installer.Path;
+        IReadOnlyList<PreparedContentLock>? contentLocks = null;
+        try
+        {
+            if (plan.Kind is UpdateExecutionKind.DownloadedZipMsi or UpdateExecutionKind.DownloadedZipDriver)
+            {
+                if (string.IsNullOrWhiteSpace(plan.NestedInstallerRelativePath))
                 {
-                    try
+                    throw new InvalidOperationException("The verified archive does not identify its nested installer.");
+                }
+                extractionDirectory = Path.Combine(Path.GetTempPath(), "NaxUpdater", Guid.NewGuid().ToString("N"));
+                Directory.CreateDirectory(extractionDirectory);
+                if (plan.Kind == UpdateExecutionKind.DownloadedZipDriver)
+                {
+                    var driverPayload = ExtractAndVerifyDriverPackage(
+                        installer.Path,
+                        plan.NestedInstallerRelativePath,
+                        extractionDirectory,
+                        plan.ExpectedHardwareId,
+                        update.AvailableVersion,
+                        plan.ExpectedSigners ?? []);
+                    executableInstallerPath = driverPayload.InfPath;
+                    contentLocks = driverPayload.ContentLocks;
+                }
+                else
+                {
+                    var nestedPayload = ExtractNestedInstaller(
+                        installer.Path,
+                        plan.NestedInstallerRelativePath,
+                        extractionDirectory);
+                    executableInstallerPath = nestedPayload.Path;
+                    contentLocks = nestedPayload.ContentLocks;
+                }
+                if (plan.Kind == UpdateExecutionKind.DownloadedZipMsi && plan.RequireAuthenticode)
+                {
+                    var signers = ExpectedSigners(plan);
+                    if (signers.Count == 0 || !signers.Any(signer =>
+                            _authenticodeVerifier.Verify(executableInstallerPath, signer).IsValid))
                     {
-                        Directory.Delete(nativeStagingDirectory, recursive: true);
-                    }
-                    catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
-                    {
-                        // The completed vendor update is more important than best-effort staging cleanup.
+                        throw new InvalidDataException("The nested MSI did not match an approved Authenticode publisher.");
                     }
                 }
             }
+            contentLocks ??= AcquirePreparedContentLocks(executableInstallerPath, extractionDirectory);
+            var contentHash = await PreparedContentHashAsync(
+                executableInstallerPath,
+                extractionDirectory,
+                cancellationToken);
+            return new PreparedUpdateExecution(
+                installer,
+                executableInstallerPath,
+                Path.GetDirectoryName(executableInstallerPath),
+                extractionDirectory,
+                contentHash,
+                contentLocks);
+        }
+        catch
+        {
+            DisposePreparedLocks(contentLocks);
+            CleanupPreparedDirectory(extractionDirectory);
+            throw;
+        }
+    }
+
+    public async Task<UpdateExecutionResult> ExecuteAsync(
+        UpdateCheckResult update,
+        VerifiedInstaller? installer,
+        CancellationToken cancellationToken = default)
+    {
+        var prepared = await PrepareAsync(update, installer, cancellationToken);
+        return await ExecutePreparedAsync(update, prepared, cancellationToken);
+    }
+
+    public void DiscardPrepared(PreparedUpdateExecution prepared)
+    {
+        prepared.Installer?.Dispose();
+        DisposePreparedLocks(prepared.ContentLocks);
+        CleanupPreparedDirectory(prepared.CleanupDirectory);
+    }
+
+    public async Task<UpdateExecutionResult> ExecutePreparedAsync(
+        UpdateCheckResult update,
+        PreparedUpdateExecution prepared,
+        CancellationToken cancellationToken = default)
+    {
+        var plan = update.ExecutionPlan ?? throw new InvalidOperationException("The update has no execution plan.");
+        var running = FindRunningProcesses(update);
+        if (running.Count > 0)
+        {
+            throw new ApplicationStillRunningException(running);
         }
 
         if (plan.Kind == UpdateExecutionKind.StorePackage)
@@ -329,41 +355,80 @@ public sealed class UpdateExecutionService
                 plan.StorePackageFamilyName,
                 update.DisplayName,
                 plan.StorePublisher,
+                update.AvailableVersion!,
                 cancellationToken);
         }
 
-        if (installer is null || !File.Exists(installer.Path))
+        if (string.IsNullOrWhiteSpace(prepared.ExecutablePath) || !File.Exists(prepared.ExecutablePath))
         {
-            throw new InvalidOperationException("The verified installer is missing.");
+            DiscardPrepared(prepared);
+            throw new InvalidOperationException("The prepared executable update payload is missing.");
+        }
+        if (prepared.ContentLocks is not { Count: > 0 })
+        {
+            DiscardPrepared(prepared);
+            throw new InvalidOperationException("The prepared update payload is not protected against replacement.");
+        }
+        string currentHash;
+        try
+        {
+            currentHash = await PreparedContentHashAsync(
+                prepared.ExecutablePath,
+                prepared.CleanupDirectory,
+                cancellationToken);
+        }
+        catch
+        {
+            DiscardPrepared(prepared);
+            throw;
+        }
+        if (!string.Equals(currentHash, prepared.ContentSha256, StringComparison.OrdinalIgnoreCase))
+        {
+            DiscardPrepared(prepared);
+            throw new InvalidDataException("The prepared update payload changed after verification.");
         }
 
-        string? extractionDirectory = null;
-        var executableInstallerPath = installer.Path;
-        if (plan.Kind is UpdateExecutionKind.DownloadedZipMsi or UpdateExecutionKind.DownloadedZipDriver)
+        if (plan.Kind == UpdateExecutionKind.NativeCommand)
         {
-            if (string.IsNullOrWhiteSpace(plan.NestedInstallerRelativePath))
+            try
             {
-                throw new InvalidOperationException("The verified archive does not identify its nested installer.");
+                if (plan.RequiresElevation || !string.IsNullOrWhiteSpace(prepared.WorkingDirectory))
+                {
+                    var nativeStartInfo = new ProcessStartInfo(prepared.ExecutablePath)
+                    {
+                        UseShellExecute = true,
+                        WorkingDirectory = string.IsNullOrWhiteSpace(prepared.WorkingDirectory)
+                            ? Path.GetDirectoryName(prepared.ExecutablePath) ?? string.Empty
+                            : prepared.WorkingDirectory
+                    };
+                    if (plan.RequiresElevation)
+                    {
+                        nativeStartInfo.Verb = "runas";
+                    }
+                    foreach (var argument in plan.Arguments)
+                    {
+                        nativeStartInfo.ArgumentList.Add(argument);
+                    }
+                    return await RunStartedProcessAsync(nativeStartInfo, cancellationToken);
+                }
+                var query = await new ProcessQueryRunner().RunAsync(
+                    prepared.ExecutablePath,
+                    plan.Arguments,
+                    TimeSpan.FromMinutes(20),
+                    cancellationToken);
+                return new UpdateExecutionResult(query.ExitCode, IsSuccessfulExitCode(query.ExitCode), query.StandardError.Trim());
             }
-            extractionDirectory = Path.Combine(Path.GetTempPath(), "NaxUpdater", Guid.NewGuid().ToString("N"));
-            Directory.CreateDirectory(extractionDirectory);
-            executableInstallerPath = plan.Kind == UpdateExecutionKind.DownloadedZipDriver
-                ? ExtractAndVerifyDriverPackage(
-                    installer.Path,
-                    plan.NestedInstallerRelativePath,
-                    extractionDirectory,
-                    plan.ExpectedHardwareId,
-                    update.AvailableVersion,
-                    plan.ExpectedSigners ?? [])
-                : ExtractNestedInstaller(
-                    installer.Path,
-                    plan.NestedInstallerRelativePath,
-                    extractionDirectory);
+            finally
+            {
+                prepared.Installer?.Dispose();
+                DisposePreparedLocks(prepared.ContentLocks);
+                CleanupPreparedDirectory(prepared.CleanupDirectory);
+            }
         }
 
         var startInfo = plan.Kind switch
         {
-            UpdateExecutionKind.DownloadedExe => new ProcessStartInfo(executableInstallerPath),
+            UpdateExecutionKind.DownloadedExe => new ProcessStartInfo(prepared.ExecutablePath),
             UpdateExecutionKind.DownloadedMsi or UpdateExecutionKind.DownloadedZipMsi =>
                 new ProcessStartInfo(Path.Combine(Environment.SystemDirectory, "msiexec.exe")),
             UpdateExecutionKind.DownloadedZipDriver =>
@@ -378,12 +443,12 @@ public sealed class UpdateExecutionService
         if (plan.Kind is UpdateExecutionKind.DownloadedMsi or UpdateExecutionKind.DownloadedZipMsi)
         {
             startInfo.ArgumentList.Add("/i");
-            startInfo.ArgumentList.Add(executableInstallerPath);
+            startInfo.ArgumentList.Add(prepared.ExecutablePath);
         }
         else if (plan.Kind == UpdateExecutionKind.DownloadedZipDriver)
         {
             startInfo.ArgumentList.Add("/add-driver");
-            startInfo.ArgumentList.Add(executableInstallerPath);
+            startInfo.ArgumentList.Add(prepared.ExecutablePath);
             startInfo.ArgumentList.Add("/install");
         }
         foreach (var argument in plan.Arguments)
@@ -393,106 +458,147 @@ public sealed class UpdateExecutionService
 
         try
         {
-            using var process = Process.Start(startInfo) ?? throw new InvalidOperationException("The installer did not start.");
-            await process.WaitForExitAsync(cancellationToken);
+            return await RunStartedProcessAsync(startInfo, cancellationToken);
+        }
+        finally
+        {
+            prepared.Installer?.Dispose();
+            DisposePreparedLocks(prepared.ContentLocks);
+            CleanupPreparedDirectory(prepared.CleanupDirectory);
+        }
+    }
+
+    private static async Task<UpdateExecutionResult> RunStartedProcessAsync(
+        ProcessStartInfo startInfo,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            using var process = Process.Start(startInfo) ?? throw new InvalidOperationException("The updater process did not start.");
+            try
+            {
+                await process.WaitForExitAsync(cancellationToken);
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                // Cancellation stops NaxUpdater from promising a result; it must not delete staged
+                // files out from under an installer that Windows has already started.
+                await process.WaitForExitAsync(CancellationToken.None);
+                throw;
+            }
             return new UpdateExecutionResult(process.ExitCode, IsSuccessfulExitCode(process.ExitCode), null);
         }
         catch (Win32Exception exception) when (exception.NativeErrorCode == 1223)
         {
             return new UpdateExecutionResult(1223, false, "The Windows elevation prompt was cancelled.");
         }
-        finally
+    }
+
+    private static IReadOnlyList<string> ExpectedSigners(UpdateExecutionPlan plan) =>
+        plan.ExpectedSigners is { Count: > 0 }
+            ? plan.ExpectedSigners.Where(static signer => !string.IsNullOrWhiteSpace(signer)).ToArray()
+            : string.IsNullOrWhiteSpace(plan.ExpectedSigner)
+                ? []
+                : [plan.ExpectedSigner];
+
+    private static async Task<string> PreparedContentHashAsync(
+        string executablePath,
+        string? contentRoot,
+        CancellationToken cancellationToken)
+    {
+        using var hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
+        var files = !string.IsNullOrWhiteSpace(contentRoot) && Directory.Exists(contentRoot)
+            ? Directory.GetFiles(contentRoot, "*", SearchOption.AllDirectories)
+                .Order(StringComparer.OrdinalIgnoreCase)
+                .ToArray()
+            : [executablePath];
+        foreach (var path in files)
         {
-            if (!string.IsNullOrWhiteSpace(extractionDirectory) && Directory.Exists(extractionDirectory))
+            cancellationToken.ThrowIfCancellationRequested();
+            var label = !string.IsNullOrWhiteSpace(contentRoot)
+                ? Path.GetRelativePath(contentRoot, path).Replace(Path.DirectorySeparatorChar, '/')
+                : Path.GetFileName(path);
+            hash.AppendData(Encoding.UTF8.GetBytes(label.ToUpperInvariant()));
+            await using var stream = new FileStream(
+                path,
+                FileMode.Open,
+                FileAccess.Read,
+                FileShare.Read,
+                128 * 1024,
+                FileOptions.Asynchronous | FileOptions.SequentialScan);
+            var buffer = new byte[128 * 1024];
+            while (true)
             {
-                try
+                var read = await stream.ReadAsync(buffer, cancellationToken);
+                if (read == 0)
                 {
-                    Directory.Delete(extractionDirectory, recursive: true);
+                    break;
                 }
-                catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
-                {
-                    // The verified installer result is more important than best-effort temporary cleanup.
-                }
+                hash.AppendData(buffer, 0, read);
             }
+        }
+        return Convert.ToHexString(hash.GetHashAndReset());
+    }
+
+    private static IReadOnlyList<PreparedContentLock> AcquirePreparedContentLocks(
+        string executablePath,
+        string? contentRoot)
+    {
+        var paths = !string.IsNullOrWhiteSpace(contentRoot) && Directory.Exists(contentRoot)
+            ? Directory.GetFiles(contentRoot, "*", SearchOption.AllDirectories)
+                .Order(StringComparer.OrdinalIgnoreCase)
+                .ToArray()
+            : [executablePath];
+        var locks = new List<PreparedContentLock>(paths.Length);
+        try
+        {
+            foreach (var path in paths)
+            {
+                locks.Add(new PreparedContentLock(
+                    path,
+                    new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read)));
+            }
+            return locks;
+        }
+        catch
+        {
+            DisposePreparedLocks(locks);
+            throw;
         }
     }
 
-    internal static NativeStagingResult StageNativeCommandFiles(
-        UpdateExecutionPlan plan,
+    private static void DisposePreparedLocks(IEnumerable<PreparedContentLock>? locks)
+    {
+        if (locks is null)
+        {
+            return;
+        }
+        foreach (var item in locks)
+        {
+            item.Dispose();
+        }
+    }
+
+    private static void CleanupPreparedDirectory(string? directory)
+    {
+        if (string.IsNullOrWhiteSpace(directory) || !Directory.Exists(directory))
+        {
+            return;
+        }
+        try
+        {
+            Directory.Delete(directory, recursive: true);
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+        {
+            // A completed update is more important than best-effort temporary cleanup.
+        }
+    }
+
+    internal static PreparedNestedPayload ExtractNestedInstaller(
+        string archivePath,
+        string relativePath,
         string destinationDirectory)
-    {
-        if (string.IsNullOrWhiteSpace(plan.NativeStagingRoot) ||
-            string.IsNullOrWhiteSpace(plan.NativeExecutable))
-        {
-            throw new InvalidOperationException("The native staging plan is incomplete.");
-        }
-        var sourceRoot = Path.GetFullPath(plan.NativeStagingRoot).TrimEnd(Path.DirectorySeparatorChar);
-        var sourceExecutable = Path.GetFullPath(plan.NativeExecutable);
-        var sourceWorkingDirectory = Path.GetFullPath(
-            string.IsNullOrWhiteSpace(plan.NativeWorkingDirectory)
-                ? Path.GetDirectoryName(sourceExecutable) ?? sourceRoot
-                : plan.NativeWorkingDirectory);
-        if (!IsWithinDirectory(sourceExecutable, sourceRoot) ||
-            !IsWithinDirectory(sourceWorkingDirectory, sourceRoot) ||
-            !Directory.Exists(sourceRoot) ||
-            !File.Exists(sourceExecutable))
-        {
-            throw new InvalidDataException("The native updater or working directory escapes its verified staging root.");
-        }
-
-        var destinationRoot = Path.GetFullPath(destinationDirectory).TrimEnd(Path.DirectorySeparatorChar);
-        Directory.CreateDirectory(destinationRoot);
-        CopyDirectoryTree(sourceRoot, destinationRoot, skipExistingFiles: false);
-        var stagedExecutable = Path.Combine(destinationRoot, Path.GetRelativePath(sourceRoot, sourceExecutable));
-        var stagedWorkingDirectory = Path.Combine(destinationRoot, Path.GetRelativePath(sourceRoot, sourceWorkingDirectory));
-        if (!string.IsNullOrWhiteSpace(plan.NativeDependencyRoot))
-        {
-            var dependencyRoot = Path.GetFullPath(plan.NativeDependencyRoot).TrimEnd(Path.DirectorySeparatorChar);
-            if (!Directory.Exists(dependencyRoot))
-            {
-                throw new InvalidDataException("The native updater dependency directory is missing.");
-            }
-            CopyDirectoryTree(dependencyRoot, stagedWorkingDirectory, skipExistingFiles: true);
-        }
-        if (!File.Exists(stagedExecutable) || !Directory.Exists(stagedWorkingDirectory))
-        {
-            throw new InvalidDataException("The staged native updater is incomplete after copying.");
-        }
-        return new NativeStagingResult(stagedExecutable, stagedWorkingDirectory, destinationRoot);
-    }
-
-    private static void CopyDirectoryTree(string sourceRoot, string destinationRoot, bool skipExistingFiles)
-    {
-        foreach (var directory in Directory.EnumerateDirectories(sourceRoot, "*", SearchOption.AllDirectories))
-        {
-            if ((File.GetAttributes(directory) & FileAttributes.ReparsePoint) != 0)
-            {
-                throw new InvalidDataException($"Native staging rejected reparse-point directory {directory}.");
-            }
-            var destination = Path.Combine(destinationRoot, Path.GetRelativePath(sourceRoot, directory));
-            Directory.CreateDirectory(destination);
-        }
-        foreach (var file in Directory.EnumerateFiles(sourceRoot, "*", SearchOption.AllDirectories))
-        {
-            if ((File.GetAttributes(file) & FileAttributes.ReparsePoint) != 0)
-            {
-                throw new InvalidDataException($"Native staging rejected reparse-point file {file}.");
-            }
-            var destination = Path.Combine(destinationRoot, Path.GetRelativePath(sourceRoot, file));
-            Directory.CreateDirectory(Path.GetDirectoryName(destination)!);
-            if (skipExistingFiles && File.Exists(destination))
-            {
-                continue;
-            }
-            File.Copy(file, destination, overwrite: false);
-        }
-    }
-
-    private static bool IsWithinDirectory(string path, string root) =>
-        path.Equals(root, StringComparison.OrdinalIgnoreCase) ||
-        path.StartsWith(root + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase);
-
-    internal static string ExtractNestedInstaller(string archivePath, string relativePath, string destinationDirectory)
     {
         var normalized = relativePath.Replace('\\', '/').TrimStart('/');
         if (normalized.Length == 0 || normalized.Split('/').Any(static part => part is "" or "." or ".."))
@@ -508,11 +614,11 @@ public sealed class UpdateExecutionService
             throw new InvalidDataException("The exact nested MSI was not found in the verified archive.");
         }
         var destinationPath = Path.Combine(destinationDirectory, Path.GetFileName(matches[0].Name));
-        matches[0].ExtractToFile(destinationPath, overwrite: false);
-        return destinationPath;
+        var contentLock = ExtractEntryLocked(matches[0], destinationPath);
+        return new PreparedNestedPayload(destinationPath, [contentLock]);
     }
 
-    internal string ExtractAndVerifyDriverPackage(
+    internal PreparedDriverPayload ExtractAndVerifyDriverPackage(
         string archivePath,
         string relativeInfPath,
         string destinationDirectory,
@@ -544,45 +650,78 @@ public sealed class UpdateExecutionService
             throw new InvalidDataException("The exact nested driver INF was not found in the verified archive.");
         }
 
-        foreach (var entry in directoryEntries)
+        var contentLocks = new List<PreparedContentLock>(directoryEntries.Length);
+        try
         {
-            var destinationPath = Path.Combine(destinationDirectory, Path.GetFileName(entry.Name));
-            entry.ExtractToFile(destinationPath, overwrite: false);
+            foreach (var entry in directoryEntries)
+            {
+                var destinationPath = Path.Combine(destinationDirectory, Path.GetFileName(entry.Name));
+                contentLocks.Add(ExtractEntryLocked(entry, destinationPath));
+            }
         }
-
+        catch
+        {
+            DisposePreparedLocks(contentLocks);
+            throw;
+        }
         var infPath = Path.Combine(destinationDirectory, infName);
-        var infText = File.ReadAllText(infPath);
-        if (!string.IsNullOrWhiteSpace(expectedHardwareId) &&
-            !infText.Contains(expectedHardwareId, StringComparison.OrdinalIgnoreCase))
+        try
         {
-            throw new InvalidDataException($"The verified driver INF does not support expected hardware ID {expectedHardwareId}.");
-        }
-        var driverVersion = ReadInfDriverVersion(infText);
-        if (string.IsNullOrWhiteSpace(expectedDriverVersion) ||
-            !driverVersion.Equals(expectedDriverVersion, StringComparison.OrdinalIgnoreCase))
-        {
-            throw new InvalidDataException($"The verified driver INF version is {driverVersion}; expected {expectedDriverVersion ?? "an explicit version"}.");
-        }
+            var infText = File.ReadAllText(infPath);
+            if (!string.IsNullOrWhiteSpace(expectedHardwareId) &&
+                !infText.Contains(expectedHardwareId, StringComparison.OrdinalIgnoreCase))
+            {
+                throw new InvalidDataException($"The verified driver INF does not support expected hardware ID {expectedHardwareId}.");
+            }
+            var driverVersion = ReadInfDriverVersion(infText);
+            if (string.IsNullOrWhiteSpace(expectedDriverVersion) ||
+                !driverVersion.Equals(expectedDriverVersion, StringComparison.OrdinalIgnoreCase))
+            {
+                throw new InvalidDataException($"The verified driver INF version is {driverVersion}; expected {expectedDriverVersion ?? "an explicit version"}.");
+            }
 
-        var catalogPath = Path.Combine(destinationDirectory, Path.GetFileNameWithoutExtension(infName) + ".cat");
-        if (!File.Exists(catalogPath) || expectedCatalogSigners.Count == 0)
-        {
-            throw new InvalidDataException("The verified driver archive does not provide a catalog signature policy.");
-        }
-        var signatureErrors = new List<string>();
-        foreach (var signer in expectedCatalogSigners)
-        {
-            var signature = _authenticodeVerifier.Verify(catalogPath, signer);
-            if (signature.IsValid)
+            var catalogPath = Path.Combine(destinationDirectory, Path.GetFileNameWithoutExtension(infName) + ".cat");
+            if (!File.Exists(catalogPath) || expectedCatalogSigners.Count == 0)
             {
-                return infPath;
+                throw new InvalidDataException("The verified driver archive does not provide a catalog signature policy.");
             }
-            if (!string.IsNullOrWhiteSpace(signature.Error))
+            var signatureErrors = new List<string>();
+            foreach (var signer in expectedCatalogSigners)
             {
-                signatureErrors.Add(signature.Error);
+                var signature = _authenticodeVerifier.Verify(catalogPath, signer);
+                if (signature.IsValid)
+                {
+                    return new PreparedDriverPayload(infPath, contentLocks);
+                }
+                if (!string.IsNullOrWhiteSpace(signature.Error))
+                {
+                    signatureErrors.Add(signature.Error);
+                }
             }
+            throw new InvalidDataException(string.Join(" | ", signatureErrors));
         }
-        throw new InvalidDataException(string.Join(" | ", signatureErrors));
+        catch
+        {
+            DisposePreparedLocks(contentLocks);
+            throw;
+        }
+    }
+
+    private static PreparedContentLock ExtractEntryLocked(ZipArchiveEntry entry, string destinationPath)
+    {
+        using (var output = new FileStream(
+                   destinationPath,
+                   FileMode.CreateNew,
+                   FileAccess.Write,
+                   FileShare.None))
+        {
+            using var input = entry.Open();
+            input.CopyTo(output);
+            output.Flush(flushToDisk: true);
+        }
+        return new PreparedContentLock(
+            destinationPath,
+            new FileStream(destinationPath, FileMode.Open, FileAccess.Read, FileShare.Read));
     }
 
     internal static string ReadInfDriverVersion(string infText)
@@ -604,18 +743,46 @@ public sealed class UpdateExecutionService
     }
 
     public static bool IsSuccessfulExitCode(int exitCode) => exitCode is 0 or 1641 or 3010;
-}
 
-internal sealed record NativeStagingResult(string Executable, string WorkingDirectory, string Root);
-
-public sealed record UpdateExecutionResult(int ExitCode, bool IsSuccess, string? Error);
-
-public sealed record ApplicationCloseResult(
-    bool CloseRequested,
-    bool ForcedTerminationUsed,
-    IReadOnlyList<string> RemainingProcessNames)
-{
-    public bool AllClosed => RemainingProcessNames.Count == 0;
+    private static bool ProcessMatchesPlan(
+        UpdateExecutionPlan plan,
+        Process process,
+        out bool identityKnown)
+    {
+        var allowedPaths = plan.RunningExecutablePaths;
+        if (allowedPaths is not { Count: > 0 })
+        {
+            identityKnown = true;
+            return true;
+        }
+        try
+        {
+            var processPath = process.MainModule?.FileName;
+            if (string.IsNullOrWhiteSpace(processPath))
+            {
+                identityKnown = false;
+                return false;
+            }
+            identityKnown = true;
+            var fullProcessPath = Path.GetFullPath(processPath);
+            return allowedPaths.Any(path =>
+            {
+                try
+                {
+                    return Path.GetFullPath(path).Equals(fullProcessPath, StringComparison.OrdinalIgnoreCase);
+                }
+                catch
+                {
+                    return false;
+                }
+            });
+        }
+        catch (Exception exception) when (exception is Win32Exception or InvalidOperationException or NotSupportedException)
+        {
+            identityKnown = false;
+            return false;
+        }
+    }
 }
 
 public sealed class ApplicationStillRunningException(IReadOnlyList<string> processNames)
@@ -623,3 +790,11 @@ public sealed class ApplicationStillRunningException(IReadOnlyList<string> proce
 {
     public IReadOnlyList<string> ProcessNames { get; } = processNames;
 }
+
+internal sealed record PreparedDriverPayload(
+    string InfPath,
+    IReadOnlyList<PreparedContentLock> ContentLocks);
+
+internal sealed record PreparedNestedPayload(
+    string Path,
+    IReadOnlyList<PreparedContentLock> ContentLocks);

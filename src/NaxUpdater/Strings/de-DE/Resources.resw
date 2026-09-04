@@ -45,8 +45,8 @@
   <data name="SecurityMicrosoftStoreIdentity"><value>Verifizierte Store-Katalogidentität · Bereitstellung durch Microsoft Store</value></data>
   <data name="ProviderMsixStoreAvailable"><value>Die exakte installierte Paketfamilie wurde dem Microsoft Store zugeordnet. Der Store meldet ein anwendbares Update, das NaxUpdater direkt übermittelt.</value></data>
   <data name="ProviderMsixStoreCurrent"><value>Die exakte installierte Paketfamilie wurde im Microsoft Store geprüft. Derzeit wird kein anwendbares Update gemeldet.</value></data>
-  <data name="ProviderOpenAiStore"><value>OpenAI-Updatemanifest + ChatGPT-Updater</value></data>
-  <data name="ProviderOpenAiStoreAvailable"><value>Das offizielle Windows-Manifest von OpenAI meldet diesen neueren Build. NaxUpdater ruft die anwendungseigene zugängliche Aktualisieren-Aktion von ChatGPT auf und wartet, bis das installierte OpenAI.Codex-Paket diese exakte Version erreicht.</value></data>
+  <data name="ProviderOpenAiStore"><value>OpenAI-Updatemanifest + Microsoft Store</value></data>
+  <data name="ProviderOpenAiStoreAvailable"><value>Microsoft Store bestätigt diese exakte Zielversion als anwendbar für die installierte OpenAI.Codex-Paketfamilie. NaxUpdater verwendet ausschließlich den nicht erzwungenen Store-Upgradeweg und verifiziert anschließend die installierte Paketversion.</value></data>
   <data name="ProviderOpenAiStoreCurrent"><value>Das offizielle Windows-Manifest von OpenAI meldet, dass dieses Paket aktuell ist.</value></data>
   <data name="ProviderWinRar"><value>Offizieller RARLAB-Download</value></data>
   <data name="ProviderWinRarAvailable"><value>RARLAB meldet eine neuere Version in der installierten WinRAR-Sprache. NaxUpdater hasht den originalen Herstellerdownload und verlangt vor der Installation die Signatur von win.rar GmbH.</value></data>
@@ -118,7 +118,7 @@
   <data name="StatusLabel"><value>Status</value></data>
   <data name="DriverDeviceLabel"><value>Gerät</value></data>
   <data name="ProviderGogGalaxyNative"><value>Anwendungseigener GOG-Galaxy-Updater</value></data>
-  <data name="ProviderGogGalaxyNativeNote"><value>GOG Galaxy hat dieses Update im herstellerverifizierten Updateordner bereitgestellt. NaxUpdater validiert den signierten GOG-Updater und verwendet anschließend den GOG-eigenen Updatemechanismus.</value></data>
+  <data name="ProviderGogGalaxyNativeNote"><value>GOG Galaxy hat einen signierten Updater bereitgestellt, aber für dessen benachbarte Laufzeitabhängigkeiten existiert kein herstellerauthentifiziertes Manifest. NaxUpdater meldet die neuere Version, erhöht diesen Abhängigkeitssatz jedoch nicht; aktualisieren Sie über GOG Galaxy selbst.</value></data>
   <data name="LanguageSourceGogGalaxy"><value>Wird durch den signierten GOG-Galaxy-Updater bewahrt</value></data>
   <data name="ApplicationScanText"><value>Scannen und Updates prüfen</value></data>
   <data name="ApplicationFilterPlaceholder"><value>Nach Name, Herausgeber, Version, Anbieter oder Pfad filtern</value></data>
@@ -126,4 +126,21 @@
   <data name="ApplicationVersionsSummary"><value>Versionen ermittelt</value></data>
   <data name="ApplicationPathsSummary"><value>Pfade ermittelt</value></data>
   <data name="ApplicationGuardsSummary"><value>Anbietersperren</value></data>
+  <data name="StatusNewerReleaseKnown"><value>Neuere Version bekannt · derzeit nicht anwendbar</value></data>
+  <data name="ProviderOpenAiReleaseKnown"><value>Das offizielle OpenAI-Manifest meldet eine neuere Version, aber Microsoft Store stellt für diese exakte Paketfamilie derzeit kein versionsgebundenes anwendbares Upgrade bereit. Es wird kein Update versucht.</value></data>
+  <data name="RevalidatingUpdate"><value>{0} und das Updateangebot werden erneut geprüft…</value></data>
+  <data name="ApplyingUpdate"><value>Das verifizierte Update für {0} wird angewendet…</value></data>
+  <data name="VerifyingUpdate"><value>Die installierte Version von {0} wird verifiziert…</value></data>
+  <data name="UpdateNoLongerApplicableTitle"><value>Das Updateangebot für {0} hat sich geändert</value></data>
+  <data name="UpdateTransactionFailed"><value>Die Updatetransaktion wurde nicht abgeschlossen.</value></data>
+  <data name="ReleasesKnownTitle"><value>{0} neuere Version(en) bekannt</value></data>
+  <data name="ReleasesKnownMessage"><value>Eine neuere Herstellerversion existiert, aber für diese Installation ist derzeit kein verifizierter Anwendbarkeitsweg verfügbar. NaxUpdater wird sie nicht anwenden.</value></data>
+  <data name="UpdateRestartRequiredTitle"><value>{0} erfordert einen Windows-Neustart</value></data>
+  <data name="RecoveredUpdateTitle"><value>Update für {0} nach Neustart verifiziert</value></data>
+  <data name="RecoveredUpdateMessage"><value>NaxUpdater hat eine unterbrochene oder neustartausstehende Transaktion gefunden und die zugesagte installierte Version unabhängig bestätigt.</value></data>
+  <data name="InterruptedUpdateTitle"><value>Update für {0} muss verifiziert werden</value></data>
+  <data name="InterruptedUpdateMessage"><value>NaxUpdater hat eine unterbrochene Transaktion gefunden, den installierten Zustand neu eingelesen und konnte das zugesagte Ziel nicht bestätigen. Vor einem erneuten Versuch ist eine neue Anwendbarkeitsprüfung erforderlich.</value></data>
+  <data name="TransactionClosingApplications"><value>{0} wird geschlossen; verbleibende pfadverifizierte Prozesse werden bei Bedarf zwangsweise beendet…</value></data>
+  <data name="TransactionCloseFailed"><value>Diese pfadverifizierten Anwendungsprozesse verbleiben nach normalem Schließen und erzwungener Beendigung. NaxUpdater erhöht keine veralteten Prozess-IDs; schließen Sie sie manuell und versuchen Sie es erneut:\n\n{0}</value></data>
+  <data name="ProviderReleaseKnownNotAutomatic"><value>Der Hersteller meldet eine neuere Version, aber dieser Ausführungsweg erfüllt derzeit nicht die Anforderungen von NaxUpdater an Anwendbarkeit, unveränderbares Staging, Sprache, Herausgeber und unabhängige Installationsprüfung. Es wird kein automatisches Update versucht.</value></data>
 </root>

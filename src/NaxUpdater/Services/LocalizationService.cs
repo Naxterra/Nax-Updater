@@ -55,20 +55,24 @@ public static partial class LocalizationService
             UpdateStatus.Current => Get("ProviderMsixStoreCurrent"),
             _ => Get("ProviderMsixStoreNote")
         };
-        if (update.ProviderId == "openai-codex-store") return update.Status == UpdateStatus.Available
-            ? Get("ProviderOpenAiStoreAvailable")
-            : Get("ProviderOpenAiStoreCurrent");
-        if (update.ProviderId == "installed-updater-metadata") return Get("ProviderInstalledMetadataNote");
+        if (update.ProviderId == "openai-codex-store") return update.Status switch
+        {
+            UpdateStatus.Available => Get("ProviderOpenAiStoreAvailable"),
+            UpdateStatus.NewerReleaseKnown => Get("ProviderOpenAiReleaseKnown"),
+            _ => Get("ProviderOpenAiStoreCurrent")
+        };
         if (update.ProviderId == "gog-galaxy-native") return Get("ProviderGogGalaxyNativeNote");
-        if (update.ProviderId == "rarlab-winrar") return update.Status == UpdateStatus.Available
-            ? Get("ProviderWinRarAvailable")
-            : Get("ProviderWinRarCurrent");
         if (update.ProviderId == "winget-fallback") return update.Status switch
         {
             UpdateStatus.Current => Get("ProviderWingetFallbackCurrent"),
             UpdateStatus.Available when update.ExecutionPlan is not null => Get("ProviderWingetFallbackVerified"),
             _ => Get("ProviderWingetFallbackBlocked")
         };
+        if (update.Status == UpdateStatus.NewerReleaseKnown) return Get("ProviderReleaseKnownNotAutomatic");
+        if (update.ProviderId == "installed-updater-metadata") return Get("ProviderInstalledMetadataNote");
+        if (update.ProviderId == "rarlab-winrar") return update.Status == UpdateStatus.Available
+            ? Get("ProviderWinRarAvailable")
+            : Get("ProviderWinRarCurrent");
         if (update.ProviderId.StartsWith("github:", StringComparison.Ordinal)) return Get("ProviderGitHubNote");
         if (update.ProviderId == "zero-install")
         {
@@ -182,13 +186,19 @@ public static partial class LocalizationService
         {
             return value switch
             {
-                "Zero Install native feed" => Get("PreferredZeroInstall"),
-                "Official Nextcloud GitHub release and signed MSI" => Get("PreferredNextcloud"),
+                "zero-install" or "Zero Install native feed" => Get("PreferredZeroInstall"),
+                "github:nextcloud-releases/desktop" or "Official Nextcloud GitHub release and signed MSI" => Get("PreferredNextcloud"),
+                "native-updater" => Get("ProviderNative"),
                 "Blizzard native updater" => Get("PreferredBlizzard"),
                 "No automatic provider" => Get("PreferredNone"),
                 "Brave native update channel" => Get("PreferredBrave"),
                 _ => value
             };
+        }
+        if (label == "Blocked providers")
+        {
+            return string.Join(", ", value.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                .Select(ProviderPolicyName));
         }
         if (label.EndsWith("MSIX package role", StringComparison.Ordinal) &&
             value == "External application integration (manifest-only registration package)")
@@ -201,6 +211,16 @@ public static partial class LocalizationService
         }
         return value;
     }
+
+    public static string ProviderPolicyName(string providerId) => providerId switch
+    {
+        "winget-fallback" or "WinGet fallback" => Get("ProviderWingetFallback"),
+        "zero-install" => Get("ProviderZeroInstall"),
+        "native-updater" => Get("ProviderNative"),
+        _ when providerId.StartsWith("github:", StringComparison.Ordinal) =>
+            Format("ProviderGitHub", providerId[7..]),
+        _ => providerId
+    };
 
     public static string RemovalMethod(RemovalKind kind) => kind switch
     {

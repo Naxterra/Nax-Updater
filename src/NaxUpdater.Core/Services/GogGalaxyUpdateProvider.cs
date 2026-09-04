@@ -11,13 +11,11 @@ public sealed class GogGalaxyUpdateProvider : IUpdateProvider
     private readonly string _updateRoot;
     private readonly IAuthenticodeVerifier _authenticodeVerifier;
     private readonly Func<string, string?> _fileVersionReader;
-    private readonly string _redistRoot;
 
     public GogGalaxyUpdateProvider(
         string? updateRoot = null,
         IAuthenticodeVerifier? authenticodeVerifier = null,
-        Func<string, string?>? fileVersionReader = null,
-        string? redistRoot = null)
+        Func<string, string?>? fileVersionReader = null)
     {
         _updateRoot = updateRoot ?? Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData),
@@ -26,14 +24,14 @@ public sealed class GogGalaxyUpdateProvider : IUpdateProvider
             "autoupdate-verified");
         _authenticodeVerifier = authenticodeVerifier ?? new NativeAuthenticodeVerifier();
         _fileVersionReader = fileVersionReader ?? ReadFileVersion;
-        _redistRoot = redistRoot ?? Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData),
-            "GOG.com",
-            "Galaxy",
-            "redists");
     }
 
     public string Id => "gog-galaxy-native";
+    public UpdateProviderDescriptor Descriptor { get; } = new(
+        UpdateProviderAuthority.InstalledUpdateProtocol,
+        100,
+        "Signed updater and staged release state installed by GOG Galaxy",
+        [ManagementMode.Unmanaged, ManagementMode.Registry, ManagementMode.WindowsInstaller, ManagementMode.DirectVendor]);
 
     public bool CanHandle(InstalledApplication application) =>
         application.DisplayName.Equals("GOG GALAXY", StringComparison.OrdinalIgnoreCase) &&
@@ -94,40 +92,12 @@ public sealed class GogGalaxyUpdateProvider : IUpdateProvider
             return Current(application, state.Version, "GOG's signed native updater reports no newer staged client.");
         }
 
-        var installDirectory = ResolveInstallDirectory(application);
-        if (installDirectory is null)
-        {
-            return Error(application, "GOG's installation directory could not be resolved for its native updater.", state.Version);
-        }
-        var plan = new UpdateExecutionPlan(
-            UpdateExecutionKind.NativeCommand,
-            null,
-            null,
-            null,
-            ExpectedSigner,
-            updaterPath,
-            [
-                $"/clientUpdatePath={installDirectory}",
-                "/disableUpdateMessageBox",
-                $"/globalRedistUpdatePath={_redistRoot}",
-                $"/previousClientVersion={application.NormalizedVersion}",
-                $"/redistUpdatePath={_redistRoot}",
-                "/updateClient",
-                "/updateRedist",
-                "/updateStrategy=Normal"
-            ],
-            true,
-            [],
-            ["GalaxyClient", "GOG Galaxy Notifications Renderer"],
-            NativeWorkingDirectory: updaterDirectory,
-            NativeStagingRoot: _updateRoot,
-            NativeDependencyRoot: _redistRoot);
         return new UpdateCheckResult(
             application.Identity,
             application.DisplayName,
             application.NormalizedVersion,
             state.Version,
-            UpdateStatus.Available,
+            UpdateStatus.NewerReleaseKnown,
             Id,
             "GOG Galaxy native updater",
             "application-managed",
@@ -135,8 +105,9 @@ public sealed class GogGalaxyUpdateProvider : IUpdateProvider
             "x64",
             "stable",
             null,
-            $"GOG staged update {state.Version} in its verified update directory. Windows validated the updater publisher '{signature.Signer}'.",
-            plan);
+            $"GOG staged update {state.Version} and Windows validated updater publisher '{signature.Signer}', but the adjacent runtime dependency set has no producer-authenticated manifest. Automatic elevated execution is blocked; use GOG Galaxy's own update action.",
+            null,
+            Applicability: UpdateApplicability.NotApplicable);
     }
 
     private UpdateCheckResult Managed(InstalledApplication application, string message, string? version = null) => new(
@@ -186,17 +157,6 @@ public sealed class GogGalaxyUpdateProvider : IUpdateProvider
         null,
         message,
         null);
-
-    private static string? ResolveInstallDirectory(InstalledApplication application)
-    {
-        if (!string.IsNullOrWhiteSpace(application.PrimaryInstallPath))
-        {
-            if (Directory.Exists(application.PrimaryInstallPath)) return application.PrimaryInstallPath;
-            var directory = Path.GetDirectoryName(application.PrimaryInstallPath);
-            if (!string.IsNullOrWhiteSpace(directory) && Directory.Exists(directory)) return directory;
-        }
-        return null;
-    }
 
     private static string? ReadFileVersion(string path) =>
         FileVersionInfo.GetVersionInfo(path).ProductVersion?.Trim() is { Length: > 0 } version

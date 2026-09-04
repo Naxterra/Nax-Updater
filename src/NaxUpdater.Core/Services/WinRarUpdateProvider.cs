@@ -11,6 +11,11 @@ public sealed partial class WinRarUpdateProvider(HttpClient httpClient) : IUpdat
     private static readonly Uri DownloadPage = new("https://www.rarlab.com/download.htm");
 
     public string Id => "rarlab-winrar";
+    public UpdateProviderDescriptor Descriptor { get; } = new(
+        UpdateProviderAuthority.ProducerRelease,
+        100,
+        "Exact RARLAB product and publisher match against the producer download page",
+        [ManagementMode.Unmanaged, ManagementMode.Registry, ManagementMode.WindowsInstaller, ManagementMode.DirectVendor]);
 
     public bool CanHandle(InstalledApplication application) =>
         application.DisplayName.StartsWith("WinRAR", StringComparison.OrdinalIgnoreCase) &&

@@ -5,5 +5,6 @@
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/NaxUpdater.Core.SmokeTests/NaxUpdater.Core.SmokeTests.csproj" />
+    <Project Path="tests/NaxUpdater.Core.TransactionTests/NaxUpdater.Core.TransactionTests.csproj" />
   </Folder>
 </Solution>

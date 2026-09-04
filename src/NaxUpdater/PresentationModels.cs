@@ -67,7 +67,7 @@ public sealed class ApplicationRow : INotifyPropertyChanged
     };
     public string BlockedProviders => Source.BlockedProviders.Count == 0
         ? LocalizationService.Get("None")
-        : string.Join(", ", Source.BlockedProviders);
+        : string.Join(", ", Source.BlockedProviders.Select(LocalizationService.ProviderPolicyName));
     public bool IsProtected => Source.BlockedProviders.Count > 0;
     public bool IsSystemComponent => Source.IsSystemComponent;
 
@@ -142,7 +142,7 @@ public sealed class PolicyRow
         Id = source.Id;
         BlockedProviders = source.BlockedProviders.Count == 0
             ? LocalizationService.Get("NoBlockedProviders")
-            : LocalizationService.Format("BlockedProvidersFormat", string.Join(", ", source.BlockedProviders));
+            : LocalizationService.Format("BlockedProvidersFormat", string.Join(", ", source.BlockedProviders.Select(LocalizationService.ProviderPolicyName)));
         Reason = LocalizationService.PolicyReason(source.Id, source.Reason ?? LocalizationService.Get("PersistentPolicy"));
     }
 
@@ -170,6 +170,7 @@ public sealed class UpdateRow
     public string Status => Source.Status switch
     {
         UpdateStatus.Available => LocalizationService.Get("StatusUpdateAvailable"),
+        UpdateStatus.NewerReleaseKnown => LocalizationService.Get("StatusNewerReleaseKnown"),
         UpdateStatus.Current => LocalizationService.Get("StatusCurrent"),
         UpdateStatus.ManagedExternally when Source.ProviderId == "msix-store" => LocalizationService.Get("StatusStoreManaged"),
         UpdateStatus.ManagedExternally => LocalizationService.Get("StatusNativeUpdater"),
@@ -186,7 +187,7 @@ public sealed class UpdateRow
         ? LocalizationService.Get("SecurityNoExternalInstaller")
         : Source.ExecutionPlan.Kind == UpdateExecutionKind.StorePackage
             ? LocalizationService.Get("SecurityMicrosoftStoreIdentity")
-        : Source.ExecutionPlan.Kind is UpdateExecutionKind.NativeCommand or UpdateExecutionKind.ApplicationOwnedUpdater
+        : Source.ExecutionPlan.Kind == UpdateExecutionKind.NativeCommand
             ? LocalizationService.Get("SecurityNativeProvider")
             : !Source.ExecutionPlan.RequireAuthenticode
                 ? LocalizationService.Get("SecurityHashOnly")
@@ -208,6 +209,7 @@ public sealed class UpdateRow
     public Brush StatusForeground => PresentationBrushes.Get(Source.Status switch
     {
         UpdateStatus.Available => "NaxOrangeBrush",
+        UpdateStatus.NewerReleaseKnown => "NaxBlueBrush",
         UpdateStatus.Current => "NaxGreenBrush",
         UpdateStatus.ManagedExternally => "NaxBlueBrush",
         UpdateStatus.Unsupported => "NaxPurpleBrush",
@@ -216,6 +218,7 @@ public sealed class UpdateRow
     public Brush StatusBackground => PresentationBrushes.Get(Source.Status switch
     {
         UpdateStatus.Available => "NaxOrangeCardBrush",
+        UpdateStatus.NewerReleaseKnown => "NaxBlueCardBrush",
         UpdateStatus.Current => "NaxGreenCardBrush",
         UpdateStatus.ManagedExternally => "NaxBlueCardBrush",
         UpdateStatus.Unsupported => "NaxPurpleCardBrush",
