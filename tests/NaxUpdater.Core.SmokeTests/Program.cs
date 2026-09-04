@@ -344,6 +344,45 @@ try
     Assert(nextcloudUpdate.Language == "neutral" && nextcloudUpdate.ExecutionPlan?.Kind == UpdateExecutionKind.DownloadedMsi,
         "Nextcloud multi-language MSI plan is incorrect.");
 
+    var gitFallbackHash = new string('d', 64);
+    using var rateLimitedGitClient = new HttpClient(new StubHttpMessageHandler(_ =>
+        new HttpResponseMessage(HttpStatusCode.Forbidden) { ReasonPhrase = "rate limit exceeded" }));
+    var gitFallbackApplication = CreateApplication(
+        "git-gh-fallback-test",
+        "Git",
+        "The Git Development Community",
+        "2.55.0.4",
+        Path.Combine(firefoxFixture, "git.exe"),
+        InstallScope.Machine,
+        ManagementMode.Registry);
+    var gitFallbackUpdate = await new GitHubReleaseUpdateProvider(
+            rateLimitedGitClient,
+            gitRecipe,
+            _ => Task.FromResult<string?>($$"""
+                {
+                  "tag_name": "v2.55.0.windows.5",
+                  "html_url": "https://github.com/git-for-windows/git/releases/tag/v2.55.0.windows.5",
+                  "assets": [{
+                    "name": "Git-2.55.0.5-64-bit.exe",
+                    "browser_download_url": "https://github.com/git-for-windows/git/releases/download/v2.55.0.windows.5/Git-2.55.0.5-64-bit.exe",
+                    "digest": "sha256:{{gitFallbackHash}}"
+                  }]
+                }
+                """))
+        .CheckAsync(gitFallbackApplication, CancellationToken.None);
+    Assert(gitFallbackUpdate is
+           {
+               Status: UpdateStatus.Available,
+               AvailableVersion: "2.55.0.5",
+               ExecutionPlan:
+               {
+                   Kind: UpdateExecutionKind.DownloadedExe,
+                   Sha256: var fallbackDigest,
+                   ExpectedSigner: "Johannes Schindelin"
+               }
+           } && fallbackDigest == gitFallbackHash,
+        "Authenticated GitHub CLI fallback did not recover an exact digest-bound Git release after API rate limiting.");
+
     var gitHubCliHash = new string('a', 64);
     using var gitHubCliClient = new HttpClient(new StubHttpMessageHandler(_ => JsonResponse($$"""
         {
@@ -407,7 +446,10 @@ try
                 "https://github.com/nextcloud-releases/desktop/releases/tag/v34.0.3")
         };
     }));
-    var rateLimitedNextcloud = await new GitHubReleaseUpdateProvider(rateLimitedGitHubClient, nextcloudRecipe)
+    var rateLimitedNextcloud = await new GitHubReleaseUpdateProvider(
+            rateLimitedGitHubClient,
+            nextcloudRecipe,
+            _ => Task.FromResult<string?>(null))
         .CheckAsync(nextcloudApplication, CancellationToken.None);
     Assert(rateLimitedNextcloud.Status == UpdateStatus.Current &&
            rateLimitedNextcloud.AvailableVersion == "34.0.3" &&
