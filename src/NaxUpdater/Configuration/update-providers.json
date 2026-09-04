@@ -41,6 +41,34 @@
       "installerArguments": [ "/VERYSILENT", "/NORESTART", "/NOCANCEL", "/SP-" ],
       "runningProcessNames": [],
       "requiresElevation": true
+    },
+    {
+      "id": "Naxterra.NaxUpdater",
+      "displayName": "NaxUpdater",
+      "publisherContains": "Naxterra",
+      "repository": "Naxterra/Nax-Updater",
+      "assetNamePattern": "^NaxUpdater-(?<version>[0-9]+(?:\\.[0-9]+)+)-Setup-x64\\.exe$",
+      "architecture": "x64",
+      "language": "neutral",
+      "expectedSigner": "",
+      "installerKind": "DownloadedExe",
+      "installerArguments": [ "/quiet", "/norestart" ],
+      "runningProcessNames": [ "NaxUpdater" ],
+      "requiresElevation": true
+    },
+    {
+      "id": "Windscribe.Windscribe",
+      "displayName": "Windscribe",
+      "publisherContains": "Windscribe",
+      "repository": "Windscribe/Desktop-App",
+      "assetNamePattern": "^Windscribe_(?<version>[0-9]+(?:\\.[0-9]+)+)_amd64\\.exe$",
+      "architecture": "x64",
+      "language": "neutral",
+      "expectedSigner": "Windscribe Limited",
+      "installerKind": "DownloadedExe",
+      "installerArguments": [ "-silent", "-no-auto-start" ],
+      "runningProcessNames": [ "Windscribe" ],
+      "requiresElevation": true
     }
   ]
 }

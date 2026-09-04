@@ -20,13 +20,15 @@ public sealed class UpdateCheckService
             new ZeroInstallUpdateProvider(new ProcessQueryRunner()),
             new ElectronBuilderUpdateProvider(httpClient),
             new GogGalaxyUpdateProvider(),
+            new IvpnUpdateProvider(httpClient),
+            new NodeJsUpdateProvider(httpClient),
             new WinRarUpdateProvider(httpClient)
         };
         providers.AddRange(catalog.GitHub.Select(recipe => new GitHubReleaseUpdateProvider(httpClient, recipe)));
         providers.Add(new MsixStoreUpdateProvider(httpClient));
         // Registration order is not authoritative. Explicit descriptors below arbitrate
         // installed protocols, producer sources, Store, and fallback catalogs.
-        providers.Add(new WingetFallbackUpdateProvider(httpClient));
+        providers.Add(new WingetFallbackUpdateProvider());
         _providers = providers;
     }
 
@@ -39,12 +41,24 @@ public sealed class UpdateCheckService
         var checks = new List<Task<UpdateCheckResult>>();
         var externalResults = new List<UpdateCheckResult>();
 
+        foreach (var refresher in _providers.OfType<IUpdateProviderSourceRefresher>())
+        {
+            await refresher.RefreshSourceAsync(cancellationToken);
+        }
+
         foreach (var application in inventory.Applications.Where(static application => !application.IsSystemComponent))
         {
             // Native-updater ownership is an explicit application policy. The application
             // remains the update authority instead of being replaced by a third-party source.
             if (application.ManagementMode == ManagementMode.NativeSelfUpdater)
             {
+                var updateOwner = application.Evidence.FirstOrDefault(static evidence =>
+                    evidence.Label == ExternalManagementClassifier.OwnerEvidenceLabel)?.Value ??
+                    application.Evidence.FirstOrDefault(static evidence =>
+                        evidence.Label == "Preferred update provider")?.Value ??
+                    "Application native updater";
+                var updateSource = application.Evidence.FirstOrDefault(static evidence =>
+                    evidence.Label == ExternalManagementClassifier.SourceEvidenceLabel)?.Value;
                 externalResults.Add(new UpdateCheckResult(
                     application.Identity,
                     application.DisplayName,
@@ -52,13 +66,13 @@ public sealed class UpdateCheckService
                     null,
                     UpdateStatus.ManagedExternally,
                     "native-updater",
-                    "Application native updater",
+                    updateOwner,
                     "application-managed",
                     "Preserved by the application's updater",
                     "application-managed",
                     "native",
-                    null,
-                    "NaxUpdater will not replace this application's own update mechanism.",
+                    Uri.TryCreate(updateSource, UriKind.Absolute, out var sourceUri) ? sourceUri.AbsoluteUri : null,
+                    $"Update ownership belongs to {updateOwner}; NaxUpdater will not replace that mechanism with a fallback catalog.",
                     null,
                     UpdateProviderAuthority.ExplicitApplicationPolicy,
                     "The installed application policy assigns update ownership to its native updater",

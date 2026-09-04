@@ -58,7 +58,7 @@ public sealed class ApplicationInventoryService
             cancellationToken.ThrowIfCancellationRequested();
             await zeroInstall.EnrichAsync(candidate, issues, cancellationToken);
             ApplyPolicy(candidate, policies, matchedPolicyIds);
-            applications.Add(ExecutableMetadataEnricher.Finalize(candidate));
+            applications.Add(ExternalManagementClassifier.Classify(ExecutableMetadataEnricher.Finalize(candidate)));
         }
 
         var unmatchedPolicies = policies

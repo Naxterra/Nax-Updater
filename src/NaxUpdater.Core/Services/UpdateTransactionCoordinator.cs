@@ -483,9 +483,8 @@ public static class UpdatePlanValidator
                 => "The driver archive lacks an exact INF, hardware identity, or catalog signer policy.",
             UpdateExecutionKind.NativeCommand when string.IsNullOrWhiteSpace(plan.NativeExecutable)
                 => "The native update plan does not identify its installed updater executable.",
-            UpdateExecutionKind.NativeCommand
-                when plan.RequiresElevation && string.IsNullOrWhiteSpace(plan.ExpectedSigner)
-                => "An elevated native updater requires a trusted Authenticode publisher.",
+            UpdateExecutionKind.NativeCommand when string.IsNullOrWhiteSpace(plan.ExpectedSigner)
+                => "A native updater requires a trusted Authenticode publisher.",
             UpdateExecutionKind.StorePackage
                 when string.IsNullOrWhiteSpace(plan.StoreProductId) ||
                      string.IsNullOrWhiteSpace(plan.StorePackageFamilyName)

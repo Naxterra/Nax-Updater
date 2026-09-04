@@ -31,7 +31,7 @@ The inventory engine:
 
 ## Update providers
 
-Version 0.16.2 includes:
+The current implementation includes:
 
 - recovers Git/GitHub release checks from anonymous GitHub API rate limits through the installed authenticated GitHub CLI while retaining the exact official asset digest and signer policy;
 - restores automatic execution for exact producer-hashed, Authenticode-bound EXE installers such as Firefox and NVIDIA, including their normal Windows elevation prompt;
@@ -46,7 +46,7 @@ Version 0.16.2 includes:
 - Store applicability based on the exact update catalog rather than display metadata, with forced Store installation removed entirely;
 - ChatGPT release evidence reconciled independently with its exact Store offer; generic localized UI buttons are no longer treated as a trusted update protocol;
 - GOG release detection without elevating its user-writable, unauthenticated adjacent runtime dependency set;
-- WinGet fallback installation blocked unless the replacement binary can be bound to a trusted publisher;
+- a refreshed exact-identity WinGet fallback used for release detection only; fallback catalogs never receive an automatic install plan because their installer variant cannot be bound to the checked catalog generation;
 - producer-hashed and Authenticode-bound EXE installers remain executable, including their normal Windows elevation prompt; their payload stays deny-write/delete locked through process completion;
 - a deterministic transaction test suite covering provider precedence, policy blocking, stale and mutated plans, preparation failure, post-prepare changes, UAC cancellation, reboot-pending state, journal recovery, and version-bound completion;
 
@@ -78,8 +78,11 @@ Version 0.16.2 includes:
 - trusted signer inheritance from already-installed, validly signed executables when an installed updater configuration omits its publisher;
 - producer-owned GitHub CLI releases from `cli/cli`, using GitHub's release-asset SHA-256 digest, the exact x64 MSI, and the `GitHub, Inc.` Authenticode signer;
 - producer-owned Git for Windows releases from `git-for-windows/git`, using GitHub's release-asset SHA-256 digest, the exact x64 installer, and Johannes Schindelin's Authenticode signer;
+- IVPN checks through its producer-signed manual-update feed, reconciled with the official release SHA-256 and `IVPN Limited` Authenticode identity;
+- Windscribe checks through the official `Windscribe/Desktop-App` release, exact architecture asset, GitHub digest, and `Windscribe Limited` Authenticode identity;
+- Node.js checks through the official distribution index on the installed major release line, with verified PE architecture, producer-published MSI SHA-256, and `OpenJS Foundation` Authenticode identity;
 - WinRAR checks and language-matched installers directly from RARLAB's official download page; the original producer download is SHA-256 pinned during the check and must carry the `win.rar GmbH` Authenticode signature;
-- WinGet fallback coverage for applications without a producer adapter, while applications not safely correlated with either source remain explicitly **No verifiable update source**;
+- detection-only WinGet fallback coverage for applications without a producer adapter, while applications not safely correlated with either source remain explicitly **No verifiable update source**;
 - a complete assessment result for every visible application, including an explicit **No verifiable update source** status instead of silently omitting unsupported software;
 - registered non-MSI product-code correlation for installer technologies such as Inno Setup;
 - vendor-native GOG Galaxy releases read from GOG's own `autoupdate-verified` state, with the updater version matched to metadata and its GOG Authenticode signature validated; automatic elevation is intentionally withheld because the adjacent runtime dependency set has no producer-authenticated manifest;
@@ -178,7 +181,7 @@ From this directory:
 dotnet build NaxUpdater.slnx
 dotnet run --project tests/NaxUpdater.Core.SmokeTests/NaxUpdater.Core.SmokeTests.csproj
 dotnet publish src/NaxUpdater/NaxUpdater.csproj -c Release -r win-x64 --self-contained true -o artifacts/NaxUpdater-win-x64
-./scripts/package-release.ps1 -Version 0.16.2
+./scripts/package-release.ps1 -Version 0.16.3
 ```
 
 The desktop project uses .NET 11, WinUI 3, and the Windows App SDK. It is not an Electron or WebView application.
