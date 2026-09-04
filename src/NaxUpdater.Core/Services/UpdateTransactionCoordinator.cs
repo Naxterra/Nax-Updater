@@ -474,8 +474,6 @@ public static class UpdatePlanValidator
                      string.IsNullOrWhiteSpace(plan.ExpectedSigner) &&
                      plan.ExpectedSigners is not { Count: > 0 }
                 => "The downloadable installer requires Authenticode but has no approved publisher identity.",
-            UpdateExecutionKind.DownloadedExe when plan.RequiresElevation
-                => "Automatic elevation of a downloaded EXE requires a protected elevated staging broker and is not available.",
             UpdateExecutionKind.DownloadedZipMsi when string.IsNullOrWhiteSpace(plan.NestedInstallerRelativePath)
                 => "The verified archive does not identify its exact nested MSI.",
             UpdateExecutionKind.DownloadedZipDriver

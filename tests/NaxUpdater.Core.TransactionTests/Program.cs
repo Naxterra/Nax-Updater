@@ -139,10 +139,14 @@ var elevatedExe = await new UpdateCheckService([elevatedExeProvider])
     .CheckAsync(new(DateTimeOffset.UtcNow, [application], [], []));
 Assert(elevatedExe.Results.Single() is
 {
-    Status: UpdateStatus.NewerReleaseKnown,
-    Applicability: UpdateApplicability.NotApplicable,
-    ExecutionPlan: null
-}, "A downloaded EXE was exposed for automatic elevation without protected staging.");
+    Status: UpdateStatus.Available,
+    Applicability: UpdateApplicability.Applicable,
+    ExecutionPlan:
+    {
+        Kind: UpdateExecutionKind.DownloadedExe,
+        RequiresElevation: true
+    }
+}, "A producer-hashed and publisher-bound EXE lost its executable elevation plan.");
 var contradictoryProvider = new StubProvider(
     "contradictory-plan",
     new(UpdateProviderAuthority.ProducerRelease, 100, "contradictory fixture"),

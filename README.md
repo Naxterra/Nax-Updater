@@ -31,8 +31,10 @@ The inventory engine:
 
 ## Update providers
 
-Version 0.16.0 includes:
+Version 0.16.1 includes:
 
+- restores automatic execution for exact producer-hashed, Authenticode-bound EXE installers such as Firefox and NVIDIA, including their normal Windows elevation prompt;
+- keeps installed version evidence owned by NaxUpdater inventory instead of rejecting WinGet fallback assessments whose comparison helper uses a normalized catalog version;
 - an explicit provider-authority model: installed update protocols, producer releases, Microsoft Store, and catalog fallbacks are selected by declared authority and compatible installation type rather than registration order;
 - hard enforcement of preferred and blocked provider policies, with equal-authority conflicts and missing preferred providers failing closed instead of silently falling back;
 - separate release and applicability states, so a newer vendor release can be shown without exposing an install button until an exact executable route and target version are confirmed;
@@ -44,7 +46,7 @@ Version 0.16.0 includes:
 - ChatGPT release evidence reconciled independently with its exact Store offer; generic localized UI buttons are no longer treated as a trusted update protocol;
 - GOG release detection without elevating its user-writable, unauthenticated adjacent runtime dependency set;
 - WinGet fallback installation blocked unless the replacement binary can be bound to a trusted publisher;
-- downloaded EXE elevation withheld until a protected elevated staging broker exists; MSI, exact Store, and catalog-verified driver routes remain independently modelled;
+- producer-hashed and Authenticode-bound EXE installers remain executable, including their normal Windows elevation prompt; their payload stays deny-write/delete locked through process completion;
 - a deterministic transaction test suite covering provider precedence, policy blocking, stale and mutated plans, preparation failure, post-prepare changes, UAC cancellation, reboot-pending state, journal recovery, and version-bound completion;
 
 - application-header text restored through the packaged WinUI property-resource identifiers, so switching between application and driver modes no longer exposes internal localization keys;
@@ -175,7 +177,7 @@ From this directory:
 dotnet build NaxUpdater.slnx
 dotnet run --project tests/NaxUpdater.Core.SmokeTests/NaxUpdater.Core.SmokeTests.csproj
 dotnet publish src/NaxUpdater/NaxUpdater.csproj -c Release -r win-x64 --self-contained true -o artifacts/NaxUpdater-win-x64
-./scripts/package-release.ps1 -Version 0.16.0
+./scripts/package-release.ps1 -Version 0.16.1
 ```
 
 The desktop project uses .NET 11, WinUI 3, and the Windows App SDK. It is not an Electron or WebView application.

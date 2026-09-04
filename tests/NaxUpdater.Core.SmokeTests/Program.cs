@@ -1416,6 +1416,34 @@ var productionProviderCatalog = await UpdateProviderCatalogLoader.LoadAsync(
     Path.Combine(AppContext.BaseDirectory, "Configuration", "update-providers.json"));
 var productionUpdateSnapshot = await new UpdateCheckService(capabilityClient, productionProviderCatalog)
     .CheckAsync(snapshot, CancellationToken.None);
+foreach (var displayName in new[] { "Inno Setup 7.1.0", "Kodi", "PotPlayer-64 bit" })
+{
+    var installed = snapshot.Applications.FirstOrDefault(application =>
+        application.DisplayName.Equals(displayName, StringComparison.OrdinalIgnoreCase));
+    if (installed is null)
+    {
+        continue;
+    }
+    var assessment = productionUpdateSnapshot.Results.Single(result =>
+        result.ApplicationIdentity.Equals(installed.Identity, StringComparison.Ordinal));
+    Assert(assessment.Status != UpdateStatus.Error,
+        $"{displayName} still fails provider-contract validation: {assessment.Message}");
+}
+var liveFirefoxApplication = snapshot.Applications.FirstOrDefault(application =>
+    application.DisplayName.StartsWith("Mozilla Firefox", StringComparison.OrdinalIgnoreCase));
+if (liveFirefoxApplication is not null)
+{
+    var firefoxAssessment = productionUpdateSnapshot.Results.Single(result =>
+        result.ApplicationIdentity.Equals(liveFirefoxApplication.Identity, StringComparison.Ordinal));
+    Assert((firefoxAssessment.Status is UpdateStatus.Current or UpdateStatus.Available) &&
+           (firefoxAssessment.Status != UpdateStatus.Available ||
+            firefoxAssessment is
+            {
+                IsInstallable: true,
+                ExecutionPlan.Kind: UpdateExecutionKind.DownloadedExe
+            }),
+        $"Firefox's exact localized Mozilla installer is not executable: {firefoxAssessment.Status} · {firefoxAssessment.Message}");
+}
 Assert(productionUpdateSnapshot.Results.All(static result =>
         result.ProviderId != "federated-public-catalogs" &&
         !result.ProviderDisplayName.Contains("Scoop", StringComparison.OrdinalIgnoreCase)),
