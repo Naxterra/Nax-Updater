@@ -106,11 +106,11 @@ using (var openAiManifestFixture = JsonDocument.Parse("""
 {
     var manifest = MsixStoreUpdateProvider.ParseOpenAiManifest(openAiManifestFixture.RootElement);
     Assert(manifest is
-           {
-               BuildVersion: "26.901.1978.0",
-               StoreProductId: "9PLM9XGG6VKS",
-               PackageIdentity: "OpenAI.Codex"
-           },
+    {
+        BuildVersion: "26.901.1978.0",
+        StoreProductId: "9PLM9XGG6VKS",
+        PackageIdentity: "OpenAI.Codex"
+    },
         "OpenAI's official Windows update manifest was not accepted for the exact ChatGPT Store identity.");
 }
 using (var intelClient = new HttpClient(new StubHttpMessageHandler(_ => new HttpResponseMessage(HttpStatusCode.OK)
@@ -388,6 +388,7 @@ try
           }]
         }
         """)));
+    File.Copy(Path.Combine(Environment.SystemDirectory, "cmd.exe"), Path.Combine(firefoxFixture, "nextcloud.exe"));
     var nextcloudApplication = CreateApplication(
         "nextcloud-test",
         "Nextcloud",
@@ -405,6 +406,7 @@ try
     var gitFallbackHash = new string('d', 64);
     using var rateLimitedGitClient = new HttpClient(new StubHttpMessageHandler(_ =>
         new HttpResponseMessage(HttpStatusCode.Forbidden) { ReasonPhrase = "rate limit exceeded" }));
+    File.Copy(Path.Combine(Environment.SystemDirectory, "cmd.exe"), Path.Combine(firefoxFixture, "git.exe"));
     var gitFallbackApplication = CreateApplication(
         "git-gh-fallback-test",
         "Git",
@@ -429,16 +431,16 @@ try
                 """))
         .CheckAsync(gitFallbackApplication, CancellationToken.None);
     Assert(gitFallbackUpdate is
-           {
-               Status: UpdateStatus.Available,
-               AvailableVersion: "2.55.0.5",
-               ExecutionPlan:
-               {
-                   Kind: UpdateExecutionKind.DownloadedExe,
-                   Sha256: var fallbackDigest,
-                   ExpectedSigner: "Johannes Schindelin"
-               }
-           } && fallbackDigest == gitFallbackHash,
+    {
+        Status: UpdateStatus.Available,
+        AvailableVersion: "2.55.0.5",
+        ExecutionPlan:
+        {
+            Kind: UpdateExecutionKind.DownloadedExe,
+            Sha256: var fallbackDigest,
+            ExpectedSigner: "Johannes Schindelin"
+        }
+    } && fallbackDigest == gitFallbackHash,
         "Authenticated GitHub CLI fallback did not recover an exact digest-bound Git release after API rate limiting.");
 
     var gitHubCliHash = new string('a', 64);
@@ -453,6 +455,7 @@ try
           }]
         }
         """)));
+    File.Copy(Path.Combine(Environment.SystemDirectory, "cmd.exe"), Path.Combine(firefoxFixture, "gh.exe"));
     var gitHubCliFixture = CreateApplication(
         "github-cli-test",
         "GitHub CLI",
@@ -464,17 +467,17 @@ try
     var directGitHubCliUpdate = await new GitHubReleaseUpdateProvider(gitHubCliClient, gitHubCliRecipe)
         .CheckAsync(gitHubCliFixture, CancellationToken.None);
     Assert(directGitHubCliUpdate is
-           {
-               ProviderId: "github:cli/cli",
-               Status: UpdateStatus.Available,
-               AvailableVersion: "2.100.0",
-               ExecutionPlan:
-               {
-                   Kind: UpdateExecutionKind.DownloadedMsi,
-                   Sha256: var directGitHubCliHash,
-                   ExpectedSigner: "GitHub, Inc."
-               }
-           } && directGitHubCliHash == gitHubCliHash,
+    {
+        ProviderId: "github:cli/cli",
+        Status: UpdateStatus.Available,
+        AvailableVersion: "2.100.0",
+        ExecutionPlan:
+        {
+            Kind: UpdateExecutionKind.DownloadedMsi,
+            Sha256: var directGitHubCliHash,
+            ExpectedSigner: "GitHub, Inc."
+        }
+    } && directGitHubCliHash == gitHubCliHash,
         "GitHub CLI did not receive a producer-owned digest-backed MSI plan.");
     var closeFixture = directGitHubCliUpdate with
     {
@@ -621,18 +624,18 @@ try
     var winRarDirectUpdate = await new WinRarUpdateProvider(winRarClient)
         .CheckAsync(winRarFixtureApplication, CancellationToken.None);
     Assert(winRarDirectUpdate is
-           {
-               ProviderId: "rarlab-winrar",
-               Status: UpdateStatus.Available,
-               AvailableVersion: "7.24",
-               Language: "de",
-               ExecutionPlan:
-               {
-                   DownloadUri.AbsoluteUri: "https://www.rarlab.com/rar/winrar-x64-724d.exe",
-                   ExpectedSigner: "win.rar GmbH",
-                   Sha256: var winRarFixtureHash
-               }
-           } && winRarFixtureHash == Convert.ToHexString(SHA256.HashData(winRarPayload)),
+    {
+        ProviderId: "rarlab-winrar",
+        Status: UpdateStatus.Available,
+        AvailableVersion: "7.24",
+        Language: "de",
+        ExecutionPlan:
+        {
+            DownloadUri.AbsoluteUri: "https://www.rarlab.com/rar/winrar-x64-724d.exe",
+            ExpectedSigner: "win.rar GmbH",
+            Sha256: var winRarFixtureHash
+        }
+    } && winRarFixtureHash == Convert.ToHexString(SHA256.HashData(winRarPayload)),
         "WinRAR did not receive its German producer-owned RARLAB installer plan.");
 
     var wingetIndexPath = Path.Combine(firefoxFixture, "winget-fallback-index.db");
@@ -667,17 +670,17 @@ try
             null,
             true)
     };
-    var wingetFallback = new WingetFallbackUpdateProvider(wingetIndexPath);
+    var wingetFallback = new WingetFallbackUpdateProvider(wingetIndexPath, new StubWingetPackages());
     Assert(wingetFallback.CanHandle(fallbackApplication), "The exact-product WinGet fallback was not discovered.");
     var fallbackUpdate = await wingetFallback.CheckAsync(fallbackApplication, CancellationToken.None);
     Assert(fallbackUpdate is
-           {
-               ProviderId: "winget-fallback",
-               Status: UpdateStatus.Available,
-               AvailableVersion: "2.0.0",
-               ExecutionPlan: null
-           } && fallbackUpdate.Message?.Contains("detection-only", StringComparison.OrdinalIgnoreCase) == true,
-        "The exact-product WinGet fallback escaped its detection-only trust boundary.");
+    {
+        ProviderId: "winget-fallback",
+        Status: UpdateStatus.Available,
+        AvailableVersion: "2.0.0",
+        ExecutionPlan.Kind: UpdateExecutionKind.WingetPackage
+    },
+        "The exact-product WinGet fallback failed to create an official catalog update plan.");
     var installedNewerThanFallback = fallbackApplication with
     {
         Identity = "winget-fallback-installed-newer-test",
@@ -686,11 +689,11 @@ try
     };
     var installedNewerAssessment = await wingetFallback.CheckAsync(installedNewerThanFallback, CancellationToken.None);
     Assert(installedNewerAssessment is
-           {
-               Status: UpdateStatus.Current,
-               InstalledVersion: "3.0.0",
-               AvailableVersion: null
-           } && installedNewerAssessment.Message?.Contains("newer than the fallback catalog", StringComparison.OrdinalIgnoreCase) == true,
+    {
+        Status: UpdateStatus.Current,
+        InstalledVersion: "3.0.0",
+        AvailableVersion: null
+    } && installedNewerAssessment.Message?.Contains("newer than the fallback catalog", StringComparison.OrdinalIgnoreCase) == true,
         "An older fallback-catalog version was presented as available beside a newer installed version.");
 
     var ambiguousIndexPath = Path.Combine(firefoxFixture, "winget-ambiguous-product-index.db");
@@ -760,7 +763,7 @@ try
         var ivpnFixtureRoot = Directory.CreateDirectory(Path.Combine(firefoxFixture, "ivpn-client")).FullName;
         var ivpnFixtureUiDirectory = Directory.CreateDirectory(Path.Combine(ivpnFixtureRoot, "ui")).FullName;
         var ivpnFixtureUi = Path.Combine(ivpnFixtureUiDirectory, "IVPN Client.exe");
-        await File.WriteAllBytesAsync(ivpnFixtureUi, [1]);
+        File.Copy(Path.Combine(Environment.SystemDirectory, "cmd.exe"), ivpnFixtureUi);
         var ivpnFixtureIcon = Path.Combine(ivpnFixtureRoot, "icon.ico");
         await File.WriteAllBytesAsync(ivpnFixtureIcon, [1]);
         var ivpnApplication = CreateApplication(
@@ -774,18 +777,18 @@ try
         var ivpnProvider = new IvpnUpdateProvider(ivpnClient, ivpnSigningKey.ExportSubjectPublicKeyInfoPem());
         var ivpnUpdate = await ivpnProvider.CheckAsync(ivpnApplication, CancellationToken.None);
         Assert(ivpnUpdate is
-               {
-                   ProviderId: "ivpn-signed-manual-feed",
-                   Status: UpdateStatus.Available,
-                   AvailableVersion: "3.15.15",
-                   ExecutionPlan:
-                   {
-                       DownloadUri.AbsoluteUri: var ivpnDownload,
-                       Sha256: var ivpnHash,
-                       ExpectedSigner: "IVPN Limited",
-                       RunningExecutablePaths: var ivpnPaths
-                   }
-               } && ivpnDownload == ivpnUrl && ivpnHash == ivpnInstallerHash.ToUpperInvariant() &&
+        {
+            ProviderId: "ivpn-signed-manual-feed",
+            Status: UpdateStatus.Available,
+            AvailableVersion: "3.15.15",
+            ExecutionPlan:
+            {
+                DownloadUri.AbsoluteUri: var ivpnDownload,
+                Sha256: var ivpnHash,
+                ExpectedSigner: "IVPN Limited",
+                RunningExecutablePaths: var ivpnPaths
+            }
+        } && ivpnDownload == ivpnUrl && ivpnHash == ivpnInstallerHash.ToUpperInvariant() &&
                     ivpnPaths is { Count: 1 } && ivpnPaths[0] == ivpnFixtureUi,
             "IVPN's producer-signed manual feed did not produce its exact official update plan.");
         var tamperedFeed = (byte[])ivpnFeed.Clone();
@@ -822,18 +825,18 @@ try
             ManagementMode.WindowsInstaller);
         var nodeUpdate = await new NodeJsUpdateProvider(nodeClient).CheckAsync(nodeApplication, CancellationToken.None);
         Assert(nodeUpdate is
-               {
-                   ProviderId: "nodejs-official-dist",
-                   Status: UpdateStatus.Available,
-                   AvailableVersion: "24.21.0",
-                   Channel: "LTS Krypton",
-                   ExecutionPlan:
-                   {
-                       DownloadUri.AbsoluteUri: "https://nodejs.org/dist/v24.21.0/node-v24.21.0-x64.msi",
-                       Sha256: var nodeHash,
-                       ExpectedSigner: "OpenJS Foundation"
-                   }
-               } && nodeHash == nodeInstallerHash.ToUpperInvariant(),
+        {
+            ProviderId: "nodejs-official-dist",
+            Status: UpdateStatus.Available,
+            AvailableVersion: "24.21.0",
+            Channel: "LTS Krypton",
+            ExecutionPlan:
+            {
+                DownloadUri.AbsoluteUri: "https://nodejs.org/dist/v24.21.0/node-v24.21.0-x64.msi",
+                Sha256: var nodeHash,
+                ExpectedSigner: "OpenJS Foundation"
+            }
+        } && nodeHash == nodeInstallerHash.ToUpperInvariant(),
             "Node.js did not preserve its installed major line or bind the producer-published MSI hash.");
     }
 
@@ -958,11 +961,11 @@ try
     var authorityAssessment = await new UpdateCheckService([fallbackAuthorityProvider, installedAuthorityProvider])
         .CheckAsync(new InventorySnapshot(DateTimeOffset.UtcNow, [fallbackApplication], [], []));
     Assert(authorityAssessment.Results.Single() is
-           {
-               ProviderId: "installed-authority",
-               ProviderAuthority: UpdateProviderAuthority.InstalledUpdateProtocol,
-               CandidateProviderIds.Count: 1
-           },
+    {
+        ProviderId: "installed-authority",
+        ProviderAuthority: UpdateProviderAuthority.InstalledUpdateProtocol,
+        CandidateProviderIds.Count: 1
+    },
         "Provider ownership still depends on registration order instead of explicit authority.");
     var blockedFallbackAssessment = await new UpdateCheckService([fallbackAuthorityProvider])
         .CheckAsync(new InventorySnapshot(
@@ -981,10 +984,10 @@ try
         ])
         .CheckAsync(new InventorySnapshot(DateTimeOffset.UtcNow, [fallbackApplication], [], []));
     Assert(tiedAuthorityAssessment.Results.Single() is
-           {
-               Status: UpdateStatus.Error,
-               ProviderId: "provider-arbitration"
-           },
+    {
+        Status: UpdateStatus.Error,
+        ProviderId: "provider-arbitration"
+    },
         "Equally authoritative provider claims were silently resolved instead of failing closed.");
 
     var transactionCreatedAt = DateTimeOffset.UtcNow;
@@ -1261,30 +1264,30 @@ if (installedChatGpt is not null)
             new StubStorePackageDeploymentService(new StoreUpdateAvailability(true, false, "9PLM9XGG6VKS", null, null)))
         .CheckAsync(olderChatGpt, CancellationToken.None);
     Assert(releaseOnlyAssessment is
-           {
-               ProviderId: "openai-codex-store",
-               Status: UpdateStatus.NewerReleaseKnown,
-               AvailableVersion: "26.901.1978.0",
-               Applicability: UpdateApplicability.NotApplicable,
-               ExecutionPlan: null
-           } && !releaseOnlyAssessment.IsInstallable,
+    {
+        ProviderId: "openai-codex-store",
+        Status: UpdateStatus.NewerReleaseKnown,
+        AvailableVersion: "26.901.1978.0",
+        Applicability: UpdateApplicability.NotApplicable,
+        ExecutionPlan: null
+    } && !releaseOnlyAssessment.IsInstallable,
         "OpenAI release evidence was incorrectly promoted to an applicable update without a fulfillment route.");
     var storeApplicableAssessment = await new MsixStoreUpdateProvider(
             openAiManifestClient,
             new StubStorePackageDeploymentService(new StoreUpdateAvailability(true, true, "9PLM9XGG6VKS", "26.901.1978.0", null)))
         .CheckAsync(olderChatGpt, CancellationToken.None);
     Assert(storeApplicableAssessment is
-           {
-               Status: UpdateStatus.Available,
-               Applicability: UpdateApplicability.Applicable,
-               ExecutionPlan:
-               {
-                   Kind: UpdateExecutionKind.StorePackage,
-                   StoreProductId: "9PLM9XGG6VKS",
-                   StorePackageFamilyName: "OpenAI.Codex_2p2nqsd0c76g0",
-                   ProcessPolicy: UpdateProcessPolicy.CloseBeforeApply
-               } storePlan
-           } && storePlan.RunningProcessNames.Contains("ChatGPT", StringComparer.OrdinalIgnoreCase) &&
+    {
+        Status: UpdateStatus.Available,
+        Applicability: UpdateApplicability.Applicable,
+        ExecutionPlan:
+        {
+            Kind: UpdateExecutionKind.StorePackage,
+            StoreProductId: "9PLM9XGG6VKS",
+            StorePackageFamilyName: "OpenAI.Codex_2p2nqsd0c76g0",
+            ProcessPolicy: UpdateProcessPolicy.CloseBeforeApply
+        } storePlan
+    } && storePlan.RunningProcessNames.Contains("ChatGPT", StringComparer.OrdinalIgnoreCase) &&
                 storePlan.RunningExecutablePaths is { Count: > 0 },
         "A Store-applicable ChatGPT update did not receive an exact non-forced Store deployment plan.");
     var officialManifestAssessment = await new MsixStoreUpdateProvider(
@@ -1294,17 +1297,17 @@ if (installedChatGpt is not null)
         olderChatGpt,
         CancellationToken.None);
     Assert(officialManifestAssessment is
+    {
+        ProviderId: "openai-codex-store",
+        Status: UpdateStatus.Available,
+        AvailableVersion: "26.901.1978.0",
+        ExecutionPlan:
         {
-               ProviderId: "openai-codex-store",
-               Status: UpdateStatus.Available,
-               AvailableVersion: "26.901.1978.0",
-               ExecutionPlan:
-               {
-                   Kind: UpdateExecutionKind.StorePackage,
-                   StoreProductId: "9PLM9XGG6VKS",
-                   StorePackageFamilyName: "OpenAI.Codex_2p2nqsd0c76g0"
-               } manifestPlan
-           } && manifestPlan.RunningProcessNames.Contains("ChatGPT", StringComparer.OrdinalIgnoreCase) &&
+            Kind: UpdateExecutionKind.StorePackage,
+            StoreProductId: "9PLM9XGG6VKS",
+            StorePackageFamilyName: "OpenAI.Codex_2p2nqsd0c76g0"
+        } manifestPlan
+    } && manifestPlan.RunningProcessNames.Contains("ChatGPT", StringComparer.OrdinalIgnoreCase) &&
                 manifestPlan.RunningExecutablePaths is { Count: > 0 },
         $"ChatGPT did not receive its applicable official-manifest Store plan: " +
         $"{officialManifestAssessment.ProviderId} · {officialManifestAssessment.Status} · " +
@@ -1443,11 +1446,11 @@ if (installedGitHubCli is not null)
     if (gitHubCliUpdate.Status == UpdateStatus.Available)
     {
         Assert(gitHubCliUpdate.ExecutionPlan is
-               {
-                   Kind: UpdateExecutionKind.DownloadedMsi,
-                   Sha256.Length: 64,
-                   DownloadUri.Host: "github.com"
-               } &&
+        {
+            Kind: UpdateExecutionKind.DownloadedMsi,
+            Sha256.Length: 64,
+            DownloadUri.Host: "github.com"
+        } &&
                gitHubCliUpdate.ExecutionPlan.DownloadUri.AbsoluteUri.Contains("/cli/cli/releases/", StringComparison.OrdinalIgnoreCase),
             $"GitHub CLI {gitHubCliUpdate.AvailableVersion} was detected without its producer-owned digest-backed MSI plan: {gitHubCliUpdate.Message}");
     }
@@ -1664,10 +1667,10 @@ var windscribeRecipe = productionProviderCatalog.GitHub.Single(recipe =>
     recipe.Repository.Equals("Windscribe/Desktop-App", StringComparison.Ordinal));
 var windscribeFixtureHash = new string('d', 64);
 using (var windscribeFixtureClient = new HttpClient(new StubHttpMessageHandler(_ => JsonResponse(JsonSerializer.Serialize(new
-       {
-           tag_name = "v2.24.12",
-           html_url = "https://github.com/Windscribe/Desktop-App/releases/tag/v2.24.12",
-           assets = new[]
+{
+    tag_name = "v2.24.12",
+    html_url = "https://github.com/Windscribe/Desktop-App/releases/tag/v2.24.12",
+    assets = new[]
            {
                new
                {
@@ -1676,7 +1679,7 @@ using (var windscribeFixtureClient = new HttpClient(new StubHttpMessageHandler(_
                    digest = $"sha256:{windscribeFixtureHash}"
                }
            }
-       })))))
+})))))
 {
     var windscribeFixtureApplication = CreateApplication(
         "windscribe-producer-test",
@@ -1689,28 +1692,28 @@ using (var windscribeFixtureClient = new HttpClient(new StubHttpMessageHandler(_
     var windscribeFixtureUpdate = await new GitHubReleaseUpdateProvider(windscribeFixtureClient, windscribeRecipe)
         .CheckAsync(windscribeFixtureApplication, CancellationToken.None);
     Assert(windscribeFixtureUpdate is
-           {
-               ProviderId: "github:Windscribe/Desktop-App",
-               Status: UpdateStatus.Available,
-               AvailableVersion: "2.24.12",
-               ExecutionPlan:
-               {
-                   DownloadUri.AbsoluteUri: "https://github.com/Windscribe/Desktop-App/releases/download/v2.24.12/Windscribe_2.24.12_amd64.exe",
-                   Sha256: var windscribeHash,
-                   ExpectedSigner: "Windscribe Limited",
-                   Arguments: var windscribeArguments
-               }
-           } && windscribeHash == windscribeFixtureHash &&
+    {
+        ProviderId: "github:Windscribe/Desktop-App",
+        Status: UpdateStatus.Available,
+        AvailableVersion: "2.24.12",
+        ExecutionPlan:
+        {
+            DownloadUri.AbsoluteUri: "https://github.com/Windscribe/Desktop-App/releases/download/v2.24.12/Windscribe_2.24.12_amd64.exe",
+            Sha256: var windscribeHash,
+            ExpectedSigner: "Windscribe Limited",
+            Arguments: var windscribeArguments
+        }
+    } && windscribeHash == windscribeFixtureHash &&
                 windscribeArguments.SequenceEqual(["-silent", "-no-auto-start"]),
         "Windscribe's official producer release did not retain its digest-backed signed installer plan.");
 }
 var naxUpdaterRecipe = productionProviderCatalog.GitHub.Single(recipe =>
     recipe.Repository.Equals("Naxterra/Nax-Updater", StringComparison.Ordinal));
 using (var naxUpdaterFixtureClient = new HttpClient(new StubHttpMessageHandler(_ => JsonResponse(JsonSerializer.Serialize(new
-       {
-           tag_name = "v0.16.3",
-           html_url = "https://github.com/Naxterra/Nax-Updater/releases/tag/v0.16.3",
-           assets = new[]
+{
+    tag_name = "v0.16.3",
+    html_url = "https://github.com/Naxterra/Nax-Updater/releases/tag/v0.16.3",
+    assets = new[]
            {
                new
                {
@@ -1719,7 +1722,7 @@ using (var naxUpdaterFixtureClient = new HttpClient(new StubHttpMessageHandler(_
                    digest = $"sha256:{new string('e', 64)}"
                }
            }
-       })))))
+})))))
 {
     var naxUpdaterFixtureApplication = CreateApplication(
         "naxupdater-producer-test",
@@ -1732,13 +1735,13 @@ using (var naxUpdaterFixtureClient = new HttpClient(new StubHttpMessageHandler(_
     var naxUpdaterFixtureUpdate = await new GitHubReleaseUpdateProvider(naxUpdaterFixtureClient, naxUpdaterRecipe)
         .CheckAsync(naxUpdaterFixtureApplication, CancellationToken.None);
     Assert(naxUpdaterFixtureUpdate is
-           {
-               ProviderId: "github:Naxterra/Nax-Updater",
-               Status: UpdateStatus.NewerReleaseKnown,
-               AvailableVersion: "0.16.3",
-               ExecutionPlan: null,
-               Applicability: UpdateApplicability.NotApplicable
-           },
+    {
+        ProviderId: "github:Naxterra/Nax-Updater",
+        Status: UpdateStatus.NewerReleaseKnown,
+        AvailableVersion: "0.16.3",
+        ExecutionPlan: null,
+        Applicability: UpdateApplicability.NotApplicable
+    },
         "Unsigned NaxUpdater releases were not recognized while remaining blocked from automatic installation.");
 }
 var productionUpdateSnapshot = await new UpdateCheckService(capabilityClient, productionProviderCatalog)

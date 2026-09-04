@@ -312,7 +312,21 @@ public sealed class StorePackageDeploymentService : IStorePackageDeploymentServi
                     $"Microsoft Store changed the applicable target from {expectedVersion} to {offeredVersion ?? "unknown"}; the approved update was not submitted.");
             }
 
-            var result = await manager.UpgradePackageAsync(package, CreateInstallOptions())
+            var installOptions = CreateInstallOptions();
+            PackageVersionId? selectedVersion = null;
+            for (var index = 0; index < package.AvailableVersions.Count; index++)
+            {
+                var key = package.AvailableVersions[index];
+                if (key.Version.Equals(expectedVersion, StringComparison.OrdinalIgnoreCase))
+                {
+                    selectedVersion = key;
+                    break;
+                }
+            }
+            if (selectedVersion is null)
+                return new UpdateExecutionResult(-1, false, "Microsoft Store no longer exposes the approved package version.");
+            installOptions.PackageVersionId = selectedVersion;
+            var result = await manager.UpgradePackageAsync(package, installOptions)
                 .AsTask(cancellationToken);
 
             var success = result.Status == InstallResultStatus.Ok;

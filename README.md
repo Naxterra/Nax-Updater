@@ -33,6 +33,10 @@ The inventory engine:
 
 The current implementation includes:
 
+- regression tests for version padding, semantic build metadata, numeric prerelease ordering, compact release dates, architecture/scope mismatches, release/asset version disagreement, GitHub rate-limit recovery, truthful coverage, and the full WinGet transaction through a simulated package-manager boundary;
+- version comparison without fixed-width integer parsing, so long build identifiers cannot overflow the check or post-install verifier;
+- restored WinGet fallback installation through the official Windows Package Manager API, with installed product-code correlation and retained catalog, version, and installer variant through preparation and application;
+- separate counts for completed version checks, externally managed entries, unsupported applications, failed checks, and installable updates;
 - recovers Git/GitHub release checks from anonymous GitHub API rate limits through the installed authenticated GitHub CLI while retaining the exact official asset digest and signer policy;
 - restores automatic execution for exact producer-hashed, Authenticode-bound EXE installers such as Firefox and NVIDIA, including their normal Windows elevation prompt;
 - keeps installed version evidence owned by NaxUpdater inventory instead of rejecting WinGet fallback assessments whose comparison helper uses a normalized catalog version;
@@ -46,7 +50,7 @@ The current implementation includes:
 - Store applicability based on the exact update catalog rather than display metadata, with forced Store installation removed entirely;
 - ChatGPT release evidence reconciled independently with its exact Store offer; generic localized UI buttons are no longer treated as a trusted update protocol;
 - GOG release detection without elevating its user-writable, unauthenticated adjacent runtime dependency set;
-- a refreshed exact-identity WinGet fallback used for release detection only; fallback catalogs never receive an automatic install plan because their installer variant cannot be bound to the checked catalog generation;
+- a refreshed WinGet fallback that asks the official package manager to verify and apply an applicable exact package version; it does not scrape installer YAML or invoke a configurable command-line source alias;
 - producer-hashed and Authenticode-bound EXE installers remain executable, including their normal Windows elevation prompt; their payload stays deny-write/delete locked through process completion;
 - a deterministic transaction test suite covering provider precedence, policy blocking, stale and mutated plans, preparation failure, post-prepare changes, UAC cancellation, reboot-pending state, journal recovery, and version-bound completion;
 
@@ -82,7 +86,7 @@ The current implementation includes:
 - Windscribe checks through the official `Windscribe/Desktop-App` release, exact architecture asset, GitHub digest, and `Windscribe Limited` Authenticode identity;
 - Node.js checks through the official distribution index on the installed major release line, with verified PE architecture, producer-published MSI SHA-256, and `OpenJS Foundation` Authenticode identity;
 - WinRAR checks and language-matched installers directly from RARLAB's official download page; the original producer download is SHA-256 pinned during the check and must carry the `win.rar GmbH` Authenticode signature;
-- detection-only WinGet fallback coverage for applications without a producer adapter, while applications not safely correlated with either source remain explicitly **No verifiable update source**;
+- WinGet fallback coverage for applications without a producer adapter, with automatic installation when Windows Package Manager correlates the installed product and returns an applicable installer;
 - a complete assessment result for every visible application, including an explicit **No verifiable update source** status instead of silently omitting unsupported software;
 - registered non-MSI product-code correlation for installer technologies such as Inno Setup;
 - vendor-native GOG Galaxy releases read from GOG's own `autoupdate-verified` state, with the updater version matched to metadata and its GOG Authenticode signature validated; automatic elevation is intentionally withheld because the adjacent runtime dependency set has no producer-authenticated manifest;
@@ -161,7 +165,8 @@ NaxUpdater never falls back to an English Firefox installer when the detected lo
 - Checks are read-only and never start installation automatically.
 - Every installation requires an explicit confirmation.
 - Downloaded installers require HTTPS, an allow-listed final host, a published SHA-256/SHA-512 release digest, and an expected Authenticode publisher unless an explicitly modelled hash-only payload has an independently verified nested catalog.
-- The application, architecture, channel, locale, scope, and install directory are fixed in the execution plan.
+- Direct producer recipes verify installed architecture and scope; supported alternate architectures select their matching assets. Unsupported variants remain visible with an explanation.
+- Native WinGet fulfillment retains the official catalog package/version and validates the selected architecture, installer type, and locale before submission. Windows Package Manager owns download integrity, dependencies, installer switches and Windows elevation.
 - Starting an update authorizes NaxUpdater to close only path-bound processes from the fresh execution plan and force-terminate their same-session trees when necessary; inaccessible processes block the transaction instead of passing stale PIDs through an elevated `taskkill` command.
 - NaxUpdater does not run bulk WinGet, Chocolatey, or Scoop commands and never uninstalls without exact user confirmation.
 
@@ -181,7 +186,7 @@ From this directory:
 dotnet build NaxUpdater.slnx
 dotnet run --project tests/NaxUpdater.Core.SmokeTests/NaxUpdater.Core.SmokeTests.csproj
 dotnet publish src/NaxUpdater/NaxUpdater.csproj -c Release -r win-x64 --self-contained true -o artifacts/NaxUpdater-win-x64
-./scripts/package-release.ps1 -Version 0.16.3
+./scripts/package-release.ps1 -Version 0.16.4
 ```
 
 The desktop project uses .NET 11, WinUI 3, and the Windows App SDK. It is not an Electron or WebView application.

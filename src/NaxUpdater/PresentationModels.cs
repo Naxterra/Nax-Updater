@@ -187,6 +187,8 @@ public sealed class UpdateRow
         ? LocalizationService.Get("SecurityNoExternalInstaller")
         : Source.ExecutionPlan.Kind == UpdateExecutionKind.StorePackage
             ? LocalizationService.Get("SecurityMicrosoftStoreIdentity")
+        : Source.ExecutionPlan.Kind == UpdateExecutionKind.WingetPackage
+            ? LocalizationService.Get("SecurityWingetProvider")
         : Source.ExecutionPlan.Kind == UpdateExecutionKind.NativeCommand
             ? LocalizationService.Get("SecurityNativeProvider")
             : !Source.ExecutionPlan.RequireAuthenticode

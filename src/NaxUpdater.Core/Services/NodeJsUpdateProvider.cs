@@ -39,7 +39,7 @@ public sealed class NodeJsUpdateProvider(HttpClient httpClient) : IUpdateProvide
         try
         {
             using var request = new HttpRequestMessage(HttpMethod.Get, ReleaseIndexUri);
-            request.Headers.UserAgent.ParseAdd("NaxUpdater/0.16.3");
+            request.Headers.UserAgent.ParseAdd("NaxUpdater/0.16.4");
             using var response = await httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
             response.EnsureSuccessStatusCode();
             using var document = JsonDocument.Parse(await response.Content.ReadAsStreamAsync(cancellationToken));
@@ -68,6 +68,10 @@ public sealed class NodeJsUpdateProvider(HttpClient httpClient) : IUpdateProvide
         }
 
         var installerName = $"node-v{release.Version}-{architecture}.msi";
+        if (application.Scope != InstallScope.Machine)
+            return Result(application, release, UpdateStatus.NewerReleaseKnown, releaseNotes,
+                "The official Node.js MSI installs machine-wide and does not preserve this installation's scope.",
+                null, architecture, UpdateApplicability.NotApplicable);
         var installerUri = new Uri($"https://nodejs.org/dist/v{release.Version}/{installerName}");
         var hash = await ReadInstallerHashAsync(release.Version, installerName, cancellationToken);
         if (hash is null)
@@ -153,7 +157,7 @@ public sealed class NodeJsUpdateProvider(HttpClient httpClient) : IUpdateProvide
         CancellationToken cancellationToken)
     {
         using var request = new HttpRequestMessage(HttpMethod.Get, $"https://nodejs.org/dist/v{version}/SHASUMS256.txt");
-        request.Headers.UserAgent.ParseAdd("NaxUpdater/0.16.3");
+        request.Headers.UserAgent.ParseAdd("NaxUpdater/0.16.4");
         try
         {
             using var response = await httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);

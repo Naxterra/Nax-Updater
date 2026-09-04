@@ -11,12 +11,15 @@ public sealed class UpdateExecutionService
 {
     private readonly IStorePackageDeploymentService _storePackageDeploymentService;
     private readonly IAuthenticodeVerifier _authenticodeVerifier;
+    private readonly IWingetPackageService _wingetPackages;
 
     public UpdateExecutionService(
         IAuthenticodeVerifier? authenticodeVerifier = null,
-        IStorePackageDeploymentService? storePackageDeploymentService = null)
+        IStorePackageDeploymentService? storePackageDeploymentService = null,
+        IWingetPackageService? wingetPackageService = null)
     {
         _authenticodeVerifier = authenticodeVerifier ?? new NativeAuthenticodeVerifier();
+        _wingetPackages = wingetPackageService ?? new WingetPackageService();
         _storePackageDeploymentService = storePackageDeploymentService ?? new StorePackageDeploymentService();
     }
 
@@ -180,6 +183,11 @@ public sealed class UpdateExecutionService
         CancellationToken cancellationToken = default)
     {
         var plan = update.ExecutionPlan ?? throw new InvalidOperationException("The update has no execution plan.");
+        if (plan.Kind == UpdateExecutionKind.WingetPackage)
+        {
+            var package = await _wingetPackages.PrepareAsync(update, cancellationToken);
+            return new PreparedUpdateExecution(null, null, null, null, null, CatalogUpdate: package);
+        }
         if (plan.Kind == UpdateExecutionKind.StorePackage)
         {
             var availability = await _storePackageDeploymentService.CheckForUpdateAsync(
@@ -359,6 +367,15 @@ public sealed class UpdateExecutionService
                 cancellationToken);
         }
 
+        if (plan.Kind == UpdateExecutionKind.WingetPackage)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            if (prepared.CatalogUpdate is null ||
+                !string.Equals(System.Text.Json.JsonSerializer.Serialize(prepared.CatalogUpdate.Target),
+                    System.Text.Json.JsonSerializer.Serialize(plan.WingetTarget), StringComparison.Ordinal))
+                throw new InvalidOperationException("The prepared WinGet package does not match the approved target.");
+            return await prepared.CatalogUpdate.ApplyAsync(cancellationToken);
+        }
         if (string.IsNullOrWhiteSpace(prepared.ExecutablePath) || !File.Exists(prepared.ExecutablePath))
         {
             DiscardPrepared(prepared);

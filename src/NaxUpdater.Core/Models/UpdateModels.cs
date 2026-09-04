@@ -25,7 +25,8 @@ public enum UpdateExecutionKind
     DownloadedZipMsi,
     DownloadedZipDriver,
     NativeCommand,
-    StorePackage
+    StorePackage,
+    WingetPackage
 }
 
 public enum UpdateProviderAuthority
@@ -131,7 +132,20 @@ public sealed record UpdateExecutionPlan(
     DateTimeOffset? ExpiresAt = null,
     string? InstalledVersionPrecondition = null,
     Guid CheckGenerationId = default,
-    IReadOnlyList<string>? RunningExecutablePaths = null);
+    IReadOnlyList<string>? RunningExecutablePaths = null,
+    WingetUpdateTarget? WingetTarget = null);
+
+public sealed record WingetUpdateTarget(
+    string PackageId,
+    string SourceId,
+    string Version,
+    string InstalledCatalogVersion,
+    IReadOnlyList<string> InstalledProductCodes,
+    string Architecture,
+    string InstallerType,
+    string Locale,
+    InstallScope Scope,
+    string? InstallLocation);
 
 public sealed record UpdateCheckResult(
     string ApplicationIdentity,
@@ -164,4 +178,13 @@ public sealed record UpdateCheckSnapshot(
     DateTimeOffset CheckedAt,
     IReadOnlyList<UpdateCheckResult> Results,
     int UnsupportedApplicationCount,
-    Guid GenerationId = default);
+    Guid GenerationId = default)
+{
+    public int CheckedVersionCount => Results.Count(static result =>
+        result.Status is UpdateStatus.Current or UpdateStatus.Available or UpdateStatus.NewerReleaseKnown);
+    public int ManagedExternallyCount => Results.Count(static result => result.Status == UpdateStatus.ManagedExternally);
+    public int FailedCheckCount => Results.Count(static result => result.Status == UpdateStatus.Error);
+    public int InstallableUpdateCount => Results.Count(static result => result.IsInstallable);
+    public int KnownReleaseCount => Results.Count(static result => result.Status == UpdateStatus.NewerReleaseKnown);
+    public bool AllCurrent => Results.Count > 0 && Results.All(static result => result.Status == UpdateStatus.Current);
+}

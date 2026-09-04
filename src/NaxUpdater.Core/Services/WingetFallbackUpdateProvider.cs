@@ -7,8 +7,10 @@ using Windows.Management.Deployment;
 
 namespace NaxUpdater.Core.Services;
 
-public sealed partial class WingetFallbackUpdateProvider(string? catalogIndexPath = null) : IUpdateProvider, IUpdateProviderSourceRefresher
+public sealed partial class WingetFallbackUpdateProvider(
+    string? catalogIndexPath = null, IWingetPackageService? packageService = null) : IUpdateProvider, IUpdateProviderSourceRefresher
 {
+    private readonly IWingetPackageService _packages = packageService ?? new WingetPackageService();
     private readonly ConcurrentDictionary<string, CatalogIdentity> _identities = new(StringComparer.Ordinal);
     private string? _catalogRefreshError;
 
@@ -101,26 +103,21 @@ public sealed partial class WingetFallbackUpdateProvider(string? catalogIndexPat
             return Result(application, identity, availableVersion, UpdateStatus.Current, source, null, null);
         }
 
-        if (!IsStrongCatalogIdentity(identity))
-        {
-            return Result(
-                application,
-                identity,
-                availableVersion,
-                UpdateStatus.Available,
-                source,
-                "A unique name-and-publisher catalog match found a newer version, but this weaker identity is intentionally not installable.",
-                null);
-        }
-
+        var offer = await _packages.AssessAsync(application, identity.Id, availableVersion, cancellationToken);
+        var executable = InstalledApplicationMetadata.Executable(application);
+        var plan = offer.Target is null ? null : new UpdateExecutionPlan(
+            UpdateExecutionKind.WingetPackage, null, null, null, null, null, [], false, [],
+            executable is null ? [] : [Path.GetFileNameWithoutExtension(executable)],
+            RunningExecutablePaths: executable is null ? [] : [executable],
+            WingetTarget: offer.Target);
         return Result(
             application,
             identity,
             availableVersion,
             UpdateStatus.Available,
             source,
-            $"Exact installed identity match to {identity.Id}; the refreshed WinGet catalog reports a newer release, but fallback catalogs are detection-only because their installer variant cannot be bound to the checked catalog generation.",
-            null);
+            offer.Error ?? $"WinGet correlated the installed product with {identity.Id}; the official package manager will verify and apply version {availableVersion}.",
+            plan);
     }
 
     private CatalogIdentity? GetIdentity(InstalledApplication application)
@@ -429,9 +426,9 @@ public sealed partial class WingetFallbackUpdateProvider(string? catalogIndexPat
             status,
             Id,
             "WinGet fallback",
-            "neutral",
-            "Vendor multi-language installer",
-            DetectArchitecture(application.PrimaryInstallPath) ?? "unknown",
+            string.IsNullOrWhiteSpace(plan?.WingetTarget?.Locale) ? "application-managed" : plan.WingetTarget.Locale,
+            "Selected by Windows Package Manager for the installed application",
+            plan?.WingetTarget?.Architecture.ToLowerInvariant() ?? DetectArchitecture(application.PrimaryInstallPath) ?? "unknown",
             "stable",
             $"https://github.com/microsoft/winget-pkgs/tree/master/manifests/{char.ToLowerInvariant(identity.Id[0])}/{string.Join('/', identity.Id.Split('.'))}",
             message ?? $"{identity.MatchKind} match to {identity.Id}; {source} reports the current version.",
@@ -439,7 +436,7 @@ public sealed partial class WingetFallbackUpdateProvider(string? catalogIndexPat
 
     private UpdateCheckResult Error(InstalledApplication application, string message) => new(
         application.Identity, application.DisplayName, application.NormalizedVersion, null, UpdateStatus.Error,
-        Id, "WinGet fallback", "neutral", "Vendor multi-language installer", "unknown", "unknown", null, message, null);
+        Id, "WinGet fallback", "unknown", "Language was not resolved", "unknown", "unknown", null, message, null);
 
     private static string? ProductCode(InstalledApplication application)
     {

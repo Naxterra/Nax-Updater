@@ -27,7 +27,8 @@ public sealed record PreparedUpdateExecution(
     string? WorkingDirectory,
     string? CleanupDirectory,
     string? ContentSha256,
-    IReadOnlyList<PreparedContentLock>? ContentLocks = null);
+    IReadOnlyList<PreparedContentLock>? ContentLocks = null,
+    PreparedCatalogUpdate? CatalogUpdate = null);
 
 public sealed record PreparedContentLock(string Path, FileStream Stream) : IDisposable
 {
@@ -489,6 +490,10 @@ public static class UpdatePlanValidator
                 when string.IsNullOrWhiteSpace(plan.StoreProductId) ||
                      string.IsNullOrWhiteSpace(plan.StorePackageFamilyName)
                 => "The package update plan does not contain an exact Store product and package-family identity.",
+            UpdateExecutionKind.WingetPackage when plan.WingetTarget is null ||
+                plan.WingetTarget.SourceId != WingetPackageService.OfficialSourceId ||
+                plan.WingetTarget.Version != update.AvailableVersion
+                => "The WinGet update plan does not contain the approved official package and version.",
             _ => null
         };
     }

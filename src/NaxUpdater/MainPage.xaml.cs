@@ -665,8 +665,8 @@ public sealed partial class MainPage : Page
             _allUpdates = result.Results.Select(update => new UpdateRow(
                 update,
                 applicationsByIdentity.GetValueOrDefault(update.ApplicationIdentity))).ToArray();
-            var available = result.Results.Count(static update => update.Status == UpdateStatus.Available);
-            var knownReleases = result.Results.Count(static update => update.Status == UpdateStatus.NewerReleaseKnown);
+            var available = result.InstallableUpdateCount;
+            var knownReleases = result.KnownReleaseCount;
             _availableUpdateCount = available;
             var errors = result.Results.Count(static update => update.Status == UpdateStatus.Error);
             ApplyUpdateFilter();
@@ -674,7 +674,7 @@ public sealed partial class MainPage : Page
             ShowUpdatesButton.Content = LocalizationService.Format(
                 "UpdatesNavigationCoverage",
                 available + knownReleases,
-                result.Results.Count - result.UnsupportedApplicationCount,
+                result.CheckedVersionCount,
                 result.Results.Count);
             ShowUpdatesButton.IsEnabled = _allUpdates.Count > 0;
             if (showWorkspace)
@@ -682,21 +682,21 @@ public sealed partial class MainPage : Page
                 ShowUpdatesWorkspace();
             }
             StatusText.Text = LocalizationService.Format(
-                "UpdateCheckedStatus",
-                result.Results.Count - result.UnsupportedApplicationCount,
+                "UpdateCheckedStatusDetailed",
+                result.CheckedVersionCount,
                 available,
-                result.UnsupportedApplicationCount);
+                result.ManagedExternallyCount,
+                result.UnsupportedApplicationCount,
+                result.FailedCheckCount,
+                knownReleases);
 
             UpdateBar.Title = available > 0
                 ? LocalizationService.Format("UpdatesAvailableTitle", available)
                 : knownReleases > 0
                     ? LocalizationService.Format("ReleasesKnownTitle", knownReleases)
-                    : LocalizationService.Get("ApplicationsCurrent");
-            UpdateBar.Message = errors == 0
-                ? knownReleases > 0 && available == 0
-                    ? LocalizationService.Get("ReleasesKnownMessage")
-                    : LocalizationService.Get("InstallersPreserve")
-                : LocalizationService.Format("ProviderErrors", errors);
+                    : LocalizationService.Get(result.AllCurrent ? "ApplicationsCurrent" :
+                        errors > 0 ? "ChecksIncomplete" : "NoUpdatesAmongChecked");
+            UpdateBar.Message = StatusText.Text;
             UpdateBar.Severity = errors > 0 ? InfoBarSeverity.Warning : available > 0 ? InfoBarSeverity.Success : InfoBarSeverity.Informational;
             UpdateBar.IsOpen = true;
         }
@@ -1357,14 +1357,14 @@ public sealed partial class MainPage : Page
         string content,
         string primaryText,
         string? closeText = null) => new()
-    {
-        XamlRoot = XamlRoot,
-        Title = title,
-        Content = new TextBlock { Text = content, TextWrapping = TextWrapping.Wrap, IsTextSelectionEnabled = true },
-        PrimaryButtonText = primaryText,
-        CloseButtonText = closeText ?? string.Empty,
-        DefaultButton = ContentDialogButton.Primary
-    };
+        {
+            XamlRoot = XamlRoot,
+            Title = title,
+            Content = new TextBlock { Text = content, TextWrapping = TextWrapping.Wrap, IsTextSelectionEnabled = true },
+            PrimaryButtonText = primaryText,
+            CloseButtonText = closeText ?? string.Empty,
+            DefaultButton = ContentDialogButton.Primary
+        };
 
     private enum ApplicationSortColumn
     {

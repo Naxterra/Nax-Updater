@@ -30,7 +30,8 @@ public static partial class LocalizationService
     {
         if (update.ProviderId == "mozilla-firefox") return Get("ProviderMozilla");
         if (update.ProviderId == "zero-install") return Get("ProviderZeroInstall");
-        if (update.ProviderId == "native-updater") return Get("ProviderNative");
+        if (update.ProviderId == "native-updater") return update.ProviderDisplayName == "NaxUpdater manufacturer-driver view"
+            ? Get("ProviderDriverWorkspace") : update.ProviderDisplayName;
         if (update.ProviderId == "unverified") return Get("ProviderUnverified");
         if (update.ProviderId == "msix-store") return Get("ProviderMsixStore");
         if (update.ProviderId == "openai-codex-store") return Get("ProviderOpenAiStore");
@@ -47,7 +48,9 @@ public static partial class LocalizationService
 
     public static string ProviderMessage(UpdateCheckResult update)
     {
-        if (update.ProviderId == "native-updater") return Get("ProviderNativeNote");
+        if (update.Status is UpdateStatus.Error or UpdateStatus.NewerReleaseKnown)
+            return update.Message ?? Get(update.Status == UpdateStatus.Error ? "StatusCheckFailed" : "ProviderReleaseKnownNotAutomatic");
+        if (update.ProviderId == "native-updater") return Format("ProviderManagedUnchecked", ProviderName(update));
         if (update.ProviderId == "unverified") return Get("ProviderUnverifiedNote");
         if (update.ProviderId == "msix-store") return update.Status switch
         {
@@ -65,7 +68,7 @@ public static partial class LocalizationService
         if (update.ProviderId == "winget-fallback") return update.Status switch
         {
             UpdateStatus.Current => Get("ProviderWingetFallbackCurrent"),
-            UpdateStatus.Available when update.ExecutionPlan is not null => Get("ProviderWingetFallbackVerified"),
+            UpdateStatus.Available when update.ExecutionPlan?.Kind == UpdateExecutionKind.WingetPackage => Get("SecurityWingetProvider"),
             _ => Get("ProviderWingetFallbackBlocked")
         };
         if (update.Status == UpdateStatus.NewerReleaseKnown) return Get("ProviderReleaseKnownNotAutomatic");
@@ -102,8 +105,8 @@ public static partial class LocalizationService
         "Firefox installed-package locale" => Get("LanguageSourceFirefoxPackage"),
         "Vendor multi-language installer" => Get("LanguageSourceMultiLanguage"),
         "Recipe-pinned installer language" => Get("LanguageSourceRecipe"),
-            "Zero Install application feed" => Get("LanguageSourceZeroInstall"),
-            "Preserved by GOG Galaxy's staged updater" or "Preserved by GOG Galaxy's updater" => Get("LanguageSourceGogGalaxy"),
+        "Zero Install application feed" => Get("LanguageSourceZeroInstall"),
+        "Preserved by GOG Galaxy's staged updater" or "Preserved by GOG Galaxy's updater" => Get("LanguageSourceGogGalaxy"),
         "Preserved by the application's updater" => Get("LanguageSourceNative"),
         "Preserved by Microsoft Store/MSIX package" => Get("LanguageSourceMsixStore"),
         "Installed WinRAR language file" => Get("LanguageSourceWinRar"),
