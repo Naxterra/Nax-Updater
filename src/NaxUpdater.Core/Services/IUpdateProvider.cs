@@ -11,3 +11,8 @@ public interface IUpdateProvider
     bool CanHandle(InstalledApplication application);
     Task<UpdateCheckResult> CheckAsync(InstalledApplication application, CancellationToken cancellationToken);
 }
+
+internal interface IUpdateProviderSourceRefresher
+{
+    Task RefreshSourceAsync(CancellationToken cancellationToken);
+}

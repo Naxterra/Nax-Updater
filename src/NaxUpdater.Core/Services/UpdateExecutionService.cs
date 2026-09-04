@@ -211,7 +211,7 @@ public sealed class UpdateExecutionService
             var nativeLocks = AcquirePreparedContentLocks(nativeExecutable, null);
             try
             {
-                if (plan.RequiresElevation)
+                if (!string.IsNullOrWhiteSpace(plan.ExpectedSigner))
                 {
                     var signature = _authenticodeVerifier.Verify(nativeExecutable, plan.ExpectedSigner!);
                     if (!signature.IsValid)

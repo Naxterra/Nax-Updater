@@ -25,11 +25,12 @@ internal static class ExecutableMetadataEnricher
         }
         TryResolveInstallOrUpdateDate(candidate, primaryPath);
 
-        var (version, versionSource) = !string.IsNullOrWhiteSpace(candidate.ProviderVersion)
-            ? (candidate.ProviderVersion, "Native provider")
-            : !string.IsNullOrWhiteSpace(candidate.ExecutableVersion)
-                ? (candidate.ExecutableVersion, "Executable metadata")
-                : (candidate.RegistryVersion, string.IsNullOrWhiteSpace(candidate.RegistryVersion) ? null : "Uninstall registry");
+        var registeredNameVersion = RegisteredProductVersion(candidate.DisplayName, candidate.Publisher);
+        var (version, versionSource) = SelectVersion(
+            candidate.ProviderVersion,
+            registeredNameVersion,
+            candidate.ExecutableVersion,
+            candidate.RegistryVersion);
         var normalizedVersion = VersionNormalizer.Normalize(version, candidate.Policy?.VersionNormalization);
         var confidence = DetermineConfidence(candidate, primaryPath, version);
 
@@ -84,12 +85,23 @@ internal static class ExecutableMetadataEnricher
             var version = FirstValue(information.ProductVersion, information.FileVersion);
             if (!string.IsNullOrWhiteSpace(version))
             {
-                candidate.ExecutableVersion = version;
                 candidate.Evidence.Add(new ApplicationEvidence(
                     EvidenceKind.Executable,
                     "Executable version",
                     version,
                     true));
+                if (IsApplicationExecutable(path, candidate.DisplayName, information.ProductName))
+                {
+                    candidate.ExecutableVersion = version;
+                }
+                else
+                {
+                    candidate.Evidence.Add(new ApplicationEvidence(
+                        EvidenceKind.Executable,
+                        "Executable version ignored",
+                        $"{version} · metadata belongs to an installer, uninstaller, component, or unrelated executable",
+                        true));
+                }
             }
             if (string.IsNullOrWhiteSpace(candidate.Publisher) && !string.IsNullOrWhiteSpace(information.CompanyName))
             {
@@ -108,6 +120,34 @@ internal static class ExecutableMetadataEnricher
         {
             // A locked or unusual executable remains useful as path evidence.
         }
+    }
+
+    internal static bool IsApplicationExecutable(string path, string displayName, string? productName)
+    {
+        if (!Path.GetExtension(path).Equals(".exe", StringComparison.OrdinalIgnoreCase) ||
+            path.Contains($"{Path.DirectorySeparatorChar}Package Cache{Path.DirectorySeparatorChar}", StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        var fileName = Path.GetFileNameWithoutExtension(path);
+        string[] helperMarkers =
+        [
+            "uninstall", "unins", "installer", "bootstrap", "setup", "prounstl", "kminst", "autoinstall"
+        ];
+        if (helperMarkers.Any(marker => fileName.Contains(marker, StringComparison.OrdinalIgnoreCase)))
+        {
+            return false;
+        }
+
+        var normalizedDisplay = NativePathParser.NormalizeName(displayName);
+        var normalizedProduct = NativePathParser.NormalizeName(productName ?? string.Empty);
+        var normalizedFile = NativePathParser.NormalizeName(fileName);
+        return Correlates(normalizedDisplay, normalizedProduct) || Correlates(normalizedDisplay, normalizedFile);
+
+        static bool Correlates(string display, string candidate) =>
+            candidate.Length >= 3 &&
+            (display.Contains(candidate, StringComparison.Ordinal) || candidate.Contains(display, StringComparison.Ordinal));
     }
 
     private static void TryResolveInstallOrUpdateDate(ApplicationCandidate candidate, string? primaryPath)
@@ -158,6 +198,94 @@ internal static class ExecutableMetadataEnricher
             return ConfidenceLevel.High;
         }
         return hasVerifiedPath || hasVersion ? ConfidenceLevel.Medium : ConfidenceLevel.Low;
+    }
+
+    internal static (string? Version, string? Source) SelectVersion(
+        string? providerVersion,
+        string? executableVersion,
+        string? registryVersion) => SelectVersion(providerVersion, null, executableVersion, registryVersion);
+
+    internal static (string? Version, string? Source) SelectVersion(
+        string? providerVersion,
+        string? registeredNameVersion,
+        string? executableVersion,
+        string? registryVersion)
+    {
+        if (IsMeaningfulVersion(providerVersion))
+        {
+            return (providerVersion!.Trim(), "Native provider");
+        }
+        if (IsMeaningfulVersion(registeredNameVersion))
+        {
+            return (registeredNameVersion!.Trim(), "Uninstall registry");
+        }
+        var executableIsMeaningful = IsMeaningfulVersion(executableVersion);
+        var registryIsMeaningful = IsMeaningfulVersion(registryVersion);
+        if (executableIsMeaningful && registryIsMeaningful)
+        {
+            return VersionOrder.Compare(executableVersion, registryVersion) >= 0
+                ? (executableVersion!.Trim(), "Executable metadata")
+                : (registryVersion!.Trim(), "Uninstall registry");
+        }
+        if (executableIsMeaningful)
+        {
+            return (executableVersion!.Trim(), "Executable metadata");
+        }
+        if (registryIsMeaningful)
+        {
+            return (registryVersion!.Trim(), "Uninstall registry");
+        }
+        return (null, null);
+    }
+
+    internal static string? RegisteredProductVersion(string displayName, string? publisher)
+    {
+        if (publisher?.Contains("Python Software Foundation", StringComparison.OrdinalIgnoreCase) == true)
+        {
+            var python = System.Text.RegularExpressions.Regex.Match(
+                displayName,
+                @"^Python\s+(?<version>\d+\.\d+\.\d+)\b",
+                System.Text.RegularExpressions.RegexOptions.IgnoreCase | System.Text.RegularExpressions.RegexOptions.CultureInvariant);
+            if (python.Success)
+            {
+                return python.Groups["version"].Value;
+            }
+        }
+
+        if (publisher?.Contains("Microsoft", StringComparison.OrdinalIgnoreCase) == true)
+        {
+            var sdk = System.Text.RegularExpressions.Regex.Match(
+                displayName,
+                @"^Microsoft\s+\.NET\s+SDK\s+(?<version>\d+\.\d+\.\d+(?:-[^\s(]+)?)\s+\(",
+                System.Text.RegularExpressions.RegexOptions.IgnoreCase | System.Text.RegularExpressions.RegexOptions.CultureInvariant);
+            if (sdk.Success)
+            {
+                return sdk.Groups["version"].Value;
+            }
+
+            var desktopRuntime = System.Text.RegularExpressions.Regex.Match(
+                displayName,
+                @"^Microsoft\s+Windows\s+Desktop\s+Runtime\s+-\s+(?<version>\d+\.\d+\.\d+)\s+\(",
+                System.Text.RegularExpressions.RegexOptions.IgnoreCase | System.Text.RegularExpressions.RegexOptions.CultureInvariant);
+            if (desktopRuntime.Success)
+            {
+                return desktopRuntime.Groups["version"].Value;
+            }
+        }
+        return null;
+    }
+
+    internal static bool IsMeaningfulVersion(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value) ||
+            value.Trim().Equals("unknown", StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        var numericParts = System.Text.RegularExpressions.Regex.Matches(value, @"\d+");
+        return numericParts.Count > 0 && numericParts.Any(static part =>
+            !part.Value.All(static character => character == '0'));
     }
 
     private static string? FirstValue(params string?[] values) => values.FirstOrDefault(static value => !string.IsNullOrWhiteSpace(value))?.Trim();

@@ -35,11 +35,15 @@ public sealed class NativeAuthenticodeVerifier : IAuthenticodeVerifier
             {
                 using var certificate = LoadAuthenticodeSigner(filePath);
                 var signer = certificate.GetNameInfo(X509NameType.SimpleName, forIssuer: false);
-                var matches = signer.Contains(expectedSigner, StringComparison.OrdinalIgnoreCase) ||
-                              certificate.Subject.Contains(expectedSigner, StringComparison.OrdinalIgnoreCase);
+                var exact = expectedSigner.StartsWith('=');
+                var expected = exact ? expectedSigner[1..] : expectedSigner;
+                var matches = exact
+                    ? signer.Equals(expected, StringComparison.OrdinalIgnoreCase)
+                    : signer.Contains(expected, StringComparison.OrdinalIgnoreCase) ||
+                      certificate.Subject.Contains(expected, StringComparison.OrdinalIgnoreCase);
                 return matches
                     ? new AuthenticodeVerificationResult(true, signer, null)
-                    : new AuthenticodeVerificationResult(false, signer, $"Expected signer '{expectedSigner}', found '{signer}'.");
+                    : new AuthenticodeVerificationResult(false, signer, $"Expected signer '{expected}', found '{signer}'.");
             }
             catch (Exception exception)
             {

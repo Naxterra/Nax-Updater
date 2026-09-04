@@ -18,6 +18,64 @@ Assert(VersionOrder.Compare("154.0.1", "154.0") > 0, "Numeric update ordering fa
 Assert(VersionOrder.Compare("155.0b5", "155.0") < 0, "Prerelease ordering failed.");
 Assert(VersionOrder.Compare("26.08.19.0", "260819") == 0,
     "Equivalent dotted and compact release-date versions were treated as different.");
+Assert(ExecutableMetadataEnricher.SelectVersion(null, "0.0.0.0", "7.1.0") == ("7.1.0", "Uninstall registry"),
+    "An all-zero executable version displaced Inno Setup's meaningful registry version.");
+Assert(ExecutableMetadataEnricher.SelectVersion(null, "0, 0, 0, 0", "26.08.19.0") == ("26.08.19.0", "Uninstall registry"),
+    "An all-zero executable version displaced PotPlayer's meaningful registry version.");
+Assert(ExecutableMetadataEnricher.SelectVersion(null, "3.15.15", "3.15.15") == ("3.15.15", "Executable metadata"),
+    "A meaningful executable version was not retained.");
+Assert(ExecutableMetadataEnricher.SelectVersion(null, "1.0.0", "3.0.0") == ("3.0.0", "Uninstall registry"),
+    "Conflicting version evidence selected a lower executable value that could authorize a downgrade.");
+Assert(ExecutableMetadataEnricher.RegisteredProductVersion(
+           "Python 3.14.7 (64-bit)", "Python Software Foundation") == "3.14.7" &&
+       ExecutableMetadataEnricher.RegisteredProductVersion(
+           "Microsoft .NET SDK 11.0.100-preview.7.26381.103 (x64)", "Microsoft Corporation") ==
+       "11.0.100-preview.7.26381.103" &&
+       ExecutableMetadataEnricher.RegisteredProductVersion(
+           "Microsoft Windows Desktop Runtime - 9.0.19 (x64)", "Microsoft Corporation") == "9.0.19",
+    "A public product version embedded in a verified uninstall display name was not recovered.");
+Assert(!ExecutableMetadataEnricher.IsApplicationExecutable(
+        @"C:\Program Files\NVIDIA Corporation\Installer2\InstallerCore\NVI2.dll",
+        "NVIDIA Grafiktreiber 616.56",
+        "NVIDIA Install Application") &&
+       !ExecutableMetadataEnricher.IsApplicationExecutable(
+        @"C:\ProgramData\Package Cache\bundle\Bootstrapper.exe",
+        "Snagit",
+        "Snagit") &&
+       ExecutableMetadataEnricher.IsApplicationExecutable(
+        @"C:\Program Files\Nodejs\node.exe",
+        "Node.js",
+        "Node.js"),
+    "Installer/component executable metadata was not separated from the application's own binary metadata.");
+var steamManagedFixture = ExternalManagementClassifier.Classify(CreateApplication(
+    "steam-game-fixture",
+    "Fixture Game",
+    "Fixture Publisher",
+    "1.0.0",
+    @"C:\Fixture\game.ico",
+    InstallScope.Machine,
+    ManagementMode.Registry) with
+{
+    Evidence =
+    [
+        new ApplicationEvidence(EvidenceKind.Registry, "Uninstall registry", "LocalMachine Registry64 · Steam App 12345", true)
+    ]
+});
+Assert(steamManagedFixture.ManagementMode == ManagementMode.NativeSelfUpdater &&
+       steamManagedFixture.BlockedProviders.Contains("winget-fallback", StringComparer.OrdinalIgnoreCase) &&
+       steamManagedFixture.Evidence.Any(static evidence =>
+           evidence.Label == ExternalManagementClassifier.OwnerEvidenceLabel && evidence.Value == "Steam"),
+    "A Steam-owned game was left as an unsupported standalone application.");
+var ordinaryApplicationFixture = CreateApplication(
+    "ordinary-app-fixture",
+    "Ordinary App",
+    "Ordinary Publisher",
+    "1.0.0",
+    @"C:\Fixture\ordinary.exe",
+    InstallScope.CurrentUser,
+    ManagementMode.Registry);
+Assert(ExternalManagementClassifier.Classify(ordinaryApplicationFixture).ManagementMode == ManagementMode.Registry,
+    "External-management classification captured an unrelated standalone application.");
 Assert(ManufacturerDriverService.NormalizeNvidiaVersion("32.0.16.1088") == "610.88",
     "NVIDIA Windows driver version normalization failed.");
 Assert(ManufacturerDriverService.NvidiaDriverHomeForCulture("de-DE").AbsoluteUri == "https://www.nvidia.com/de-de/drivers/" &&
@@ -590,23 +648,15 @@ try
             """;
         await fallbackCommand.ExecuteNonQueryAsync();
     }
-    var fallbackHash = new string('c', 64);
-    using var fallbackClient = new HttpClient(new StubHttpMessageHandler(_ => new HttpResponseMessage(HttpStatusCode.OK)
-    {
-        Content = new StringContent($$"""
-            InstallerType: msi
-            Installers:
-            - Architecture: x64
-              InstallerUrl: https://downloads.example.test/fallback-app-2.0.0-x64.msi
-              InstallerSha256: {{fallbackHash}}
-            """, Encoding.UTF8, "text/yaml")
-    }));
+    var fallbackInstallDirectory = Directory.CreateDirectory(Path.Combine(firefoxFixture, "fallback-app")).FullName;
+    var fallbackExecutable = Path.Combine(fallbackInstallDirectory, "FallbackApp.exe");
+    File.Copy(Path.Combine(Environment.SystemDirectory, "cmd.exe"), fallbackExecutable);
     var fallbackApplication = CreateApplication(
         "winget-fallback-test",
         "Fallback App",
         "Fallback Publisher",
         "1.0.0",
-        Path.Combine(Environment.SystemDirectory, "cmd.exe"),
+        fallbackExecutable,
         InstallScope.Machine,
         ManagementMode.WindowsInstaller) with
     {
@@ -617,16 +667,7 @@ try
             null,
             true)
     };
-    var wingetFallback = new WingetFallbackUpdateProvider(fallbackClient, wingetIndexPath);
-    var foreignLocaleInstaller = new WingetFallbackUpdateProvider.CatalogInstaller(
-        "x64",
-        "fr-FR",
-        UpdateExecutionKind.DownloadedMsi,
-        new Uri("https://downloads.example.test/french.msi"),
-        fallbackHash,
-        []);
-    Assert(WingetFallbackUpdateProvider.SelectInstaller([foreignLocaleInstaller], "x64", "de-DE") is null,
-        "WinGet fallback selected a foreign localized installer when no German or neutral package existed.");
+    var wingetFallback = new WingetFallbackUpdateProvider(wingetIndexPath);
     Assert(wingetFallback.CanHandle(fallbackApplication), "The exact-product WinGet fallback was not discovered.");
     var fallbackUpdate = await wingetFallback.CheckAsync(fallbackApplication, CancellationToken.None);
     Assert(fallbackUpdate is
@@ -634,13 +675,167 @@ try
                ProviderId: "winget-fallback",
                Status: UpdateStatus.Available,
                AvailableVersion: "2.0.0",
-               ExecutionPlan:
+               ExecutionPlan: null
+           } && fallbackUpdate.Message?.Contains("detection-only", StringComparison.OrdinalIgnoreCase) == true,
+        "The exact-product WinGet fallback escaped its detection-only trust boundary.");
+    var installedNewerThanFallback = fallbackApplication with
+    {
+        Identity = "winget-fallback-installed-newer-test",
+        InstalledVersion = "3.0.0",
+        NormalizedVersion = "3.0.0"
+    };
+    var installedNewerAssessment = await wingetFallback.CheckAsync(installedNewerThanFallback, CancellationToken.None);
+    Assert(installedNewerAssessment is
+           {
+               Status: UpdateStatus.Current,
+               InstalledVersion: "3.0.0",
+               AvailableVersion: null
+           } && installedNewerAssessment.Message?.Contains("newer than the fallback catalog", StringComparison.OrdinalIgnoreCase) == true,
+        "An older fallback-catalog version was presented as available beside a newer installed version.");
+
+    var ambiguousIndexPath = Path.Combine(firefoxFixture, "winget-ambiguous-product-index.db");
+    await using (var ambiguousConnection = new SqliteConnection($"Data Source={ambiguousIndexPath};Pooling=False"))
+    {
+        await ambiguousConnection.OpenAsync();
+        await using var ambiguousCommand = ambiguousConnection.CreateCommand();
+        ambiguousCommand.CommandText = """
+            CREATE TABLE packages(rowid INTEGER PRIMARY KEY, id TEXT NOT NULL, name TEXT NOT NULL, moniker TEXT, latest_version TEXT NOT NULL);
+            CREATE TABLE productcodes2(productcode TEXT NOT NULL, package INTEGER NOT NULL);
+            INSERT INTO packages(rowid, id, name, moniker, latest_version) VALUES(1, 'Fixture.EditionA', 'Fixture Edition A', '', '2.0.0');
+            INSERT INTO packages(rowid, id, name, moniker, latest_version) VALUES(2, 'Fixture.EditionB', 'Fixture Edition B', '', '2.0.0');
+            INSERT INTO productcodes2(productcode, package) VALUES('{AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE}', 1);
+            INSERT INTO productcodes2(productcode, package) VALUES('{AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE}', 2);
+            """;
+        await ambiguousCommand.ExecuteNonQueryAsync();
+    }
+    var ambiguousApplication = fallbackApplication with
+    {
+        Identity = "winget-ambiguous-product-test",
+        RemovalPlan = fallbackApplication.RemovalPlan! with
+        {
+            Arguments = "/x {AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE}"
+        }
+    };
+    Assert(!new WingetFallbackUpdateProvider(ambiguousIndexPath).CanHandle(ambiguousApplication),
+        "A non-unique WinGet product code was accepted as a strong installable package identity.");
+
+    using (var ivpnSigningKey = RSA.Create(2048))
+    {
+        var ivpnVersion = "3.15.15";
+        var ivpnUrl = $"https://repo.ivpn.net/windows/bin/IVPN-Client-v{ivpnVersion}.exe";
+        var ivpnSignatureUrl = ivpnUrl + ".sign.sha256.base64";
+        var ivpnFeed = Encoding.UTF8.GetBytes(JsonSerializer.Serialize(new
+        {
+            generic = new
+            {
+                version = ivpnVersion,
+                downloadLink = ivpnUrl,
+                signature = ivpnSignatureUrl
+            }
+        }));
+        var ivpnFeedSignature = Convert.ToBase64String(ivpnSigningKey.SignData(
+            ivpnFeed,
+            HashAlgorithmName.SHA256,
+            RSASignaturePadding.Pkcs1));
+        var ivpnInstallerHash = new string('a', 64);
+        var ivpnReleaseBody = $"[Download IVPN Client for Windows x86_64]({ivpnUrl})  \r\nSHA256: {ivpnInstallerHash}";
+        using var ivpnClient = new HttpClient(new StubHttpMessageHandler(request =>
+        {
+            if (request.RequestUri?.AbsoluteUri.EndsWith("update_manual.json", StringComparison.Ordinal) == true)
+            {
+                return new HttpResponseMessage(HttpStatusCode.OK) { Content = new ByteArrayContent(ivpnFeed) };
+            }
+            if (request.RequestUri?.AbsoluteUri.EndsWith("update_manual.json.sign.sha256.base64", StringComparison.Ordinal) == true)
+            {
+                return new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(ivpnFeedSignature) };
+            }
+            return JsonResponse(JsonSerializer.Serialize(new
+            {
+                tag_name = "v3.15.15",
+                draft = false,
+                prerelease = false,
+                body = ivpnReleaseBody
+            }));
+        }));
+        var ivpnFixtureRoot = Directory.CreateDirectory(Path.Combine(firefoxFixture, "ivpn-client")).FullName;
+        var ivpnFixtureUiDirectory = Directory.CreateDirectory(Path.Combine(ivpnFixtureRoot, "ui")).FullName;
+        var ivpnFixtureUi = Path.Combine(ivpnFixtureUiDirectory, "IVPN Client.exe");
+        await File.WriteAllBytesAsync(ivpnFixtureUi, [1]);
+        var ivpnFixtureIcon = Path.Combine(ivpnFixtureRoot, "icon.ico");
+        await File.WriteAllBytesAsync(ivpnFixtureIcon, [1]);
+        var ivpnApplication = CreateApplication(
+            "ivpn-producer-test",
+            "IVPN Client",
+            "IVPN Limited",
+            "3.15.13",
+            ivpnFixtureIcon,
+            InstallScope.Machine,
+            ManagementMode.Registry);
+        var ivpnProvider = new IvpnUpdateProvider(ivpnClient, ivpnSigningKey.ExportSubjectPublicKeyInfoPem());
+        var ivpnUpdate = await ivpnProvider.CheckAsync(ivpnApplication, CancellationToken.None);
+        Assert(ivpnUpdate is
                {
-                   Kind: UpdateExecutionKind.DownloadedMsi,
-                   Sha256: var parsedFallbackHash
-               }
-           } && parsedFallbackHash == fallbackHash,
-        "The exact-product WinGet fallback did not retain its manifest hash and MSI plan.");
+                   ProviderId: "ivpn-signed-manual-feed",
+                   Status: UpdateStatus.Available,
+                   AvailableVersion: "3.15.15",
+                   ExecutionPlan:
+                   {
+                       DownloadUri.AbsoluteUri: var ivpnDownload,
+                       Sha256: var ivpnHash,
+                       ExpectedSigner: "IVPN Limited",
+                       RunningExecutablePaths: var ivpnPaths
+                   }
+               } && ivpnDownload == ivpnUrl && ivpnHash == ivpnInstallerHash.ToUpperInvariant() &&
+                    ivpnPaths is { Count: 1 } && ivpnPaths[0] == ivpnFixtureUi,
+            "IVPN's producer-signed manual feed did not produce its exact official update plan.");
+        var tamperedFeed = (byte[])ivpnFeed.Clone();
+        tamperedFeed[^2] ^= 1;
+        Assert(!IvpnUpdateProvider.VerifySignature(
+                tamperedFeed,
+                Encoding.ASCII.GetBytes(ivpnFeedSignature),
+                ivpnSigningKey.ExportSubjectPublicKeyInfoPem()),
+            "Tampered IVPN update metadata passed producer-signature verification.");
+    }
+
+    var nodeInstallerHash = new string('b', 64);
+    using (var nodeClient = new HttpClient(new StubHttpMessageHandler(request =>
+               request.RequestUri?.AbsolutePath.EndsWith("index.json", StringComparison.Ordinal) == true
+                   ? JsonResponse("""
+                       [
+                         {"version":"v25.4.0","lts":false,"files":["win-x64-msi"]},
+                         {"version":"v24.21.0","lts":"Krypton","files":["win-x64-msi"]},
+                         {"version":"v24.20.0","lts":"Krypton","files":["win-x64-msi"]}
+                       ]
+                       """)
+                   : new HttpResponseMessage(HttpStatusCode.OK)
+                   {
+                       Content = new StringContent($"{nodeInstallerHash}  node-v24.21.0-x64.msi\n")
+                   })))
+    {
+        var nodeApplication = CreateApplication(
+            "node-producer-test",
+            "Node.js",
+            "OpenJS Foundation",
+            "24.20.0",
+            Path.Combine(Environment.SystemDirectory, "cmd.exe"),
+            InstallScope.Machine,
+            ManagementMode.WindowsInstaller);
+        var nodeUpdate = await new NodeJsUpdateProvider(nodeClient).CheckAsync(nodeApplication, CancellationToken.None);
+        Assert(nodeUpdate is
+               {
+                   ProviderId: "nodejs-official-dist",
+                   Status: UpdateStatus.Available,
+                   AvailableVersion: "24.21.0",
+                   Channel: "LTS Krypton",
+                   ExecutionPlan:
+                   {
+                       DownloadUri.AbsoluteUri: "https://nodejs.org/dist/v24.21.0/node-v24.21.0-x64.msi",
+                       Sha256: var nodeHash,
+                       ExpectedSigner: "OpenJS Foundation"
+                   }
+               } && nodeHash == nodeInstallerHash.ToUpperInvariant(),
+            "Node.js did not preserve its installed major line or bind the producer-published MSI hash.");
+    }
 
     var archiveFixturePath = Path.Combine(firefoxFixture, "nested-installer.nupkg");
     var nestedPayload = Encoding.UTF8.GetBytes("nested MSI fixture");
@@ -1465,8 +1660,121 @@ using var capabilityClient = new HttpClient();
 var installedMetadataCoverage = snapshot.Applications.Count(new ElectronBuilderUpdateProvider(capabilityClient).CanHandle);
 var productionProviderCatalog = await UpdateProviderCatalogLoader.LoadAsync(
     Path.Combine(AppContext.BaseDirectory, "Configuration", "update-providers.json"));
+var windscribeRecipe = productionProviderCatalog.GitHub.Single(recipe =>
+    recipe.Repository.Equals("Windscribe/Desktop-App", StringComparison.Ordinal));
+var windscribeFixtureHash = new string('d', 64);
+using (var windscribeFixtureClient = new HttpClient(new StubHttpMessageHandler(_ => JsonResponse(JsonSerializer.Serialize(new
+       {
+           tag_name = "v2.24.12",
+           html_url = "https://github.com/Windscribe/Desktop-App/releases/tag/v2.24.12",
+           assets = new[]
+           {
+               new
+               {
+                   name = "Windscribe_2.24.12_amd64.exe",
+                   browser_download_url = "https://github.com/Windscribe/Desktop-App/releases/download/v2.24.12/Windscribe_2.24.12_amd64.exe",
+                   digest = $"sha256:{windscribeFixtureHash}"
+               }
+           }
+       })))))
+{
+    var windscribeFixtureApplication = CreateApplication(
+        "windscribe-producer-test",
+        "Windscribe",
+        "Windscribe Limited",
+        "2.24.10",
+        Path.Combine(Environment.SystemDirectory, "cmd.exe"),
+        InstallScope.Machine,
+        ManagementMode.Registry);
+    var windscribeFixtureUpdate = await new GitHubReleaseUpdateProvider(windscribeFixtureClient, windscribeRecipe)
+        .CheckAsync(windscribeFixtureApplication, CancellationToken.None);
+    Assert(windscribeFixtureUpdate is
+           {
+               ProviderId: "github:Windscribe/Desktop-App",
+               Status: UpdateStatus.Available,
+               AvailableVersion: "2.24.12",
+               ExecutionPlan:
+               {
+                   DownloadUri.AbsoluteUri: "https://github.com/Windscribe/Desktop-App/releases/download/v2.24.12/Windscribe_2.24.12_amd64.exe",
+                   Sha256: var windscribeHash,
+                   ExpectedSigner: "Windscribe Limited",
+                   Arguments: var windscribeArguments
+               }
+           } && windscribeHash == windscribeFixtureHash &&
+                windscribeArguments.SequenceEqual(["-silent", "-no-auto-start"]),
+        "Windscribe's official producer release did not retain its digest-backed signed installer plan.");
+}
+var naxUpdaterRecipe = productionProviderCatalog.GitHub.Single(recipe =>
+    recipe.Repository.Equals("Naxterra/Nax-Updater", StringComparison.Ordinal));
+using (var naxUpdaterFixtureClient = new HttpClient(new StubHttpMessageHandler(_ => JsonResponse(JsonSerializer.Serialize(new
+       {
+           tag_name = "v0.16.3",
+           html_url = "https://github.com/Naxterra/Nax-Updater/releases/tag/v0.16.3",
+           assets = new[]
+           {
+               new
+               {
+                   name = "NaxUpdater-0.16.3-Setup-x64.exe",
+                   browser_download_url = "https://github.com/Naxterra/Nax-Updater/releases/download/v0.16.3/NaxUpdater-0.16.3-Setup-x64.exe",
+                   digest = $"sha256:{new string('e', 64)}"
+               }
+           }
+       })))))
+{
+    var naxUpdaterFixtureApplication = CreateApplication(
+        "naxupdater-producer-test",
+        "NaxUpdater",
+        "Naxterra",
+        "0.16.2",
+        Path.Combine(Environment.SystemDirectory, "cmd.exe"),
+        InstallScope.Machine,
+        ManagementMode.Registry);
+    var naxUpdaterFixtureUpdate = await new GitHubReleaseUpdateProvider(naxUpdaterFixtureClient, naxUpdaterRecipe)
+        .CheckAsync(naxUpdaterFixtureApplication, CancellationToken.None);
+    Assert(naxUpdaterFixtureUpdate is
+           {
+               ProviderId: "github:Naxterra/Nax-Updater",
+               Status: UpdateStatus.NewerReleaseKnown,
+               AvailableVersion: "0.16.3",
+               ExecutionPlan: null,
+               Applicability: UpdateApplicability.NotApplicable
+           },
+        "Unsigned NaxUpdater releases were not recognized while remaining blocked from automatic installation.");
+}
 var productionUpdateSnapshot = await new UpdateCheckService(capabilityClient, productionProviderCatalog)
     .CheckAsync(snapshot, CancellationToken.None);
+var diagnosticMode = Environment.GetEnvironmentVariable("NAXUPDATER_DIAGNOSTICS");
+if (diagnosticMode is "1" or "all")
+{
+    string[] diagnosticNames =
+    [
+        "IVPN Client", "Windscribe", "Inno Setup 7.1.0", "PotPlayer-64 bit",
+        "CurseForge 1.318.0-38354", "Portmaster", "NaxUpdater", "Node.js",
+        "Bitdefender Endpoint Security Tools", "NVIDIA Grafiktreiber", "NVIDIA HD-Audiotreiber",
+        "KYOCERA Status Monitor", "Kyocera TWAIN Driver", "TP-Link Archer TBE400UH Driver",
+        "Python 3.14.7", "Python Launcher", "Microsoft .NET SDK 11.0.100",
+        "Microsoft Windows Desktop Runtime - 8.0.30", "Microsoft Windows Desktop Runtime - 9.0.19"
+    ];
+    foreach (var application in snapshot.Applications.Where(application =>
+                 diagnosticMode == "all" || diagnosticNames.Any(name =>
+                     application.DisplayName.Equals(name, StringComparison.OrdinalIgnoreCase) ||
+                     application.DisplayName.StartsWith(name, StringComparison.OrdinalIgnoreCase))))
+    {
+        var assessment = productionUpdateSnapshot.Results.FirstOrDefault(result =>
+            result.ApplicationIdentity.Equals(application.Identity, StringComparison.Ordinal));
+        if (assessment is null || diagnosticMode == "all" && assessment.Status != UpdateStatus.Unsupported)
+        {
+            continue;
+        }
+        Console.WriteLine($"DIAGNOSTIC APP: {application.DisplayName} | installed={application.InstalledVersion} | normalized={application.NormalizedVersion} | source={application.VersionSource} | path={application.PrimaryInstallPath}");
+        foreach (var evidence in application.Evidence.Where(static evidence =>
+                     evidence.Label is "Registry version" or "Executable version" or "Uninstall registry" or "Executable product"))
+        {
+            Console.WriteLine($"  EVIDENCE: {evidence.Label}={evidence.Value}");
+        }
+        Console.WriteLine($"  RESULT: {assessment.ProviderId} | {assessment.Status} | available={assessment.AvailableVersion} | {assessment.Message}");
+    }
+}
 foreach (var displayName in new[] { "Inno Setup 7.1.0", "Kodi", "PotPlayer-64 bit" })
 {
     var installed = snapshot.Applications.FirstOrDefault(application =>
@@ -1509,6 +1817,46 @@ if (installedGit is not null)
 {
     Assert(productionUpdateSnapshot.Results.Single(result => result.ApplicationIdentity == installedGit.Identity).ProviderId == "github:git-for-windows/git",
         "The production provider chain did not route Git directly to the producer-owned Git for Windows release.");
+}
+var installedNaxUpdater = snapshot.Applications.FirstOrDefault(app =>
+    app.DisplayName.Equals("NaxUpdater", StringComparison.OrdinalIgnoreCase));
+if (installedNaxUpdater is not null)
+{
+    var naxUpdaterAssessment = productionUpdateSnapshot.Results.Single(result =>
+        result.ApplicationIdentity.Equals(installedNaxUpdater.Identity, StringComparison.Ordinal));
+    Assert(naxUpdaterAssessment.ProviderId == "github:Naxterra/Nax-Updater" &&
+           naxUpdaterAssessment.Status is UpdateStatus.Current or UpdateStatus.NewerReleaseKnown,
+        $"NaxUpdater did not recognize its own producer release: {naxUpdaterAssessment.ProviderId} · {naxUpdaterAssessment.Status} · {naxUpdaterAssessment.Message}");
+}
+var installedIvpn = snapshot.Applications.FirstOrDefault(app =>
+    app.DisplayName.Equals("IVPN Client", StringComparison.OrdinalIgnoreCase));
+if (installedIvpn is not null)
+{
+    var ivpnAssessment = productionUpdateSnapshot.Results.Single(result =>
+        result.ApplicationIdentity.Equals(installedIvpn.Identity, StringComparison.Ordinal));
+    Assert(ivpnAssessment.ProviderId == "ivpn-signed-manual-feed" &&
+           ivpnAssessment.Status is UpdateStatus.Current or UpdateStatus.Available,
+        $"IVPN was not checked against its producer-signed manual feed: {ivpnAssessment.ProviderId} · {ivpnAssessment.Status} · {ivpnAssessment.Message}");
+}
+var installedWindscribe = snapshot.Applications.FirstOrDefault(app =>
+    app.DisplayName.Equals("Windscribe", StringComparison.OrdinalIgnoreCase));
+if (installedWindscribe is not null)
+{
+    var windscribeAssessment = productionUpdateSnapshot.Results.Single(result =>
+        result.ApplicationIdentity.Equals(installedWindscribe.Identity, StringComparison.Ordinal));
+    Assert(windscribeAssessment.ProviderId == "github:Windscribe/Desktop-App" &&
+           windscribeAssessment.Status is UpdateStatus.Current or UpdateStatus.Available,
+        $"Windscribe was not checked against its producer release: {windscribeAssessment.ProviderId} · {windscribeAssessment.Status} · {windscribeAssessment.Message}");
+}
+var installedNode = snapshot.Applications.FirstOrDefault(app =>
+    app.DisplayName.Equals("Node.js", StringComparison.OrdinalIgnoreCase));
+if (installedNode is not null)
+{
+    var nodeAssessment = productionUpdateSnapshot.Results.Single(result =>
+        result.ApplicationIdentity.Equals(installedNode.Identity, StringComparison.Ordinal));
+    Assert(nodeAssessment.ProviderId == "nodejs-official-dist" &&
+           nodeAssessment.Status is UpdateStatus.Current or UpdateStatus.Available,
+        $"Node.js was not checked against its official distribution: {nodeAssessment.ProviderId} · {nodeAssessment.Status} · {nodeAssessment.Message}");
 }
 if (installedWinRar is not null)
 {

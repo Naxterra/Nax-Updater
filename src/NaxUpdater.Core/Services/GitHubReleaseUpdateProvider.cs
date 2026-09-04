@@ -102,7 +102,24 @@ public sealed class GitHubReleaseUpdateProvider : IUpdateProvider
         if (status == UpdateStatus.Available &&
             (string.IsNullOrWhiteSpace(downloadUrl) || sha256?.Length != 64 || string.IsNullOrWhiteSpace(recipe.ExpectedSigner)))
         {
-            return Error(application, "The release lacks a complete SHA-256 digest, download URL, or signer policy; installation is blocked.", latestVersion, releasePage);
+            return new UpdateCheckResult(
+                application.Identity,
+                application.DisplayName,
+                application.NormalizedVersion,
+                latestVersion,
+                UpdateStatus.NewerReleaseKnown,
+                Id,
+                $"Official GitHub release · {recipe.Repository}",
+                recipe.Language,
+                recipe.Language.Equals("neutral", StringComparison.OrdinalIgnoreCase)
+                    ? "Vendor multi-language installer"
+                    : "Recipe-pinned installer language",
+                recipe.Architecture,
+                "stable",
+                releasePage,
+                "A newer producer release is verified, but automatic installation is blocked until the release has a complete asset digest, download URL, and Authenticode signer policy.",
+                null,
+                Applicability: UpdateApplicability.NotApplicable);
         }
 
         var plan = status == UpdateStatus.Available
@@ -147,7 +164,7 @@ public sealed class GitHubReleaseUpdateProvider : IUpdateProvider
             using var request = new HttpRequestMessage(
                 HttpMethod.Get,
                 $"https://api.github.com/repos/{recipe.Repository}/releases/latest");
-            request.Headers.UserAgent.ParseAdd("NaxUpdater/0.16.2");
+            request.Headers.UserAgent.ParseAdd("NaxUpdater/0.16.3");
             request.Headers.Accept.ParseAdd("application/vnd.github+json");
             try
             {
@@ -231,7 +248,7 @@ public sealed class GitHubReleaseUpdateProvider : IUpdateProvider
         using var request = new HttpRequestMessage(
             HttpMethod.Get,
             $"https://github.com/{recipe.Repository}/releases/latest");
-        request.Headers.UserAgent.ParseAdd("NaxUpdater/0.16.2");
+        request.Headers.UserAgent.ParseAdd("NaxUpdater/0.16.3");
         using var response = await httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
         var finalUri = response.RequestMessage?.RequestUri;
         var match = finalUri is null
