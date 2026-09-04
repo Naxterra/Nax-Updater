@@ -961,15 +961,6 @@ public sealed partial class MainPage : Page
                 RunningExecutablePaths = []
             }
         };
-        if (update.ExecutionPlan?.Kind == UpdateExecutionKind.DownloadedExe &&
-            update.ExecutionPlan.RequiresElevation)
-        {
-            return result with
-            {
-                Message = $"{result.Message} Automatic elevation of the downloaded EXE is blocked because adjacent load dependencies cannot be made immutable without an elevated broker.",
-                ExecutableUpdate = null
-            };
-        }
         var validationError = UpdatePlanValidator.Validate(update, checkedAt);
         if (validationError is not null)
         {

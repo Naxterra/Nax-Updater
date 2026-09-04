@@ -178,14 +178,13 @@ public sealed class UpdateCheckService
         {
             var result = await provider.CheckAsync(application, cancellationToken);
             if (!result.ApplicationIdentity.Equals(application.Identity, StringComparison.Ordinal) ||
-                !string.Equals(result.InstalledVersion, application.NormalizedVersion, StringComparison.OrdinalIgnoreCase) ||
                 !provider.OwnsResultProviderId(result.ProviderId))
             {
                 return ProviderContractError(
                     provider,
                     application,
                     candidateProviderIds,
-                    "The provider returned an application identity, installed version, or provider identity outside its registered claim.");
+                    "The provider returned an application or provider identity outside its registered claim.");
             }
             if (result.ExecutionPlan is not null &&
                 (result.Status != UpdateStatus.Available || result.Applicability == UpdateApplicability.NotApplicable))
@@ -222,6 +221,8 @@ public sealed class UpdateCheckService
                 };
             var boundResult = result with
             {
+                DisplayName = application.DisplayName,
+                InstalledVersion = application.NormalizedVersion,
                 Status = normalizedStatus,
                 ExecutionPlan = plan,
                 ProviderAuthority = selectedByPolicy
@@ -244,21 +245,6 @@ public sealed class UpdateCheckService
             }
             if (boundResult.ExecutionPlan is not null)
             {
-                if (boundResult.ExecutionPlan.Kind == UpdateExecutionKind.DownloadedExe &&
-                    boundResult.ExecutionPlan.RequiresElevation)
-                {
-                    return boundResult with
-                    {
-                        Status = UpdateStatus.NewerReleaseKnown,
-                        ExecutionPlan = null,
-                        Applicability = UpdateApplicability.NotApplicable,
-                        Message = string.Join(" ", new[]
-                        {
-                            boundResult.Message,
-                            "Automatic elevation of a downloaded EXE from a user-writable cache is blocked because adjacent load dependencies cannot be made immutable without an elevated broker."
-                        }.Where(static value => !string.IsNullOrWhiteSpace(value)))
-                    };
-                }
                 var validationError = UpdatePlanValidator.Validate(boundResult, checkedAt);
                 if (validationError is not null)
                 {
