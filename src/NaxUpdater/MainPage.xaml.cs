@@ -73,6 +73,9 @@ public sealed partial class MainPage : Page
         _loaded = true;
         using var recoveryLease = _updateTransactionLease.TryAcquire();
         var interruptedOperation = recoveryLease is null ? null : _updateOperationJournal.ReadIncomplete();
+        if (interruptedOperation is null && recoveryLease is not null &&
+            _updateOperationJournal.ReadLatest() is { Stage: UpdateTransactionStage.FailedNeedsAttention } failed)
+            interruptedOperation = failed;
         await ScanAndCheckAsync();
         if (interruptedOperation is not null)
         {
@@ -93,9 +96,11 @@ public sealed partial class MainPage : Page
             string? observedVersion;
             if (interruptedOperation.ProviderId.StartsWith("manufacturer-driver:", StringComparison.Ordinal))
             {
-                var driverSnapshot = await _manufacturerDriverService.CheckAsync();
-                observedVersion = driverSnapshot.Results.FirstOrDefault(result =>
-                    result.Driver.Identity.Equals(interruptedOperation.ApplicationIdentity, StringComparison.Ordinal))?.Driver.InstalledVersion;
+                var driverSnapshot = await _manufacturerDriverService.ReadInstalledAsync();
+                var installedDriver = DriverUpdateIdentity.Find(driverSnapshot.Drivers,
+                    interruptedOperation.ApplicationIdentity, interruptedOperation.CorrelationKey,
+                    interruptedOperation.DisplayName, interruptedOperation.ProviderId);
+                observedVersion = installedDriver is null ? null : DriverUpdateIdentity.InstalledReleaseVersion(installedDriver);
             }
             else
             {
@@ -112,6 +117,7 @@ public sealed partial class MainPage : Page
                 UpdateTransactionStage.Applying or
                 UpdateTransactionStage.Verifying or
                 UpdateTransactionStage.PendingReboot or
+                UpdateTransactionStage.FailedNeedsAttention or
                 UpdateTransactionStage.Indeterminate;
             var recoveredStage = reachedTarget
                 ? UpdateTransactionStage.Succeeded
@@ -123,12 +129,8 @@ public sealed partial class MainPage : Page
                 recoveredStage,
                 DateTimeOffset.UtcNow,
                 reachedTarget ? null : "NaxUpdater restarted before the target version could be confirmed.");
-            if (!reachedTarget && changeMayHaveStarted)
-            {
-                _restartPending = true;
-                UpdatesList.IsEnabled = false;
-                DriversList.IsEnabled = false;
-            }
+            // A failed verification is not a reboot requirement. A fresh update
+            // transaction revalidates its own target; unrelated apps remain usable.
             UpdateBar.Title = reachedTarget
                 ? LocalizationService.Format("RecoveredUpdateTitle", interruptedOperation.DisplayName)
                 : LocalizationService.Format("InterruptedUpdateTitle", interruptedOperation.DisplayName);
@@ -950,7 +952,7 @@ public sealed partial class MainPage : Page
                 ? InfoBarSeverity.Success
                 : transaction.RequiresRestart ? InfoBarSeverity.Warning : InfoBarSeverity.Error;
             UpdateBar.IsOpen = true;
-            _restartPending = transaction.RequiresRestart || transaction.Stage == UpdateTransactionStage.Indeterminate;
+            _restartPending = transaction.RequiresRestart;
         }
         finally
         {
@@ -1003,10 +1005,17 @@ public sealed partial class MainPage : Page
         UpdateCheckResult previous,
         CancellationToken cancellationToken)
     {
+        var installed = await _manufacturerDriverService.ReadInstalledAsync(cancellationToken);
+        var observed = DriverUpdateIdentity.Find(installed.Drivers, previous.ApplicationIdentity,
+            previous.CorrelationKey, previous.DisplayName, previous.ProviderId);
+        if (observed is not null &&
+            VersionOrder.Compare(DriverUpdateIdentity.InstalledReleaseVersion(observed), previous.AvailableVersion) >= 0)
+            return ObservedDriverState(previous, observed, "The installed driver target was verified directly from Windows.");
         var snapshot = await _manufacturerDriverService.CheckAsync(cancellationToken);
         var generationId = Guid.NewGuid();
-        var result = snapshot.Results.FirstOrDefault(candidate =>
-            candidate.Driver.Identity.Equals(previous.ApplicationIdentity, StringComparison.Ordinal));
+        var matched = DriverUpdateIdentity.Find(snapshot.Results.Select(static result => result.Driver),
+            previous.ApplicationIdentity, previous.CorrelationKey, previous.DisplayName, previous.ProviderId);
+        var result = matched is null ? null : snapshot.Results.FirstOrDefault(candidate => candidate.Driver.Identity == matched.Identity);
         if (result is null)
         {
             return null;
@@ -1016,27 +1025,30 @@ public sealed partial class MainPage : Page
         {
             return bound.ExecutableUpdate;
         }
-        return new UpdateCheckResult(
-            result.Driver.Identity,
-            result.Driver.DeviceName,
-            result.Driver.InstalledVersion,
+        return ObservedDriverState(previous, result.Driver, result.Message);
+    }
+
+    private static UpdateCheckResult ObservedDriverState(UpdateCheckResult previous, InstalledHardwareDriver driver, string message) =>
+        new(
+            driver.Identity,
+            driver.DeviceName,
+            DriverUpdateIdentity.InstalledReleaseVersion(driver),
             null,
             UpdateStatus.Current,
             previous.ProviderId,
-            result.SourceName,
+            previous.ProviderDisplayName,
             previous.Language,
             previous.LanguageSource,
             previous.Architecture,
             previous.Channel,
-            result.SourceUri?.AbsoluteUri,
-            result.Message,
+            previous.ReleaseNotesUrl,
+            message,
             null,
             UpdateProviderAuthority.ProducerRelease,
             "Manufacturer driver state was re-read after apply",
             [previous.ProviderId],
             UpdateApplicability.NotRequired,
-            $"driver:{result.Driver.Identity}");
-    }
+            previous.CorrelationKey ?? $"driver:{driver.Identity}");
 
     private void UpdatesList_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
@@ -1202,7 +1214,7 @@ public sealed partial class MainPage : Page
                     ? InfoBarSeverity.Informational
                     : InfoBarSeverity.Error;
             UpdateBar.IsOpen = true;
-            _restartPending = transaction.RequiresRestart || transaction.Stage == UpdateTransactionStage.Indeterminate;
+            _restartPending = transaction.RequiresRestart;
             return transaction.IsSuccess;
         }
         finally

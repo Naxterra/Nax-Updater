@@ -51,6 +51,14 @@ public sealed partial class ManufacturerDriverService(HttpClient httpClient)
             issues.Distinct(StringComparer.OrdinalIgnoreCase).ToArray());
     }
 
+    public Task<InstalledDriverSnapshot> ReadInstalledAsync(CancellationToken cancellationToken = default) =>
+        Task.Run(() =>
+        {
+            var issues = new List<string>();
+            var drivers = ReadInstalledDrivers(issues);
+            return new InstalledDriverSnapshot(drivers, issues.ToArray());
+        }, cancellationToken);
+
     private async Task<ManufacturerDriverResult> CheckDriverAsync(
         InstalledHardwareDriver driver,
         string? razerSynapseVersion,
@@ -453,7 +461,7 @@ public sealed partial class ManufacturerDriverService(HttpClient httpClient)
     private async Task<string> GetStringAsync(Uri uri, CancellationToken cancellationToken)
     {
         using var request = new HttpRequestMessage(HttpMethod.Get, uri);
-        request.Headers.UserAgent.ParseAdd("NaxUpdater/0.16.5");
+        request.Headers.UserAgent.ParseAdd("NaxUpdater/0.16.6");
         using var response = await httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
         response.EnsureSuccessStatusCode();
         return await response.Content.ReadAsStringAsync(cancellationToken);
@@ -632,7 +640,7 @@ public sealed partial class ManufacturerDriverService(HttpClient httpClient)
                 .FirstOrDefault(static value => !string.IsNullOrWhiteSpace(value));
             results.Add(representative with
             {
-                Identity = $"driver-package:{group.Key}",
+                Identity = DriverUpdateIdentity.ForGroup(group.Key, items),
                 DeviceName = name,
                 HardwareId = hardwareId,
                 IsPresent = present.Length > 0,

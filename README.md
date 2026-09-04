@@ -33,6 +33,8 @@ The inventory engine:
 
 The current implementation includes:
 
+- driver transaction identity based on present PnP devices rather than the replaceable INF name/version; recovery reads installed driver state locally and normalizes NVIDIA's Windows driver version to its public release number;
+- migration of older driver journals only when a unique matching live device can be established; a failed verification reports an affected operation without disabling unrelated application updates;
 - background provider discovery and catalog access, per-provider deadlines, a catalog-refresh deadline, progress counts and a cancel action, so slow native or network checks cannot hold the WinUI thread;
 - explicit Store-publication status for ChatGPT when OpenAI announces a build that Microsoft's exact package/architecture catalog does not yet publish; the German and English details show both versions rather than suggesting a local configuration problem;
 - regression tests for version padding, semantic build metadata, numeric prerelease ordering, compact release dates, architecture/scope mismatches, release/asset version disagreement, GitHub rate-limit recovery, truthful coverage, and the full WinGet transaction through a simulated package-manager boundary;
@@ -188,7 +190,7 @@ From this directory:
 dotnet build NaxUpdater.slnx
 dotnet run --project tests/NaxUpdater.Core.SmokeTests/NaxUpdater.Core.SmokeTests.csproj
 dotnet publish src/NaxUpdater/NaxUpdater.csproj -c Release -r win-x64 --self-contained true -o artifacts/NaxUpdater-win-x64
-./scripts/package-release.ps1 -Version 0.16.5
+./scripts/package-release.ps1 -Version 0.16.6
 ```
 
 The desktop project uses .NET 11, WinUI 3, and the Windows App SDK. It is not an Electron or WebView application.

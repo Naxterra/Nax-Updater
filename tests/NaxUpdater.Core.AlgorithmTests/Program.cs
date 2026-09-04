@@ -25,6 +25,35 @@ foreach (var pair in pairs)
 }
 Assert(WingetPackageService.Copy(new IndexedOnlyList()).SequenceEqual(["first", "second"]),
     "WinGet COM collection handling still requires an unsupported iterator.");
+var gpuBefore = new InstalledHardwareDriver(
+    @"pnp:PCI\VEN_10DE&DEV_2C02\GPU-A", "NVIDIA GeForce RTX 5080", "Display", "NVIDIA", "NVIDIA",
+    "32.0.16.1656", null, @"PCI\VEN_10DE&DEV_2C02", "oem82.inf");
+var gpuAfter = gpuBefore with { InstalledVersion = "32.0.16.1664", InfName = "oem182.inf" };
+var beforeKey = DriverUpdateIdentity.ForGroup("NVIDIA|oem82.inf|32.0.16.1656", [gpuBefore]);
+var afterKey = DriverUpdateIdentity.ForGroup("NVIDIA|oem182.inf|32.0.16.1664", [gpuAfter]);
+Assert(beforeKey == afterKey, "Updating an INF/version changed the physical GPU identity.");
+Assert(DriverUpdateIdentity.ForGroup("NVIDIA|oem182.inf|32.0.16.1664",
+    [gpuAfter with { Identity = @"pnp:PCI\VEN_10DE&DEV_2C02\GPU-B" }]) != afterKey,
+    "Different GPU instances received the same update identity.");
+Assert(DriverUpdateIdentity.InstalledReleaseVersion(gpuAfter) == "616.64", "Recovery compared a Windows driver version with an NVIDIA release number.");
+Assert(DriverUpdateIdentity.InstalledReleaseVersion(gpuAfter with { DeviceClass = "MEDIA", InstalledVersion = "1.4.6.3" }) == "1.4.6.3",
+    "NVIDIA audio-driver version was incorrectly normalized as a graphics driver.");
+var currentGpu = gpuAfter with { Identity = afterKey };
+var legacyIdentity = "driver-package:NVIDIA|oem82.inf|32.0.16.1656";
+var retainedOld = gpuBefore with { Identity = legacyIdentity, IsPresent = false };
+var recovered = DriverUpdateIdentity.Find([retainedOld, currentGpu], legacyIdentity, "driver:" + legacyIdentity,
+    gpuBefore.DeviceName, "manufacturer-driver:nvidia");
+Assert(recovered == currentGpu && DriverUpdateIdentity.InstalledReleaseVersion(recovered) == "616.64",
+    "The existing NVIDIA journal did not migrate to the unique current GPU.");
+Assert(DriverUpdateIdentity.Find([currentGpu], beforeKey, "driver:" + beforeKey,
+    gpuBefore.DeviceName, "manufacturer-driver:nvidia") == currentGpu, "Post-install verification lost the stable device.");
+Assert(DriverUpdateIdentity.Find([currentGpu, currentGpu with { Identity = "another-gpu" }], legacyIdentity,
+    "driver:" + legacyIdentity, gpuBefore.DeviceName, "manufacturer-driver:nvidia") is null,
+    "An ambiguous legacy GPU record was silently marked successful.");
+Assert(DriverUpdateIdentity.Find([retainedOld], legacyIdentity, "driver:" + legacyIdentity,
+    gpuBefore.DeviceName, "manufacturer-driver:nvidia") is null, "A retained driver-store registration was treated as a live GPU.");
+Assert(DriverUpdateIdentity.Find([currentGpu], legacyIdentity, "driver:" + legacyIdentity,
+    "A different GPU", "manufacturer-driver:nvidia") is null, "Legacy recovery accepted a different device model.");
 var fixture = Path.Combine(Path.GetTempPath(), "NaxUpdater-algorithms-" + Guid.NewGuid().ToString("N"));
 Directory.CreateDirectory(fixture);
 try
