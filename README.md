@@ -31,8 +31,9 @@ The inventory engine:
 
 ## Update providers
 
-Version 0.16.1 includes:
+Version 0.16.2 includes:
 
+- recovers Git/GitHub release checks from anonymous GitHub API rate limits through the installed authenticated GitHub CLI while retaining the exact official asset digest and signer policy;
 - restores automatic execution for exact producer-hashed, Authenticode-bound EXE installers such as Firefox and NVIDIA, including their normal Windows elevation prompt;
 - keeps installed version evidence owned by NaxUpdater inventory instead of rejecting WinGet fallback assessments whose comparison helper uses a normalized catalog version;
 - an explicit provider-authority model: installed update protocols, producer releases, Microsoft Store, and catalog fallbacks are selected by declared authority and compatible installation type rather than registration order;
@@ -177,7 +178,7 @@ From this directory:
 dotnet build NaxUpdater.slnx
 dotnet run --project tests/NaxUpdater.Core.SmokeTests/NaxUpdater.Core.SmokeTests.csproj
 dotnet publish src/NaxUpdater/NaxUpdater.csproj -c Release -r win-x64 --self-contained true -o artifacts/NaxUpdater-win-x64
-./scripts/package-release.ps1 -Version 0.16.1
+./scripts/package-release.ps1 -Version 0.16.2
 ```
 
 The desktop project uses .NET 11, WinUI 3, and the Windows App SDK. It is not an Electron or WebView application.

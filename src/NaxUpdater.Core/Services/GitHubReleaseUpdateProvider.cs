@@ -1,13 +1,27 @@
 using NaxUpdater.Core.Models;
+using System.Net;
+using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 
 namespace NaxUpdater.Core.Services;
 
-public sealed class GitHubReleaseUpdateProvider(
-    HttpClient httpClient,
-    GitHubUpdateRecipe recipe) : IUpdateProvider
+public sealed class GitHubReleaseUpdateProvider : IUpdateProvider
 {
+    private readonly HttpClient httpClient;
+    private readonly GitHubUpdateRecipe recipe;
+    private readonly Func<CancellationToken, Task<string?>> githubCliReleaseReader;
+
+    public GitHubReleaseUpdateProvider(
+        HttpClient httpClient,
+        GitHubUpdateRecipe recipe,
+        Func<CancellationToken, Task<string?>>? githubCliReleaseReader = null)
+    {
+        this.httpClient = httpClient;
+        this.recipe = recipe;
+        this.githubCliReleaseReader = githubCliReleaseReader ?? ReadReleaseThroughGitHubCliAsync;
+    }
+
     public string Id => $"github:{recipe.Repository}";
     public UpdateProviderDescriptor Descriptor { get; } = new(
         UpdateProviderAuthority.ProducerRelease,
@@ -133,7 +147,7 @@ public sealed class GitHubReleaseUpdateProvider(
             using var request = new HttpRequestMessage(
                 HttpMethod.Get,
                 $"https://api.github.com/repos/{recipe.Repository}/releases/latest");
-            request.Headers.UserAgent.ParseAdd("NaxUpdater/0.15");
+            request.Headers.UserAgent.ParseAdd("NaxUpdater/0.16.2");
             request.Headers.Accept.ParseAdd("application/vnd.github+json");
             try
             {
@@ -153,7 +167,60 @@ public sealed class GitHubReleaseUpdateProvider(
                 await Task.Delay(350, cancellationToken);
             }
         }
+        var cliJson = await githubCliReleaseReader(cancellationToken);
+        if (!string.IsNullOrWhiteSpace(cliJson))
+        {
+            response?.Dispose();
+            return new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                RequestMessage = new HttpRequestMessage(
+                    HttpMethod.Get,
+                    $"https://api.github.com/repos/{recipe.Repository}/releases/latest"),
+                Content = new StringContent(cliJson, Encoding.UTF8, "application/json")
+            };
+        }
         return response ?? throw new HttpRequestException("GitHub returned no response.");
+    }
+
+    private async Task<string?> ReadReleaseThroughGitHubCliAsync(CancellationToken cancellationToken)
+    {
+        var executable = FindGitHubCli();
+        if (executable is null)
+        {
+            return null;
+        }
+        try
+        {
+            var result = await new ProcessQueryRunner().RunAsync(
+                executable,
+                ["api", "--header", "Accept: application/vnd.github+json", $"repos/{recipe.Repository}/releases/latest"],
+                TimeSpan.FromSeconds(20),
+                cancellationToken);
+            return result.ExitCode == 0 && !string.IsNullOrWhiteSpace(result.StandardOutput)
+                ? result.StandardOutput
+                : null;
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    private static string? FindGitHubCli()
+    {
+        var candidates = new List<string>
+        {
+            Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "GitHub CLI", "gh.exe"),
+            Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Programs", "GitHub CLI", "gh.exe")
+        };
+        candidates.AddRange((Environment.GetEnvironmentVariable("PATH") ?? string.Empty)
+            .Split(Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Select(directory => Path.Combine(directory, "gh.exe")));
+        return candidates.FirstOrDefault(File.Exists);
     }
 
     private async Task<UpdateCheckResult> CheckLatestTagFallbackAsync(
@@ -164,7 +231,7 @@ public sealed class GitHubReleaseUpdateProvider(
         using var request = new HttpRequestMessage(
             HttpMethod.Get,
             $"https://github.com/{recipe.Repository}/releases/latest");
-        request.Headers.UserAgent.ParseAdd("NaxUpdater/0.15");
+        request.Headers.UserAgent.ParseAdd("NaxUpdater/0.16.2");
         using var response = await httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
         var finalUri = response.RequestMessage?.RequestUri;
         var match = finalUri is null
