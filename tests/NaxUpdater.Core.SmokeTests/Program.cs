@@ -1192,8 +1192,17 @@ if (installedGitHubCli is not null)
     using var liveGitHubCliClient = new HttpClient { Timeout = TimeSpan.FromSeconds(30) };
     var gitHubCliUpdate = await new GitHubReleaseUpdateProvider(liveGitHubCliClient, gitHubCliRecipe)
         .CheckAsync(installedGitHubCli, CancellationToken.None);
-    Assert(gitHubCliUpdate.Status is UpdateStatus.Current or UpdateStatus.Available,
-        $"GitHub CLI's producer-owned release was not assessed: {gitHubCliUpdate.Message}");
+    var githubRateLimited = gitHubCliUpdate.Status == UpdateStatus.Error &&
+                            gitHubCliUpdate.Message?.Contains("rate limit", StringComparison.OrdinalIgnoreCase) == true;
+    if (githubRateLimited)
+    {
+        Console.WriteLine($"Live GitHub CLI canary skipped after external API rate limiting: {gitHubCliUpdate.Message}");
+    }
+    else
+    {
+        Assert(gitHubCliUpdate.Status is UpdateStatus.Current or UpdateStatus.Available,
+            $"GitHub CLI's producer-owned release was not assessed: {gitHubCliUpdate.Message}");
+    }
     if (gitHubCliUpdate.Status == UpdateStatus.Available)
     {
         Assert(gitHubCliUpdate.ExecutionPlan is
