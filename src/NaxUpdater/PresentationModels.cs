@@ -170,6 +170,8 @@ public sealed class UpdateRow
     public string Status => Source.Status switch
     {
         UpdateStatus.Available => LocalizationService.Get("StatusUpdateAvailable"),
+        UpdateStatus.NewerReleaseKnown when Source.AvailabilityReason == UpdateAvailabilityReason.AwaitingStorePublication =>
+            LocalizationService.Get("StatusStorePublicationPending"),
         UpdateStatus.NewerReleaseKnown => LocalizationService.Get("StatusNewerReleaseKnown"),
         UpdateStatus.Current => LocalizationService.Get("StatusCurrent"),
         UpdateStatus.ManagedExternally when Source.ProviderId == "msix-store" => LocalizationService.Get("StatusStoreManaged"),

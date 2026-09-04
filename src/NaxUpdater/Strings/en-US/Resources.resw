@@ -149,4 +149,10 @@
   <data name="ChecksIncomplete"><value>Some update checks could not be completed</value></data>
   <data name="ProviderManagedUnchecked"><value>Updates are managed by {0}. NaxUpdater has identified the owner but has not checked its available version.</value></data>
   <data name="ProviderDriverWorkspace"><value>Manufacturer drivers</value></data>
+  <data name="CancelProviderCheck"><value>Cancel update check</value></data>
+  <data name="RefreshingProviderCatalogs"><value>Refreshing update catalogs… You can cancel this check.</value></data>
+  <data name="ProviderCheckProgress"><value>{0}/{1} entries processed · {2}</value></data>
+  <data name="ProviderCheckCanceled"><value>Update check canceled. Your installed application inventory is still available.</value></data>
+  <data name="StatusStorePublicationPending"><value>Waiting for Store publication</value></data>
+  <data name="StorePublicationPendingMessage"><value>OpenAI announces {0}. Microsoft Store currently publishes {1} for this package; installed: {2}. The newer package is not yet available from the Store. Check again after publication.</value></data>
 </root>

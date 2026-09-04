@@ -32,6 +32,7 @@ public sealed partial class MainPage : Page
     private bool _updateBusy;
     private bool _massUpdateBusy;
     private bool _restartPending;
+    private CancellationTokenSource? _providerCheckCancellation;
     private ApplicationSortColumn _sortColumn = ApplicationSortColumn.Name;
     private bool _sortDescending;
     private ResultSortColumn _updateSortColumn = ResultSortColumn.Status;
@@ -141,6 +142,12 @@ public sealed partial class MainPage : Page
 
     private async void ScanButton_Click(object sender, RoutedEventArgs e)
     {
+        if (_providerCheckCancellation is not null)
+        {
+            await _providerCheckCancellation.CancelAsync();
+            return;
+        }
+        if (_updateBusy || _massUpdateBusy) return;
         if (DriversWorkspace.Visibility == Visibility.Visible)
         {
             await CheckManufacturerDriversAsync();
@@ -652,14 +659,25 @@ public sealed partial class MainPage : Page
             return;
         }
 
+        using var cancellation = new CancellationTokenSource();
+        _providerCheckCancellation = cancellation;
         SetUpdateBusy(true, LocalizationService.Get("CheckingProviders"));
+        ScanButton.IsEnabled = true;
+        ScanButtonLabel.Text = LocalizationService.Get("CancelProviderCheck");
         UpdateBar.IsOpen = false;
         try
         {
             var catalogPath = Path.Combine(AppContext.BaseDirectory, "Configuration", "update-providers.json");
             var catalog = await UpdateProviderCatalogLoader.LoadAsync(catalogPath);
             var service = new UpdateCheckService(_httpClient, catalog);
-            var result = await service.CheckAsync(_snapshot);
+            var progress = new Progress<UpdateCheckProgress>(state =>
+            {
+                if (!ReferenceEquals(_providerCheckCancellation, cancellation)) return;
+                StatusText.Text = state.Phase == "sources"
+                    ? LocalizationService.Get("RefreshingProviderCatalogs")
+                    : LocalizationService.Format("ProviderCheckProgress", state.Completed, state.Total, state.ApplicationName ?? "");
+            });
+            var result = await service.CheckAsync(_snapshot, cancellation.Token, progress);
 
             var applicationsByIdentity = _allApplications.ToDictionary(static row => row.Source.Identity, StringComparer.Ordinal);
             _allUpdates = result.Results.Select(update => new UpdateRow(
@@ -700,6 +718,11 @@ public sealed partial class MainPage : Page
             UpdateBar.Severity = errors > 0 ? InfoBarSeverity.Warning : available > 0 ? InfoBarSeverity.Success : InfoBarSeverity.Informational;
             UpdateBar.IsOpen = true;
         }
+        catch (OperationCanceledException) when (cancellation.IsCancellationRequested)
+        {
+            StatusText.Text = LocalizationService.Get("ProviderCheckCanceled");
+            UpdateBar.IsOpen = false;
+        }
         catch (Exception exception)
         {
             UpdateBar.Title = LocalizationService.Get("UpdateCheckFailed");
@@ -710,6 +733,8 @@ public sealed partial class MainPage : Page
         }
         finally
         {
+            _providerCheckCancellation = null;
+            ScanButtonLabel.Text = LocalizationService.Get("ApplicationScanText");
             SetUpdateBusy(false, null);
         }
     }
@@ -802,7 +827,7 @@ public sealed partial class MainPage : Page
 
     private void ConfigureApplicationHeader()
     {
-        ScanButtonLabel.Text = LocalizationService.Get("ApplicationScanText");
+        ScanButtonLabel.Text = LocalizationService.Get(_providerCheckCancellation is null ? "ApplicationScanText" : "CancelProviderCheck");
         FilterBox.PlaceholderText = LocalizationService.Get("ApplicationFilterPlaceholder");
         ShowSystemComponentsCheckBox.Visibility = Visibility.Visible;
         DriversButton.Visibility = Visibility.Visible;
@@ -1341,6 +1366,7 @@ public sealed partial class MainPage : Page
             var selectedLanguage = languageBox.SelectedIndex == 1 ? "de-DE" : "en-US";
             if (!selectedLanguage.Equals(App.CurrentLanguage, StringComparison.OrdinalIgnoreCase))
             {
+                if (_providerCheckCancellation is not null) await _providerCheckCancellation.CancelAsync();
                 App.RestartWithLanguage(selectedLanguage);
             }
         }

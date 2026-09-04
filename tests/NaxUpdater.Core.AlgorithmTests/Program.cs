@@ -156,6 +156,80 @@ try
         var result = (await new UpdateCheckService([new GitHubReleaseUpdateProvider(client, recipe)]).CheckAsync(Snapshot(newerInstall))).Results.Single();
         Assert(result.Status == UpdateStatus.Current && result.AvailableVersion is null, "Older release still appears as available.");
     }
+    using (var blockedProvider = new BlockingDiscoveryProvider())
+    {
+        var responsiveService = new UpdateCheckService([blockedProvider], providerTimeout: TimeSpan.FromMilliseconds(120));
+        var returned = new TaskCompletionSource<Task<UpdateCheckSnapshot>>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var progressStates = new System.Collections.Concurrent.ConcurrentQueue<UpdateCheckProgress>();
+        var hung = fixtureApp with { Identity = "hung-fixture", DisplayName = "Hung fixture" };
+        var healthy = fixtureApp with { Identity = "healthy-fixture", DisplayName = "Healthy fixture" };
+        var uiThread = new Thread(() =>
+        {
+            SynchronizationContext.SetSynchronizationContext(new NonPumpingContext());
+            try
+            {
+                returned.SetResult(responsiveService.CheckAsync(new(DateTimeOffset.UtcNow, [hung, healthy], [], []),
+                progress: new ImmediateProgress(progressStates.Enqueue)));
+            }
+            catch (Exception error) { returned.SetException(error); }
+        })
+        { IsBackground = true };
+        uiThread.SetApartmentState(ApartmentState.STA);
+        uiThread.Start();
+        try
+        {
+            var backgroundScan = await returned.Task.WaitAsync(TimeSpan.FromSeconds(2));
+            var checkedRows = await backgroundScan.WaitAsync(TimeSpan.FromSeconds(3));
+            Assert(blockedProvider.DiscoveryThreadId != uiThread.ManagedThreadId, "Provider discovery ran on the UI thread.");
+            Assert(checkedRows.Results.Single(row => row.ApplicationIdentity == hung.Identity).Status == UpdateStatus.Error,
+                "A blocking native discovery call did not time out.");
+            Assert(checkedRows.Results.Single(row => row.ApplicationIdentity == healthy.Identity).Status == UpdateStatus.Current,
+                "A blocked provider prevented another application from completing.");
+            Assert(progressStates.Any(state => state.Completed == 2 && state.Total == 2), "Scan completion progress was not reported.");
+        }
+        finally { blockedProvider.Release(); uiThread.Join(2000); }
+    }
+    using (var cancellation = new CancellationTokenSource(TimeSpan.FromMilliseconds(50)))
+    {
+        var service = new UpdateCheckService([new AsyncHangProvider()]);
+        var canceled = false;
+        try { await service.CheckAsync(Snapshot(fixtureApp), cancellation.Token).WaitAsync(TimeSpan.FromSeconds(2)); }
+        catch (OperationCanceledException) { canceled = true; }
+        Assert(canceled, "Cancel did not promptly stop waiting for a provider.");
+    }
+    var catalogTimeout = await new UpdateCheckService([new HungCatalogProvider()], sourceTimeout: TimeSpan.FromMilliseconds(60))
+        .CheckAsync(Snapshot(fixtureApp)).WaitAsync(TimeSpan.FromSeconds(2));
+    Assert(catalogTimeout.Results.Single().Status == UpdateStatus.Error &&
+        catalogTimeout.Results.Single().Message!.Contains("timed out"), "Source refresh has no effective timeout.");
+
+    using (var rolloutClient = new HttpClient(new Handler(request =>
+        request.RequestUri!.Host == "persistent.oaistatic.com"
+        ? Json(new { schemaVersion = 1, buildVersion = "26.901.5003.0", storeProductId = "9PLM9XGG6VKS", packageIdentity = "OpenAI.Codex" })
+        : Json(new
+        {
+            Product = new
+            {
+                DisplaySkuAvailabilities = new[] { new { Sku = new { Properties = new { Packages = new[] {
+            new { PackageFamilyName = "OpenAI.Codex_2p2nqsd0c76g0", PackageFullName = "OpenAI.Codex_26.901.4073.0_x64__2p2nqsd0c76g0",
+                Architectures = new[]{"x64"} } } } } } }
+            }
+        }))))
+    {
+        var chatGpt = fixtureApp with
+        {
+            Identity = "msix:OpenAI.Codex_2p2nqsd0c76g0",
+            DisplayName = "ChatGPT",
+            ManagementMode = ManagementMode.Msix,
+            InstalledVersion = "26.901.4073.0",
+            NormalizedVersion = "26.901.4073.0"
+        };
+        var rollout = await new MsixStoreUpdateProvider(rolloutClient, new NoStoreUpdate())
+            .CheckAsync(chatGpt, CancellationToken.None);
+        Assert(rollout.AvailabilityReason == UpdateAvailabilityReason.AwaitingStorePublication &&
+            rollout.PublishedPackageVersion == "26.901.4073.0" && rollout.AvailableVersion == "26.901.5003.0",
+            "OpenAI's announced build was not distinguished from the actual published Store package.");
+        Assert(!rollout.IsInstallable, "An unpublished Store package was presented as installable.");
+    }
     Console.WriteLine($"Algorithm regression tests passed: {checks} assertions. No real installers executed.");
 }
 finally { Directory.Delete(fixture, true); }
@@ -183,4 +257,59 @@ sealed class IndexedOnlyList : IReadOnlyList<string>
     public string this[int index] => index == 0 ? "first" : "second";
     public IEnumerator<string> GetEnumerator() => throw new NotSupportedException("IIterable is unavailable.");
     System.Collections.IEnumerator System.Collections.IEnumerable.GetEnumerator() => GetEnumerator();
+}
+sealed class ImmediateProgress(Action<UpdateCheckProgress> report) : IProgress<UpdateCheckProgress>
+{
+    public void Report(UpdateCheckProgress progress) => report(progress);
+}
+sealed class NonPumpingContext : SynchronizationContext
+{
+    public override void Post(SendOrPostCallback callback, object? state) =>
+        throw new InvalidOperationException("The provider captured the UI synchronization context.");
+}
+sealed class BlockingDiscoveryProvider : IUpdateProvider, IDisposable
+{
+    private readonly ManualResetEventSlim _release = new(false);
+    public int DiscoveryThreadId { get; private set; }
+    public string Id => "blocking-discovery";
+    public UpdateProviderDescriptor Descriptor { get; } = new(UpdateProviderAuthority.ProducerRelease, 100, "fixture");
+    public bool CanHandle(InstalledApplication app)
+    {
+        if (app.DisplayName == "Hung fixture") { DiscoveryThreadId = Environment.CurrentManagedThreadId; _release.Wait(5000); }
+        return true;
+    }
+    public Task<UpdateCheckResult> CheckAsync(InstalledApplication app, CancellationToken token) =>
+        Task.FromResult(new UpdateCheckResult(app.Identity, app.DisplayName, app.NormalizedVersion, app.NormalizedVersion,
+            UpdateStatus.Current, Id, Id, "neutral", "fixture", "x64", "stable", null, null, null));
+    public void Release() => _release.Set();
+    public void Dispose() => _release.Set();
+}
+sealed class AsyncHangProvider : IUpdateProvider
+{
+    public string Id => "async-hang";
+    public UpdateProviderDescriptor Descriptor { get; } = new(UpdateProviderAuthority.ProducerRelease, 100, "fixture");
+    public bool CanHandle(InstalledApplication app) => true;
+    public async Task<UpdateCheckResult> CheckAsync(InstalledApplication app, CancellationToken token)
+    {
+        await Task.Delay(Timeout.InfiniteTimeSpan, token);
+        throw new InvalidOperationException();
+    }
+}
+sealed class HungCatalogProvider : IUpdateProvider, IUpdateProviderSourceRefresher
+{
+    public string Id => "hung-source";
+    public UpdateProviderDescriptor Descriptor { get; } = new(UpdateProviderAuthority.FallbackCatalog, 100, "fixture");
+    public bool CanHandle(InstalledApplication app) => true;
+    public Task RefreshSourceAsync(CancellationToken token) => new TaskCompletionSource().Task;
+    public Task<UpdateCheckResult> CheckAsync(InstalledApplication app, CancellationToken token) => throw new InvalidOperationException("Stale source was used.");
+}
+sealed class NoStoreUpdate : IStorePackageDeploymentService
+{
+    public string? LastError => null;
+    public Task<StoreUpdateAvailability> CheckForUpdateAsync(string family, string? name, string? publisher, string? version,
+        string? architecture, CancellationToken token) => Task.FromResult(new StoreUpdateAvailability(true, false, "9PLM9XGG6VKS", null, null));
+    public Task<StoreCatalogIdentity?> ResolveAsync(string family, string? name, string? publisher, CancellationToken token) =>
+        Task.FromResult<StoreCatalogIdentity?>(new("9PLM9XGG6VKS", name!, family, true));
+    public Task<UpdateExecutionResult> InstallOrUpdateAsync(string id, string family, string? name, string? publisher,
+        string version, CancellationToken token) => throw new InvalidOperationException("Read-only rollout check tried to install.");
 }

@@ -6,10 +6,17 @@ public sealed class UpdateCheckService
 {
     private readonly IReadOnlyList<IUpdateProvider> _providers;
     private readonly SemaphoreSlim _checkSlots = new(16, 16);
+    private readonly TimeSpan _providerTimeout = TimeSpan.FromSeconds(45);
+    private readonly TimeSpan _sourceTimeout = TimeSpan.FromSeconds(20);
 
-    public UpdateCheckService(IReadOnlyList<IUpdateProvider> providers)
+    public UpdateCheckService(IReadOnlyList<IUpdateProvider> providers,
+        TimeSpan? providerTimeout = null, TimeSpan? sourceTimeout = null)
     {
         _providers = providers;
+        if (providerTimeout is not null) _providerTimeout = providerTimeout.Value > TimeSpan.Zero
+            ? providerTimeout.Value : throw new ArgumentOutOfRangeException(nameof(providerTimeout));
+        if (sourceTimeout is not null) _sourceTimeout = sourceTimeout.Value > TimeSpan.Zero
+            ? sourceTimeout.Value : throw new ArgumentOutOfRangeException(nameof(sourceTimeout));
     }
 
     public UpdateCheckService(HttpClient httpClient, UpdateProviderCatalog catalog, FirefoxMetadataDetector? firefoxMetadataDetector = null)
@@ -32,152 +39,140 @@ public sealed class UpdateCheckService
         _providers = providers;
     }
 
-    public async Task<UpdateCheckSnapshot> CheckAsync(
+    public Task<UpdateCheckSnapshot> CheckAsync(
         InventorySnapshot inventory,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        IProgress<UpdateCheckProgress>? progress = null) =>
+        Task.Run(() => CheckCoreAsync(inventory, cancellationToken, progress), cancellationToken)
+            .WaitAsync(cancellationToken);
+
+    private async Task<UpdateCheckSnapshot> CheckCoreAsync(
+        InventorySnapshot inventory, CancellationToken token, IProgress<UpdateCheckProgress>? progress)
     {
-        var generationId = Guid.NewGuid();
+        var applications = inventory.Applications.Where(static app => !app.IsSystemComponent).ToArray();
+        var generation = Guid.NewGuid();
+        var refreshFailures = new Dictionary<string, string>(StringComparer.Ordinal);
+        foreach (var provider in _providers)
+        {
+            if (provider is not IUpdateProviderSourceRefresher refresher) continue;
+            progress?.Report(new(0, applications.Length, "sources", provider.Id));
+            using var refreshCancellation = CancellationTokenSource.CreateLinkedTokenSource(token);
+            var refresh = Task.Run(() => refresher.RefreshSourceAsync(refreshCancellation.Token), refreshCancellation.Token);
+            try
+            {
+                await refresh.WaitAsync(_sourceTimeout, token);
+            }
+            catch (OperationCanceledException) when (token.IsCancellationRequested) { throw; }
+            catch (Exception exception)
+            {
+                refreshCancellation.Cancel();
+                ObserveFailure(refresh);
+                refreshFailures[provider.Id] = exception is TimeoutException
+                    ? "Refreshing the provider catalog timed out. Retry the check."
+                    : exception.Message;
+            }
+        }
+
         var checkedAt = DateTimeOffset.UtcNow;
-        var checks = new List<Task<UpdateCheckResult>>();
-        var externalResults = new List<UpdateCheckResult>();
-
-        foreach (var refresher in _providers.OfType<IUpdateProviderSourceRefresher>())
+        var completed = 0;
+        progress?.Report(new(0, applications.Length, "checks", null));
+        async Task<UpdateCheckResult> CheckOneAsync(InstalledApplication application)
         {
-            await refresher.RefreshSourceAsync(cancellationToken);
+            await _checkSlots.WaitAsync(token);
+            using var checkCancellation = CancellationTokenSource.CreateLinkedTokenSource(token);
+            Task<UpdateCheckResult>? task = null;
+            try
+            {
+                task = Task.Run(() => AssessApplicationAsync(application, generation, checkedAt, refreshFailures,
+                    checkCancellation.Token), checkCancellation.Token);
+                return await task.WaitAsync(_providerTimeout, token);
+            }
+            catch (TimeoutException)
+            {
+                checkCancellation.Cancel();
+                if (task is not null) ObserveFailure(task);
+                return FailedCheck(application, $"The update check timed out after {_providerTimeout.TotalSeconds:0} seconds. Other applications were still checked.");
+            }
+            catch (OperationCanceledException) when (token.IsCancellationRequested)
+            {
+                checkCancellation.Cancel();
+                if (task is not null) ObserveFailure(task);
+                throw;
+            }
+            catch (Exception exception)
+            {
+                return FailedCheck(application, exception.Message);
+            }
+            finally
+            {
+                _checkSlots.Release();
+                progress?.Report(new(Interlocked.Increment(ref completed), applications.Length, "checks", application.DisplayName));
+            }
         }
 
-        foreach (var application in inventory.Applications.Where(static application => !application.IsSystemComponent))
-        {
-            // Native-updater ownership is an explicit application policy. The application
-            // remains the update authority instead of being replaced by a third-party source.
-            if (application.ManagementMode == ManagementMode.NativeSelfUpdater)
-            {
-                var updateOwner = application.Evidence.FirstOrDefault(static evidence =>
-                    evidence.Label == ExternalManagementClassifier.OwnerEvidenceLabel)?.Value ??
-                    application.Evidence.FirstOrDefault(static evidence =>
-                        evidence.Label == "Preferred update provider")?.Value ??
-                    "Application native updater";
-                var updateSource = application.Evidence.FirstOrDefault(static evidence =>
-                    evidence.Label == ExternalManagementClassifier.SourceEvidenceLabel)?.Value;
-                externalResults.Add(new UpdateCheckResult(
-                    application.Identity,
-                    application.DisplayName,
-                    application.NormalizedVersion,
-                    null,
-                    UpdateStatus.ManagedExternally,
-                    "native-updater",
-                    updateOwner,
-                    "application-managed",
-                    "Preserved by the application's updater",
-                    "application-managed",
-                    "native",
-                    Uri.TryCreate(updateSource, UriKind.Absolute, out var sourceUri) ? sourceUri.AbsoluteUri : null,
-                    $"Update ownership belongs to {updateOwner}; NaxUpdater will not replace that mechanism with a fallback catalog.",
-                    null,
-                    UpdateProviderAuthority.ExplicitApplicationPolicy,
-                    "The installed application policy assigns update ownership to its native updater",
-                    ["native-updater"],
-                    UpdateApplicability.Unknown));
-                continue;
-            }
-
-            var preferredProviderId = PreferredProviderId(application);
-            IUpdateProvider? preferredProvider = null;
-            if (preferredProviderId is not null)
-            {
-                preferredProvider = _providers.FirstOrDefault(provider =>
-                    provider.Id.Equals(preferredProviderId, StringComparison.OrdinalIgnoreCase));
-                if (preferredProvider is null ||
-                    !SupportsManagementMode(preferredProvider, application.ManagementMode) ||
-                    IsBlocked(application, preferredProvider.Id) ||
-                    !preferredProvider.CanHandle(application))
-                {
-                    externalResults.Add(PreferredProviderUnavailableResult(application, preferredProviderId));
-                    continue;
-                }
-            }
-            var candidates = preferredProvider is null
-                ? ResolveHighestAuthorityCandidates(application)
-                : [preferredProvider];
-            var provider = preferredProvider ?? candidates.FirstOrDefault();
-            if (provider is not null)
-            {
-                var equallyRanked = candidates
-                    .Where(candidate => candidate.Descriptor.Authority == provider.Descriptor.Authority &&
-                                        candidate.Descriptor.Specificity == provider.Descriptor.Specificity)
-                    .ToArray();
-                if (preferredProvider is null && equallyRanked.Length > 1)
-                {
-                    externalResults.Add(AmbiguousProviderResult(application, equallyRanked));
-                    continue;
-                }
-                checks.Add(SafeCheckAsync(
-                    provider,
-                    application,
-                    candidates.Select(static candidate => candidate.Id).ToArray(),
-                    preferredProvider is not null,
-                    generationId,
-                    checkedAt,
-                    cancellationToken));
-                continue;
-            }
-            externalResults.Add(new UpdateCheckResult(
-                application.Identity,
-                application.DisplayName,
-                application.NormalizedVersion,
-                null,
-                UpdateStatus.Unsupported,
-                "unverified",
-                "No verifiable update source",
-                "unknown",
-                "No verified update source discovered",
-                "unknown",
-                "unknown",
-                null,
-                "The application was inventoried, but no unambiguous catalog identity or installed updater protocol could be verified.",
-                null));
-        }
-
-        var checkedResults = await Task.WhenAll(checks);
-        var results = checkedResults
-            .Concat(externalResults)
-            .OrderBy(static result => result.Status == UpdateStatus.Available ? 0 : result.Status == UpdateStatus.Error ? 1 : 2)
-            .ThenBy(static result => result.DisplayName, StringComparer.CurrentCultureIgnoreCase)
-            .ToArray();
-        var unsupportedCount = results.Count(static result => result.Status == UpdateStatus.Unsupported);
+        var results = await Task.WhenAll(applications.Select(CheckOneAsync));
         return new UpdateCheckSnapshot(
             checkedAt,
-            results,
-            unsupportedCount,
-            generationId);
+            results.OrderBy(static result => result.Status == UpdateStatus.Available ? 0 : result.Status == UpdateStatus.Error ? 1 : 2)
+                .ThenBy(static result => result.DisplayName, StringComparer.CurrentCultureIgnoreCase).ToArray(),
+            results.Count(static result => result.Status == UpdateStatus.Unsupported),
+            generation);
     }
 
-    private async Task<UpdateCheckResult> SafeCheckAsync(
-        IUpdateProvider provider,
-        InstalledApplication application,
-        IReadOnlyList<string> candidateProviderIds,
-        bool selectedByPolicy,
-        Guid generationId,
-        DateTimeOffset checkedAt,
-        CancellationToken cancellationToken)
+    private async Task<UpdateCheckResult> AssessApplicationAsync(
+        InstalledApplication application, Guid generation, DateTimeOffset checkedAt,
+        IReadOnlyDictionary<string, string> refreshFailures, CancellationToken token)
     {
-        await _checkSlots.WaitAsync(cancellationToken);
-        try
+        token.ThrowIfCancellationRequested();
+        if (application.ManagementMode == ManagementMode.NativeSelfUpdater)
         {
-            return await SafeCheckCoreAsync(
-                provider,
-                application,
-                candidateProviderIds,
-                selectedByPolicy,
-                generationId,
-                checkedAt,
-                cancellationToken);
+            var owner = application.Evidence.FirstOrDefault(static e => e.Label == ExternalManagementClassifier.OwnerEvidenceLabel)?.Value ??
+                application.Evidence.FirstOrDefault(static e => e.Label == "Preferred update provider")?.Value ?? "Application native updater";
+            var source = application.Evidence.FirstOrDefault(static e => e.Label == ExternalManagementClassifier.SourceEvidenceLabel)?.Value;
+            return new(application.Identity, application.DisplayName, application.NormalizedVersion, null,
+                UpdateStatus.ManagedExternally, "native-updater", owner, "application-managed",
+                "Preserved by the application's updater", "application-managed", "native",
+                Uri.TryCreate(source, UriKind.Absolute, out var uri) ? uri.AbsoluteUri : null,
+                $"Update ownership belongs to {owner}; its available version was not checked.", null,
+                UpdateProviderAuthority.ExplicitApplicationPolicy,
+                "The installed application policy assigns update ownership to its native updater", ["native-updater"],
+                UpdateApplicability.Unknown);
         }
-        finally
+
+        var preferredId = PreferredProviderId(application);
+        IUpdateProvider? preferred = null;
+        if (preferredId is not null)
         {
-            _checkSlots.Release();
+            preferred = _providers.FirstOrDefault(provider => provider.Id.Equals(preferredId, StringComparison.OrdinalIgnoreCase));
+            if (preferred is null || !SupportsManagementMode(preferred, application.ManagementMode) ||
+                IsBlocked(application, preferred.Id) || !preferred.CanHandle(application))
+                return PreferredProviderUnavailableResult(application, preferredId);
         }
+        var candidates = preferred is null ? ResolveHighestAuthorityCandidates(application) : [preferred];
+        var selected = preferred ?? candidates.FirstOrDefault();
+        if (selected is null)
+            return new(application.Identity, application.DisplayName, application.NormalizedVersion, null, UpdateStatus.Unsupported,
+                "unverified", "No verifiable update source", "unknown", "No verified update source discovered",
+                "unknown", "unknown", null,
+                "The application was inventoried, but no unambiguous catalog identity or installed updater protocol could be verified.", null);
+
+        var tied = candidates.Where(provider => provider.Descriptor.Authority == selected.Descriptor.Authority &&
+            provider.Descriptor.Specificity == selected.Descriptor.Specificity).ToArray();
+        if (preferred is null && tied.Length > 1) return AmbiguousProviderResult(application, tied);
+        var ids = candidates.Select(static provider => provider.Id).ToArray();
+        if (refreshFailures.TryGetValue(selected.Id, out var refreshFailure))
+            return ProviderContractError(selected, application, ids, refreshFailure);
+        return await SafeCheckCoreAsync(selected, application, ids, preferred is not null, generation, checkedAt, token);
     }
+
+    private static UpdateCheckResult FailedCheck(InstalledApplication application, string error) => new(
+        application.Identity, application.DisplayName, application.NormalizedVersion, null, UpdateStatus.Error,
+        "provider-check", "Update provider check", "unknown", "Check did not complete",
+        "unknown", "unknown", null, error, null, Applicability: UpdateApplicability.Unknown);
+
+    private static void ObserveFailure(Task task) =>
+        _ = task.ContinueWith(static failed => { _ = failed.Exception; }, CancellationToken.None,
+            TaskContinuationOptions.OnlyOnFaulted | TaskContinuationOptions.ExecuteSynchronously, TaskScheduler.Default);
 
     private static async Task<UpdateCheckResult> SafeCheckCoreAsync(
         IUpdateProvider provider,

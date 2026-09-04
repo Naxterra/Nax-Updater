@@ -18,6 +18,9 @@ public enum UpdateApplicability
     NotApplicable
 }
 
+public enum UpdateAvailabilityReason { None, AwaitingStorePublication }
+public sealed record UpdateCheckProgress(int Completed, int Total, string Phase, string? ApplicationName);
+
 public enum UpdateExecutionKind
 {
     DownloadedExe,
@@ -166,7 +169,9 @@ public sealed record UpdateCheckResult(
     string? ProviderSelectionReason = null,
     IReadOnlyList<string>? CandidateProviderIds = null,
     UpdateApplicability Applicability = UpdateApplicability.Applicable,
-    string? CorrelationKey = null)
+    string? CorrelationKey = null,
+    UpdateAvailabilityReason AvailabilityReason = UpdateAvailabilityReason.None,
+    string? PublishedPackageVersion = null)
 {
     public bool IsInstallable => ExecutionPlan is not null &&
                                  Status == UpdateStatus.Available &&

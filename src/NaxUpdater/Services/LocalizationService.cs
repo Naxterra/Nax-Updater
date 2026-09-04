@@ -48,6 +48,8 @@ public static partial class LocalizationService
 
     public static string ProviderMessage(UpdateCheckResult update)
     {
+        if (update.AvailabilityReason == UpdateAvailabilityReason.AwaitingStorePublication)
+            return Format("StorePublicationPendingMessage", update.AvailableVersion, update.PublishedPackageVersion, update.InstalledVersion);
         if (update.Status is UpdateStatus.Error or UpdateStatus.NewerReleaseKnown)
             return update.Message ?? Get(update.Status == UpdateStatus.Error ? "StatusCheckFailed" : "ProviderReleaseKnownNotAutomatic");
         if (update.ProviderId == "native-updater") return Format("ProviderManagedUnchecked", ProviderName(update));
