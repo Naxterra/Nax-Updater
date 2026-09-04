@@ -38,3 +38,7 @@ public sealed record ManufacturerDriverSnapshot(
     DateTimeOffset CheckedAt,
     IReadOnlyList<ManufacturerDriverResult> Results,
     IReadOnlyList<string> Issues);
+
+public sealed record InstalledDriverSnapshot(
+    IReadOnlyList<InstalledHardwareDriver> Drivers,
+    IReadOnlyList<string> Issues);
