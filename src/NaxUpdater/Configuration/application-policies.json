@@ -4,9 +4,9 @@
       "id": "DeepL.DeepL",
       "displayName": "DeepL",
       "publisherContains": "DeepL",
-      "blockedProviders": [ "WinGet fallback" ],
+      "blockedProviders": [ "winget-fallback" ],
       "managementMode": "ZeroInstall",
-      "preferredProvider": "Zero Install native feed",
+      "preferredProvider": "zero-install",
       "appliesWhenAbsent": false,
       "reason": "The installed app is content-addressed by its Zero Install feed, which takes precedence over the WinGet fallback."
     },
@@ -14,9 +14,9 @@
       "id": "Nextcloud.NextcloudDesktop",
       "displayName": "Nextcloud",
       "publisherContains": "Nextcloud",
-      "blockedProviders": [ "WinGet fallback" ],
+      "blockedProviders": [ "winget-fallback" ],
       "managementMode": "DirectVendor",
-      "preferredProvider": "Official Nextcloud GitHub release and signed MSI",
+      "preferredProvider": "github:nextcloud-releases/desktop",
       "versionNormalization": "FirstThreeNumericComponents",
       "appliesWhenAbsent": false,
       "reason": "Use the executable for installed state and normalize the MSI build suffix to the public release version."
@@ -25,9 +25,9 @@
       "id": "Blizzard.BattleNet",
       "displayName": "Battle.net",
       "publisherContains": "Blizzard",
-      "blockedProviders": [ "WinGet fallback" ],
+      "blockedProviders": [ "winget-fallback" ],
       "managementMode": "NativeSelfUpdater",
-      "preferredProvider": "Blizzard native updater",
+      "preferredProvider": "native-updater",
       "appliesWhenAbsent": false,
       "reason": "Battle.net owns its update lifecycle through Blizzard's installed updater; the WinGet fallback is blocked."
     },
@@ -35,9 +35,9 @@
       "id": "Brave.BraveOrigin.Nightly",
       "displayName": "Brave Origin",
       "publisherContains": "Brave",
-      "blockedProviders": [ "WinGet fallback" ],
+      "blockedProviders": [ "winget-fallback" ],
       "managementMode": "NativeSelfUpdater",
-      "preferredProvider": "Brave native update channel",
+      "preferredProvider": "native-updater",
       "appliesWhenAbsent": false,
       "reason": "Brave Origin keeps its installed native update channel; the WinGet fallback cannot replace its channel."
     }

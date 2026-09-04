@@ -2,7 +2,7 @@
 param(
     [Parameter()]
     [ValidatePattern('^\d+\.\d+\.\d+$')]
-    [string]$Version = '0.15.23'
+    [string]$Version = '0.16.0'
 )
 
 $ErrorActionPreference = 'Stop'
@@ -31,6 +31,9 @@ Reset-ProjectDirectory $releaseDirectory
 
 dotnet build (Join-Path $repoRoot 'NaxUpdater.slnx') -c Release
 if ($LASTEXITCODE -ne 0) { throw 'Solution build failed.' }
+
+dotnet run --project (Join-Path $repoRoot 'tests\NaxUpdater.Core.TransactionTests\NaxUpdater.Core.TransactionTests.csproj') -c Release --no-build
+if ($LASTEXITCODE -ne 0) { throw 'Deterministic transaction tests failed.' }
 
 dotnet run --project (Join-Path $repoRoot 'tests\NaxUpdater.Core.SmokeTests\NaxUpdater.Core.SmokeTests.csproj') -c Release --no-build
 if ($LASTEXITCODE -ne 0) { throw 'Smoke tests failed.' }

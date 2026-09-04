@@ -1,25 +1,41 @@
 using Microsoft.Management.Deployment;
+using NaxUpdater.Core.Models;
 
 namespace NaxUpdater.Core.Services;
 
-public sealed class StorePackageDeploymentService
+public interface IStorePackageDeploymentService
+{
+    string? LastError { get; }
+    Task<StoreUpdateAvailability> CheckForUpdateAsync(
+        string packageFamilyName,
+        string? installedDisplayName,
+        string? installedPublisher,
+        string? installedVersion,
+        string? installedArchitecture,
+        CancellationToken cancellationToken);
+    Task<StoreCatalogIdentity?> ResolveAsync(
+        string packageFamilyName,
+        string? installedDisplayName,
+        string? installedPublisher,
+        CancellationToken cancellationToken);
+    Task<UpdateExecutionResult> InstallOrUpdateAsync(
+        string productId,
+        string packageFamilyName,
+        string? installedDisplayName,
+        string? installedPublisher,
+        string expectedVersion,
+        CancellationToken cancellationToken);
+}
+
+public sealed class StorePackageDeploymentService : IStorePackageDeploymentService
 {
     public const string NoApplicableUpdateMessage = "Microsoft Store no longer reports an applicable update for this package.";
 
-    private static readonly HttpClient SharedHttpClient = new()
-    {
-        Timeout = TimeSpan.FromSeconds(30)
-    };
     private readonly object _connectionLock = new();
     private readonly SemaphoreSlim _catalogQuerySlots = new(12, 12);
     private Task<(PackageManager Manager, PackageCatalog Catalog)>? _storeConnection;
     private Task<(PackageManager Manager, PackageCatalog Catalog)>? _storeUpdateConnection;
-    private readonly MicrosoftStoreProductMetadataClient _productMetadata;
-
-    public StorePackageDeploymentService(HttpClient? httpClient = null)
-    {
-        _productMetadata = new MicrosoftStoreProductMetadataClient(httpClient ?? SharedHttpClient);
-    }
+    public StorePackageDeploymentService(HttpClient? httpClient = null) { }
 
     public string? LastError { get; private set; }
 
@@ -48,36 +64,6 @@ public sealed class StorePackageDeploymentService
             {
                 return new StoreUpdateAvailability(false, false, null, null,
                     LastError ?? "No exact Microsoft Store product matched the installed package family.");
-            }
-
-            string? catalogVersion = null;
-            try
-            {
-                catalogVersion = await _productMetadata.GetLatestPackageVersionAsync(
-                    identity.ProductId,
-                    packageFamilyName,
-                    installedArchitecture,
-                    installedVersion,
-                    cancellationToken);
-            }
-            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
-            {
-                throw;
-            }
-            catch
-            {
-                // The Microsoft Store deployment catalog remains the fallback if Store metadata is unavailable.
-            }
-
-            if (Version.TryParse(installedVersion, out _) && Version.TryParse(catalogVersion, out _))
-            {
-                var metadataReportsUpdate = MicrosoftStoreProductMetadataClient.IsNewer(installedVersion, catalogVersion);
-                return new StoreUpdateAvailability(
-                    true,
-                    metadataReportsUpdate,
-                    identity.ProductId,
-                    metadataReportsUpdate ? catalogVersion : null,
-                    null);
             }
 
             var (_, catalog) = await GetStoreUpdateConnectionAsync(cancellationToken);
@@ -120,7 +106,7 @@ public sealed class StorePackageDeploymentService
             }
 
             var isUpdateAvailable = package.IsUpdateAvailable;
-            var availableVersion = package.IsUpdateAvailable ? StoreVersion(package) : null;
+            var availableVersion = isUpdateAvailable ? StoreVersion(package) : null;
             return new StoreUpdateAvailability(
                 true,
                 isUpdateAvailable,
@@ -299,6 +285,7 @@ public sealed class StorePackageDeploymentService
         string packageFamilyName,
         string? installedDisplayName,
         string? installedPublisher,
+        string expectedVersion,
         CancellationToken cancellationToken)
     {
         try
@@ -311,48 +298,22 @@ public sealed class StorePackageDeploymentService
                 installedDisplayName,
                 installedPublisher,
                 cancellationToken);
-            var useInstallFallback = false;
             if (package is null)
             {
-                (manager, catalog) = await GetStoreConnectionAsync(cancellationToken);
-                package = await FindExactPackageAsync(
-                    catalog,
-                    productId,
-                    packageFamilyName,
-                    installedDisplayName,
-                    installedPublisher,
-                    cancellationToken);
-                useInstallFallback = package is not null;
-                if (package is null)
-                {
-                    return new UpdateExecutionResult(-1, false, NoApplicableUpdateMessage);
-                }
+                return new UpdateExecutionResult(-1, false, NoApplicableUpdateMessage);
             }
-
-            var result = useInstallFallback
-                ? await manager.InstallPackageAsync(package, CreateInstallOptions(force: true)).AsTask(cancellationToken)
-                : await manager.UpgradePackageAsync(package, CreateInstallOptions(force: false)).AsTask(cancellationToken);
-
-            // The update catalog can lag behind the Store product metadata. If its upgrade route
-            // rejects a package that the product catalog still reports as newer, retry the exact
-            // Store product through install --force semantics. The deployment API bypasses a
-            // non-security applicability mismatch without weakening identity or hash checks.
-            if (!useInstallFallback && result.Status == InstallResultStatus.NoApplicableUpgrade)
+            var offeredVersion = StoreVersion(package);
+            if (string.IsNullOrWhiteSpace(offeredVersion) ||
+                !offeredVersion.Equals(expectedVersion, StringComparison.OrdinalIgnoreCase))
             {
-                (manager, catalog) = await GetStoreConnectionAsync(cancellationToken);
-                var installPackage = await FindExactPackageAsync(
-                    catalog,
-                    productId,
-                    packageFamilyName,
-                    installedDisplayName,
-                    installedPublisher,
-                    cancellationToken);
-                if (installPackage is not null)
-                {
-                    result = await manager.InstallPackageAsync(installPackage, CreateInstallOptions(force: true))
-                        .AsTask(cancellationToken);
-                }
+                return new UpdateExecutionResult(
+                    -1,
+                    false,
+                    $"Microsoft Store changed the applicable target from {expectedVersion} to {offeredVersion ?? "unknown"}; the approved update was not submitted.");
             }
+
+            var result = await manager.UpgradePackageAsync(package, CreateInstallOptions())
+                .AsTask(cancellationToken);
 
             var success = result.Status == InstallResultStatus.Ok;
             var error = success
@@ -371,11 +332,11 @@ public sealed class StorePackageDeploymentService
         }
     }
 
-    internal static InstallOptions CreateInstallOptions(bool force) => new()
+    internal static InstallOptions CreateInstallOptions() => new()
     {
         AcceptPackageAgreements = true,
-        AllowUpgradeToUnknownVersion = true,
-        Force = force,
+        AllowUpgradeToUnknownVersion = false,
+        Force = false,
         PackageInstallMode = PackageInstallMode.Silent,
         PackageInstallScope = PackageInstallScope.Any,
         CorrelationData = "{\"caller\":\"NaxUpdater\"}"
@@ -408,11 +369,8 @@ public sealed class StorePackageDeploymentService
             var familyMatch = candidate.InstalledVersion is not null &&
                               Contains(candidate.InstalledVersion.PackageFamilyNames, packageFamilyName);
             var defaultFamilyMatch = Contains(candidate.DefaultInstallVersion.PackageFamilyNames, packageFamilyName);
-            var metadataMatch = !string.IsNullOrWhiteSpace(installedDisplayName) &&
-                                candidate.Name.Equals(installedDisplayName, StringComparison.OrdinalIgnoreCase) &&
-                                PublisherMatches(candidate, installedPublisher);
             if (!candidate.Id.Equals(productId, StringComparison.OrdinalIgnoreCase) ||
-                (!familyMatch && !defaultFamilyMatch && !metadataMatch))
+                (!familyMatch && !defaultFamilyMatch))
             {
                 continue;
             }

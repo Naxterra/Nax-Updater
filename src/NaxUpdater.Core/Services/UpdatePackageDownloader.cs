@@ -10,6 +10,37 @@ public sealed class UpdatePackageDownloader(
     IAuthenticodeVerifier authenticodeVerifier,
     long segmentedDownloadThresholdBytes = 64L * 1024 * 1024)
 {
+    public async Task<VerifiedInstaller> ReverifyAsync(
+        UpdateCheckResult update,
+        VerifiedInstaller installer,
+        CancellationToken cancellationToken = default)
+    {
+        var plan = update.ExecutionPlan ?? throw new InvalidOperationException("The update has no execution plan.");
+        if (!File.Exists(installer.Path))
+        {
+            throw new FileNotFoundException("The prepared installer no longer exists.", installer.Path);
+        }
+        var contentLock = new FileStream(
+            installer.Path,
+            FileMode.Open,
+            FileAccess.Read,
+            FileShare.Read);
+        try
+        {
+            var verified = await VerifyFileAsync(installer.Path, plan, cancellationToken);
+            if (!verified.IsValid)
+            {
+                throw new InvalidDataException(verified.Error ?? "The prepared installer no longer matches its verified release identity.");
+            }
+            return new VerifiedInstaller(installer.Path, verified.Signer!, contentLock);
+        }
+        catch
+        {
+            contentLock.Dispose();
+            throw;
+        }
+    }
+
     public async Task<VerifiedInstaller> DownloadAndVerifyAsync(
         UpdateCheckResult update,
         string cacheRoot,
@@ -371,4 +402,7 @@ public sealed class UpdatePackageDownloader(
     private sealed record HashPolicy(HashAlgorithmName Algorithm, string ExpectedHash, string DisplayName);
 }
 
-public sealed record VerifiedInstaller(string Path, string Signer);
+public sealed record VerifiedInstaller(string Path, string Signer, FileStream? ContentLock = null) : IDisposable
+{
+    public void Dispose() => ContentLock?.Dispose();
+}

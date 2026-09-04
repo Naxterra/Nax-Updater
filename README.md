@@ -31,7 +31,21 @@ The inventory engine:
 
 ## Update providers
 
-Version 0.15.23 includes:
+Version 0.16.0 includes:
+
+- an explicit provider-authority model: installed update protocols, producer releases, Microsoft Store, and catalog fallbacks are selected by declared authority and compatible installation type rather than registration order;
+- hard enforcement of preferred and blocked provider policies, with equal-authority conflicts and missing preferred providers failing closed instead of silently falling back;
+- separate release and applicability states, so a newer vendor release can be shown without exposing an install button until an exact executable route and target version are confirmed;
+- a unified application and driver transaction: validate approved intent, recheck applicability, acquire and fully prepare the payload, recheck again, quiesce only path-verified processes, apply, and independently verify the installed target;
+- short-lived execution plans bound to check generation, installed-version precondition, full execution-intent fingerprint, trusted publisher/hash policy, and exact process paths;
+- deny-write/delete locks and a final content hash across direct, extracted, and driver payloads from preparation through process completion;
+- a durable operation journal that recovers interrupted or reboot-pending transactions by rescanning and verifying installed state before any retry;
+- Store applicability based on the exact update catalog rather than display metadata, with forced Store installation removed entirely;
+- ChatGPT release evidence reconciled independently with its exact Store offer; generic localized UI buttons are no longer treated as a trusted update protocol;
+- GOG release detection without elevating its user-writable, unauthenticated adjacent runtime dependency set;
+- WinGet fallback installation blocked unless the replacement binary can be bound to a trusted publisher;
+- downloaded EXE elevation withheld until a protected elevated staging broker exists; MSI, exact Store, and catalog-verified driver routes remain independently modelled;
+- a deterministic transaction test suite covering provider precedence, policy blocking, stale and mutated plans, preparation failure, post-prepare changes, UAC cancellation, reboot-pending state, journal recovery, and version-bound completion;
 
 - application-header text restored through the packaged WinUI property-resource identifiers, so switching between application and driver modes no longer exposes internal localization keys;
 - a genuinely driver-specific top workspace: the scan action, filter hint, visibility, four labels, and four counters now represent driver groups, official packages checked, installable driver updates, and driver-check issues rather than repeating application inventory statistics;
@@ -39,22 +53,20 @@ Version 0.15.23 includes:
 - Intel Ethernet presentation that separates the official Windows 11 package (`31.2.2`) from its applicable I219 `e1d.inf` driver (`12.19.2.64`) instead of presenting the INF as the package version;
 - NVIDIA support and driver-detail links localized to `nvidia.com/de-de` when German is selected and `nvidia.com/en-us` for English, while the verified international installer continues to use NVIDIA's official signed download CDN;
 
-- ChatGPT updates now invoke the enabled **Update/Aktualisieren** action exposed by the installed signed `ChatGPT.exe`, letting ChatGPT's own packaged updater perform the account-free update that its UI already offers; NaxUpdater waits for the installed `OpenAI.Codex` package version to reach the exact OpenAI-manifest target;
-
-- clicking **Update** or **Update all** now authorizes the complete close-and-update flow: NaxUpdater requests a normal application shutdown, waits briefly, force-terminates remaining same-session process trees, requests UAC for an elevated `taskkill` fallback when Windows requires it, verifies that the processes are gone, and then runs the update;
+- clicking **Update** or **Update all** authorizes a version-bound transaction; applications are closed only after the complete payload and nested contents are verified, and process termination is limited to the selected application's path-bound executable identity without carrying stale PIDs across UAC;
 
 - producer-first provider selection for every application: installed/native and producer-owned sources win, Microsoft Store handles Store-owned packages, and WinGet is consulted only when none of those sources claims the application;
 - WinGet remains a verified last-resort fallback through exact product-code, MSI upgrade-family, or package-family correlation; it cannot override a producer source and Scoop is no longer consulted;
 
 - ChatGPT checks against OpenAI's official Windows update manifest for the exact `OpenAI.Codex` package and Store product, instead of relying on WinGet's `Unknown` Store version;
 - generic application process handling before conventional installer deployment, including graceful close, forced process-tree termination when required, installation, and the final version rescan;
-- exact Store-product retry with the Windows Package Manager force option when Store metadata proves an update but the composite update catalog is stale; `NoApplicableUpgrade` is no longer reported as “already current”;
+- exact non-forced Store upgrade submission only after the Store update catalog confirms applicability and exposes a verifiable target version; `NoApplicableUpgrade` remains a failed/no-longer-applicable transaction;
 - a full-width driver workspace matching the applications and updates views: the fixed centered 1260-pixel island is removed, the device-name column remains bounded, and surplus ultra-wide space follows the action column;
 
 - Mozilla Firefox releases from Mozilla's official product-details and release archive, preserving the effective Firefox profile language, architecture, channel, scope, and installation directory;
 - Nextcloud releases from the official `nextcloud-releases/desktop` GitHub repository using its release-asset SHA-256 digest and a multi-language MSI;
 - retry and immutable latest-release redirect fallback for current Nextcloud checks when the GitHub JSON API is temporarily unavailable or rate-limited;
-- DeepL updates through its existing Zero Install feed and content-addressed provider;
+- DeepL release checks through its existing Zero Install feed and content-addressed selection; automatic feed execution is withheld because the selected digest cannot be pinned across the final `update` command;
 - resilient DeepL checks that fall back to Zero Install's locally cached signed selection when a feed refresh is temporarily unavailable, avoiding a false provider failure for the installed current release;
 - explicit native-updater ownership for guarded applications such as Battle.net and Brave Origin;
 - native-updater policy precedence over incidental public-catalog matches, preventing component versions such as Brave's Chromium build from appearing as a Brave application update;
@@ -67,15 +79,15 @@ Version 0.15.23 includes:
 - WinGet fallback coverage for applications without a producer adapter, while applications not safely correlated with either source remain explicitly **No verifiable update source**;
 - a complete assessment result for every visible application, including an explicit **No verifiable update source** status instead of silently omitting unsupported software;
 - registered non-MSI product-code correlation for installer technologies such as Inno Setup;
-- vendor-native GOG Galaxy updates read from GOG's own `autoupdate-verified` state, with the staged updater version matched to its metadata and its GOG Authenticode signature validated; because Windows intentionally denies direct execution inside that protected directory, the complete vendor-verified tree is copied to a fresh temporary execution directory and merged with GOG's installed `redists` runtime dependencies without replacing the new updater, then the copied updater is revalidated and GOG's own elevated command is used;
+- vendor-native GOG Galaxy releases read from GOG's own `autoupdate-verified` state, with the updater version matched to metadata and its GOG Authenticode signature validated; automatic elevation is intentionally withheld because the adjacent runtime dependency set has no producer-authenticated manifest;
 - Microsoft Store/MSIX ownership classification for unmatched packaged applications, including application-managed language and Store/MSIX servicing status instead of unknown/unsupported labels;
-- MSI execution without process-name prechecks, preventing unrelated runtimes with the same filename from blocking Windows Installer updates;
+- process quiescence tied to the selected application's verified executable path rather than a filename-only match;
 - direct Microsoft Store catalog and deployment integration through the official Windows Package Manager COM API;
 - installed PFN to Store Product ID resolution with exact package-family revalidation before silent install/update submission;
-- Store update applicability checks through an exact installed package-family → Store Product ID → architecture-matched Store package-version comparison, avoiding false negatives when the composite catalog omits its installed-version object or reports a stale applicability flag;
+- Store update applicability checks through an exact installed package-family → Store Product ID → Store update-catalog offer, while architecture-matched metadata remains release evidence rather than authority to force deployment;
 - conservative Store package comparison that excludes encrypted duplicate bundles and rejects unrelated outer-bundle version schemes, preventing satellite revisions such as `.70` and calendar/rank bundle versions from becoming false application updates;
 - a direct **Update** row action only when Microsoft Store reports a real applicable upgrade; current or uncorrelated Store packages remain labelled as Store-managed without a misleading button;
-- an exact Microsoft Store product-install fallback when package metadata proves a newer applicable version but the composite update catalog exposes no upgrade candidate; `NoApplicableUpgrade` remains a failure instead of being converted to a false current result;
+- a **newer release known** state when producer or Store metadata is newer but the exact Store update catalog does not expose a version-bound applicable upgrade;
 - launchable MSIX app-entry naming ahead of package identities, so Store packages such as `OpenAI.Codex` are presented by their user-facing app name, `ChatGPT`;
 - six-way parallel ranged downloads for installers of at least 64 MB when the server advertises byte-range support, followed by complete reconstruction and whole-file hash verification;
 - SHA-256-verified ZIP/NuGet packages containing an explicitly declared nested MSI, with exact-entry extraction, traversal rejection, and silent MSI execution;
@@ -142,9 +154,9 @@ NaxUpdater never falls back to an English Firefox installer when the detected lo
 
 - Checks are read-only and never start installation automatically.
 - Every installation requires an explicit confirmation.
-- Downloaded installers require HTTPS, an allow-listed final host, the release SHA-256, a valid Windows Authenticode signature, and the expected publisher name.
+- Downloaded installers require HTTPS, an allow-listed final host, a published SHA-256/SHA-512 release digest, and an expected Authenticode publisher unless an explicitly modelled hash-only payload has an independently verified nested catalog.
 - The application, architecture, channel, locale, scope, and install directory are fixed in the execution plan.
-- Starting an update authorizes NaxUpdater to close the update plan's listed application processes and force-terminate their same-session process trees when necessary; protected processes trigger a Windows UAC request through `taskkill`.
+- Starting an update authorizes NaxUpdater to close only path-bound processes from the fresh execution plan and force-terminate their same-session trees when necessary; inaccessible processes block the transaction instead of passing stale PIDs through an elevated `taskkill` command.
 - NaxUpdater does not run bulk WinGet, Chocolatey, or Scoop commands and never uninstalls without exact user confirmation.
 
 ## Application removal
@@ -163,7 +175,7 @@ From this directory:
 dotnet build NaxUpdater.slnx
 dotnet run --project tests/NaxUpdater.Core.SmokeTests/NaxUpdater.Core.SmokeTests.csproj
 dotnet publish src/NaxUpdater/NaxUpdater.csproj -c Release -r win-x64 --self-contained true -o artifacts/NaxUpdater-win-x64
-./scripts/package-release.ps1 -Version 0.15.23
+./scripts/package-release.ps1 -Version 0.16.0
 ```
 
 The desktop project uses .NET 11, WinUI 3, and the Windows App SDK. It is not an Electron or WebView application.

@@ -6,6 +6,11 @@ namespace NaxUpdater.Core.Services;
 internal sealed class ZeroInstallUpdateProvider(ProcessQueryRunner processRunner) : IUpdateProvider
 {
     public string Id => "zero-install";
+    public UpdateProviderDescriptor Descriptor { get; } = new(
+        UpdateProviderAuthority.InstalledUpdateProtocol,
+        100,
+        "Content-addressed Zero Install feed recorded by the installed application",
+        [ManagementMode.ZeroInstall]);
 
     public bool CanHandle(InstalledApplication application) => application.ManagementMode == ManagementMode.ZeroInstall;
 
@@ -55,24 +60,8 @@ internal sealed class ZeroInstallUpdateProvider(ProcessQueryRunner processRunner
         }
 
         var status = VersionOrder.Compare(selection.Version, application.NormalizedVersion) > 0
-            ? UpdateStatus.Available
+            ? UpdateStatus.NewerReleaseKnown
             : UpdateStatus.Current;
-        var processName = string.IsNullOrWhiteSpace(application.PrimaryInstallPath)
-            ? application.DisplayName
-            : Path.GetFileNameWithoutExtension(application.PrimaryInstallPath);
-        var plan = status == UpdateStatus.Available
-            ? new UpdateExecutionPlan(
-                UpdateExecutionKind.NativeCommand,
-                null,
-                null,
-                null,
-                null,
-                cli,
-                ["update", "--batch", feed],
-                false,
-                [],
-                [processName])
-            : null;
         return new UpdateCheckResult(
             application.Identity,
             application.DisplayName,
@@ -89,7 +78,10 @@ internal sealed class ZeroInstallUpdateProvider(ProcessQueryRunner processRunner
             usedCachedSelection
                 ? $"Zero Install refresh was unavailable; cached signed selection {selection.Version} with content digest {selection.Digest} was verified instead."
                 : $"Zero Install selected content digest {selection.Digest}.",
-            plan);
+            null,
+            Applicability: status == UpdateStatus.Current
+                ? UpdateApplicability.NotRequired
+                : UpdateApplicability.NotApplicable);
     }
 
     private UpdateCheckResult Error(InstalledApplication application, string message) => new(

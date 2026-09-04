@@ -20,4 +20,6 @@ jobs:
       - name: Build
         run: dotnet build NaxUpdater.slnx -c Release
       - name: Test
-        run: dotnet run --project tests/NaxUpdater.Core.SmokeTests/NaxUpdater.Core.SmokeTests.csproj -c Release --no-build
+        run: |
+          dotnet run --project tests/NaxUpdater.Core.TransactionTests/NaxUpdater.Core.TransactionTests.csproj -c Release --no-build
+          dotnet run --project tests/NaxUpdater.Core.SmokeTests/NaxUpdater.Core.SmokeTests.csproj -c Release --no-build

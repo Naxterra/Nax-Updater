@@ -45,8 +45,8 @@
   <data name="SecurityMicrosoftStoreIdentity"><value>Verified Store catalog identity · deployed by Microsoft Store</value></data>
   <data name="ProviderMsixStoreAvailable"><value>The exact installed package family was correlated with Microsoft Store, which reports an applicable update. NaxUpdater will submit that update directly.</value></data>
   <data name="ProviderMsixStoreCurrent"><value>The exact installed package family was checked against Microsoft Store. No applicable update is currently reported.</value></data>
-  <data name="ProviderOpenAiStore"><value>OpenAI update manifest + ChatGPT updater</value></data>
-  <data name="ProviderOpenAiStoreAvailable"><value>OpenAI's official Windows manifest reports this newer build. NaxUpdater invokes ChatGPT's own accessible Update action and waits until the installed OpenAI.Codex package reaches this exact version.</value></data>
+  <data name="ProviderOpenAiStore"><value>OpenAI update manifest + Microsoft Store</value></data>
+  <data name="ProviderOpenAiStoreAvailable"><value>Microsoft Store confirms this exact target version as applicable to the installed OpenAI.Codex package family. NaxUpdater uses only the non-forced Store upgrade route and verifies the installed package version afterward.</value></data>
   <data name="ProviderOpenAiStoreCurrent"><value>OpenAI's official Windows manifest reports that this package is current.</value></data>
   <data name="ProviderWinRar"><value>Official RARLAB download</value></data>
   <data name="ProviderWinRarAvailable"><value>RARLAB reports a newer release in the installed WinRAR language. NaxUpdater hashes the original producer download and requires the win.rar GmbH signature before installation.</value></data>
@@ -118,7 +118,7 @@
   <data name="StatusLabel"><value>Status</value></data>
   <data name="DriverDeviceLabel"><value>Device</value></data>
   <data name="ProviderGogGalaxyNative"><value>GOG Galaxy native updater</value></data>
-  <data name="ProviderGogGalaxyNativeNote"><value>GOG Galaxy staged this update in its vendor-verified update directory. NaxUpdater validates the signed GOG updater and then uses GOG's own update mechanism.</value></data>
+  <data name="ProviderGogGalaxyNativeNote"><value>GOG Galaxy staged a signed updater, but its adjacent runtime dependencies have no producer-authenticated manifest. NaxUpdater reports the newer release without elevating that dependency set; update through GOG Galaxy itself.</value></data>
   <data name="LanguageSourceGogGalaxy"><value>Preserved by GOG Galaxy's signed native updater</value></data>
   <data name="ApplicationScanText"><value>Scan and check updates</value></data>
   <data name="ApplicationFilterPlaceholder"><value>Filter name, publisher, version, provider, or path</value></data>
@@ -126,4 +126,21 @@
   <data name="ApplicationVersionsSummary"><value>Versions resolved</value></data>
   <data name="ApplicationPathsSummary"><value>Paths resolved</value></data>
   <data name="ApplicationGuardsSummary"><value>Provider guards</value></data>
+  <data name="StatusNewerReleaseKnown"><value>Newer release known · not currently applicable</value></data>
+  <data name="ProviderOpenAiReleaseKnown"><value>OpenAI's official manifest reports a newer build, but Microsoft Store does not currently expose a version-bound applicable upgrade for this exact package family. No update will be attempted.</value></data>
+  <data name="RevalidatingUpdate"><value>Rechecking {0} and its update offer…</value></data>
+  <data name="ApplyingUpdate"><value>Applying the verified update for {0}…</value></data>
+  <data name="VerifyingUpdate"><value>Verifying the installed version of {0}…</value></data>
+  <data name="UpdateNoLongerApplicableTitle"><value>{0} update offer changed</value></data>
+  <data name="UpdateTransactionFailed"><value>The update transaction did not complete.</value></data>
+  <data name="ReleasesKnownTitle"><value>{0} newer release(s) known</value></data>
+  <data name="ReleasesKnownMessage"><value>A newer producer release exists, but no verified applicability route is currently available for this installation. NaxUpdater will not attempt it.</value></data>
+  <data name="UpdateRestartRequiredTitle"><value>{0} requires a Windows restart</value></data>
+  <data name="RecoveredUpdateTitle"><value>{0} update verified after restart</value></data>
+  <data name="RecoveredUpdateMessage"><value>NaxUpdater found an interrupted or reboot-pending transaction and independently confirmed the promised installed version.</value></data>
+  <data name="InterruptedUpdateTitle"><value>{0} update needs verification</value></data>
+  <data name="InterruptedUpdateMessage"><value>NaxUpdater found an interrupted transaction, rescanned installed state, and could not confirm the promised target. A fresh applicability check is required before retrying.</value></data>
+  <data name="TransactionClosingApplications"><value>Closing {0}; force-terminating remaining path-verified processes if necessary…</value></data>
+  <data name="TransactionCloseFailed"><value>These path-verified application processes remain after normal and forced termination. NaxUpdater will not elevate stale process IDs; close them manually and retry:\n\n{0}</value></data>
+  <data name="ProviderReleaseKnownNotAutomatic"><value>The producer reports a newer release, but this execution route cannot currently satisfy NaxUpdater's applicability, immutable-staging, language, publisher, and independent post-install verification requirements. No automatic update will be attempted.</value></data>
 </root>

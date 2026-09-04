@@ -32,12 +32,11 @@ Assert(!ManufacturerDriverService.RealtekCatalogIsNewer("10.80.50.407", "2026-07
     "Realtek's matching installed driver branch was incorrectly treated as older because of the package date.");
 Assert(ManufacturerDriverService.RealtekCatalogIsNewer("10.80.50.407", "2026-07-04", "10.81.1", "2026-08-28"),
     "A genuinely newer Realtek driver branch was not detected.");
-var normalStoreInstallOptions = StorePackageDeploymentService.CreateInstallOptions(force: false);
-var forcedStoreInstallOptions = StorePackageDeploymentService.CreateInstallOptions(force: true);
-Assert(!normalStoreInstallOptions.Force && forcedStoreInstallOptions.Force &&
-       forcedStoreInstallOptions.AllowUpgradeToUnknownVersion &&
-       forcedStoreInstallOptions.PackageInstallMode == Microsoft.Management.Deployment.PackageInstallMode.Silent,
-    "The exact Store fallback is not configured to force a silent update through a stale applicability result.");
+var normalStoreInstallOptions = StorePackageDeploymentService.CreateInstallOptions();
+Assert(!normalStoreInstallOptions.Force &&
+       !normalStoreInstallOptions.AllowUpgradeToUnknownVersion &&
+       normalStoreInstallOptions.PackageInstallMode == Microsoft.Management.Deployment.PackageInstallMode.Silent,
+    "The Store upgrade route is not configured for a silent, non-forced deployment.");
 using (var openAiManifestFixture = JsonDocument.Parse("""
 {
   "schemaVersion": 1,
@@ -425,9 +424,6 @@ try
     var gogInstallDirectory = Directory.CreateDirectory(Path.Combine(firefoxFixture, "GOG Galaxy"));
     var gogExecutable = Path.Combine(gogInstallDirectory.FullName, "GalaxyClient.exe");
     await File.WriteAllBytesAsync(gogExecutable, []);
-    var gogRedistFixture = Directory.CreateDirectory(Path.Combine(firefoxFixture, "gog-redists"));
-    await File.WriteAllBytesAsync(Path.Combine(gogRedistFixture.FullName, "Qt6Core.dll"), [4, 5, 6]);
-    await File.WriteAllBytesAsync(Path.Combine(gogRedistFixture.FullName, "GalaxyUpdater.exe"), [9, 9, 9]);
     var gogApplication = CreateApplication(
         "gog-native-test",
         "GOG GALAXY",
@@ -439,32 +435,13 @@ try
     var gogNativeUpdate = await new GogGalaxyUpdateProvider(
             gogUpdateFixture.FullName,
             new StubAuthenticodeVerifier("GOG  sp. z o.o"),
-            _ => "2.1.9.27",
-            gogRedistFixture.FullName)
+            _ => "2.1.9.27")
         .CheckAsync(gogApplication, CancellationToken.None);
-    Assert(gogNativeUpdate.Status == UpdateStatus.Available &&
+    Assert(gogNativeUpdate.Status == UpdateStatus.NewerReleaseKnown &&
            gogNativeUpdate.AvailableVersion == "2.1.9.27" &&
-           gogNativeUpdate.ExecutionPlan is
-           {
-               Kind: UpdateExecutionKind.NativeCommand,
-               RequiresElevation: true,
-               NativeWorkingDirectory: var gogWorkingDirectory
-           } &&
-           gogWorkingDirectory == gogUpdaterDirectory.FullName &&
-           gogNativeUpdate.ExecutionPlan.Arguments.Contains("/updateClient") &&
-           gogNativeUpdate.ExecutionPlan.RunningProcessNames.Contains("GalaxyClient"),
-        "GOG's downloaded, signed native update did not take precedence over the stale public catalog.");
-    var gogStagingDirectory = Path.Combine(firefoxFixture, "gog-native-staging");
-    var stagedGogUpdate = UpdateExecutionService.StageNativeCommandFiles(
-        gogNativeUpdate.ExecutionPlan!,
-        gogStagingDirectory);
-    Assert(File.Exists(stagedGogUpdate.Executable) &&
-           stagedGogUpdate.Executable.EndsWith("desktop-galaxy-updater\\GalaxyUpdater.exe", StringComparison.OrdinalIgnoreCase) &&
-           stagedGogUpdate.WorkingDirectory.EndsWith("desktop-galaxy-updater", StringComparison.OrdinalIgnoreCase) &&
-           File.Exists(Path.Combine(stagedGogUpdate.Root, "version.update.json")) &&
-           File.Exists(Path.Combine(stagedGogUpdate.WorkingDirectory, "Qt6Core.dll")) &&
-           File.ReadAllBytes(stagedGogUpdate.Executable).SequenceEqual(new byte[] { 1, 2, 3 }),
-        "GOG's protected vendor update tree and installed runtime dependencies were not merged without replacing the new updater.");
+           gogNativeUpdate.ExecutionPlan is null &&
+           gogNativeUpdate.Applicability == UpdateApplicability.NotApplicable,
+        "GOG's newer signed updater was not reported without exposing its unauthenticated dependency set to elevation.");
 
     var metadataFixture = Directory.CreateDirectory(Path.Combine(firefoxFixture, "MetadataApp"));
     var metadataResources = Directory.CreateDirectory(Path.Combine(metadataFixture.FullName, "resources"));
@@ -599,6 +576,15 @@ try
             true)
     };
     var wingetFallback = new WingetFallbackUpdateProvider(fallbackClient, wingetIndexPath);
+    var foreignLocaleInstaller = new WingetFallbackUpdateProvider.CatalogInstaller(
+        "x64",
+        "fr-FR",
+        UpdateExecutionKind.DownloadedMsi,
+        new Uri("https://downloads.example.test/french.msi"),
+        fallbackHash,
+        []);
+    Assert(WingetFallbackUpdateProvider.SelectInstaller([foreignLocaleInstaller], "x64", "de-DE") is null,
+        "WinGet fallback selected a foreign localized installer when no German or neutral package existed.");
     Assert(wingetFallback.CanHandle(fallbackApplication), "The exact-product WinGet fallback was not discovered.");
     var fallbackUpdate = await wingetFallback.CheckAsync(fallbackApplication, CancellationToken.None);
     Assert(fallbackUpdate is
@@ -623,12 +609,22 @@ try
         await output.WriteAsync(nestedPayload);
     }
     var extractionFixture = Directory.CreateDirectory(Path.Combine(firefoxFixture, "nested-extraction"));
-    var extractedInstaller = UpdateExecutionService.ExtractNestedInstaller(
+    var preparedNestedInstaller = UpdateExecutionService.ExtractNestedInstaller(
         archiveFixturePath,
         "redist\\ArchiveRedist.msi",
         extractionFixture.FullName);
-    Assert(File.ReadAllBytes(extractedInstaller).SequenceEqual(nestedPayload),
+    Assert(File.ReadAllBytes(preparedNestedInstaller.Path).SequenceEqual(nestedPayload),
         "The exact nested MSI was not extracted from the verified archive.");
+    foreach (var contentLock in preparedNestedInstaller.ContentLocks)
+    {
+        contentLock.Dispose();
+    }
+    using (new FileStream(preparedNestedInstaller.Path, FileMode.Open, FileAccess.Write, FileShare.None))
+    {
+        // The extraction lock must be releasable when the prepared payload is discarded.
+    }
+    File.Delete(preparedNestedInstaller.Path);
+    Assert(!File.Exists(preparedNestedInstaller.Path), "The disposed nested-installer lock did not release the extracted MSI.");
     var traversalRejected = false;
     try
     {
@@ -657,7 +653,7 @@ try
         }
     }
     var driverExtraction = Directory.CreateDirectory(Path.Combine(firefoxFixture, "driver-extraction"));
-    var extractedInf = new UpdateExecutionService(new StubAuthenticodeVerifier("Microsoft Windows Hardware Compatibility Publisher"))
+    var preparedDriverPayload = new UpdateExecutionService(new StubAuthenticodeVerifier("Microsoft Windows Hardware Compatibility Publisher"))
         .ExtractAndVerifyDriverPackage(
             driverArchivePath,
             "PRO1000\\Winx64\\W11\\e1d.inf",
@@ -665,11 +661,16 @@ try
             "PCI\\VEN_8086&DEV_15BC",
             "12.19.2.64",
             ["Microsoft Windows Hardware Compatibility Publisher"]);
+    var extractedInf = preparedDriverPayload.InfPath;
     Assert(File.Exists(extractedInf) &&
            UpdateExecutionService.ReadInfDriverVersion(File.ReadAllText(extractedInf)) == "12.19.2.64" &&
            File.Exists(Path.Combine(driverExtraction.FullName, "e1d.cat")) &&
            File.Exists(Path.Combine(driverExtraction.FullName, "e1dmsg.dll")),
         "The exact hardware-matched Intel INF package was not extracted and verified.");
+    foreach (var contentLock in preparedDriverPayload.ContentLocks)
+    {
+        contentLock.Dispose();
+    }
     var storeCatalogApplication = CreateApplication(
         "msix:Fixture.StoreApp_1234567890abc",
         "Store App",
@@ -703,6 +704,111 @@ try
            storeAssessment.UnsupportedApplicationCount == 0,
         "An unmatched MSIX package was incorrectly labelled actionable, unknown, or unsupported.");
 
+    var installedAuthorityProvider = new StubUpdateProvider(
+        "installed-authority",
+        new UpdateProviderDescriptor(
+            UpdateProviderAuthority.InstalledUpdateProtocol,
+            100,
+            "fixture installed protocol"),
+        CreateCheckResult(fallbackApplication, "installed-authority", UpdateStatus.Current));
+    var fallbackAuthorityProvider = new StubUpdateProvider(
+        "winget-fallback",
+        new UpdateProviderDescriptor(
+            UpdateProviderAuthority.FallbackCatalog,
+            100,
+            "fixture fallback catalog"),
+        CreateCheckResult(fallbackApplication, "winget-fallback", UpdateStatus.Available, "2.0.0"));
+    var authorityAssessment = await new UpdateCheckService([fallbackAuthorityProvider, installedAuthorityProvider])
+        .CheckAsync(new InventorySnapshot(DateTimeOffset.UtcNow, [fallbackApplication], [], []));
+    Assert(authorityAssessment.Results.Single() is
+           {
+               ProviderId: "installed-authority",
+               ProviderAuthority: UpdateProviderAuthority.InstalledUpdateProtocol,
+               CandidateProviderIds.Count: 1
+           },
+        "Provider ownership still depends on registration order instead of explicit authority.");
+    var blockedFallbackAssessment = await new UpdateCheckService([fallbackAuthorityProvider])
+        .CheckAsync(new InventorySnapshot(
+            DateTimeOffset.UtcNow,
+            [fallbackApplication with { BlockedProviders = ["winget-fallback"] }],
+            [],
+            []));
+    Assert(blockedFallbackAssessment.Results.Single().Status == UpdateStatus.Unsupported,
+        "An explicitly blocked fallback provider was still selected.");
+    var tiedAuthorityAssessment = await new UpdateCheckService([
+            installedAuthorityProvider,
+            new StubUpdateProvider(
+                "installed-authority-2",
+                installedAuthorityProvider.Descriptor,
+                CreateCheckResult(fallbackApplication, "installed-authority-2", UpdateStatus.Current))
+        ])
+        .CheckAsync(new InventorySnapshot(DateTimeOffset.UtcNow, [fallbackApplication], [], []));
+    Assert(tiedAuthorityAssessment.Results.Single() is
+           {
+               Status: UpdateStatus.Error,
+               ProviderId: "provider-arbitration"
+           },
+        "Equally authoritative provider claims were silently resolved instead of failing closed.");
+
+    var transactionCreatedAt = DateTimeOffset.UtcNow;
+    var transactionPlan = new UpdateExecutionPlan(
+        UpdateExecutionKind.StorePackage,
+        null,
+        null,
+        null,
+        "Microsoft Store",
+        null,
+        [],
+        false,
+        [],
+        ["Fixture"],
+        StoreProductId: "Fixture.Product",
+        StorePackageFamilyName: "Fixture.Package_123",
+        ProcessPolicy: UpdateProcessPolicy.CloseBeforeApply,
+        CreatedAt: transactionCreatedAt,
+        ExpiresAt: transactionCreatedAt + TimeSpan.FromMinutes(5),
+        InstalledVersionPrecondition: "1.0.0",
+        CheckGenerationId: Guid.NewGuid(),
+        RunningExecutablePaths: [fallbackApplication.PrimaryInstallPath!]);
+    var transactionOffer = CreateCheckResult(
+        fallbackApplication,
+        "fixture-store",
+        UpdateStatus.Available,
+        "2.0.0",
+        transactionPlan) with
+    {
+        Applicability = UpdateApplicability.Applicable,
+        CorrelationKey = "fixture-correlation"
+    };
+    var transactionObserved = transactionOffer with
+    {
+        InstalledVersion = "2.0.0",
+        AvailableVersion = null,
+        Status = UpdateStatus.Current,
+        ExecutionPlan = null,
+        Applicability = UpdateApplicability.NotRequired
+    };
+    var transactionBackend = new ScriptedTransactionBackend(
+        [transactionOffer, transactionOffer, transactionObserved],
+        new UpdateExecutionResult(0, true, null));
+    var transactionResult = await new UpdateTransactionCoordinator(transactionBackend)
+        .ApplyAsync(transactionOffer, Path.GetTempPath());
+    Assert(transactionResult.Stage == UpdateTransactionStage.Succeeded &&
+           transactionBackend.Calls.SequenceEqual(["Revalidate", "Prepare", "Revalidate", "Quiesce", "Apply", "Revalidate"]),
+        "The update transaction did not prepare before quiescing or independently verify after apply.");
+    var staleBackend = new ScriptedTransactionBackend([null], new UpdateExecutionResult(0, true, null));
+    var staleResult = await new UpdateTransactionCoordinator(staleBackend)
+        .ApplyAsync(transactionOffer, Path.GetTempPath());
+    Assert(staleResult.Stage == UpdateTransactionStage.NoLongerApplicable &&
+           staleBackend.Calls.SequenceEqual(["Revalidate"]),
+        "A stale update offer reached preparation or application.");
+    var recoveredBackend = new ScriptedTransactionBackend(
+        [transactionOffer, transactionOffer, transactionObserved],
+        new UpdateExecutionResult(1603, false, "fixture launcher failed"));
+    var recoveredResult = await new UpdateTransactionCoordinator(recoveredBackend)
+        .ApplyAsync(transactionOffer, Path.GetTempPath());
+    Assert(recoveredResult.Stage == UpdateTransactionStage.Succeeded,
+        "A target version reached despite a launcher error was not recovered by independent verification.");
     var installerPayload = Encoding.UTF8.GetBytes("verified installer fixture");
     var installerHash = Convert.ToHexString(SHA256.HashData(installerPayload));
     var downloadPlan = nextcloudUpdate.ExecutionPlan! with
@@ -721,6 +827,28 @@ try
         .DownloadAndVerifyAsync(downloadUpdate, Path.Combine(firefoxFixture, "cache"));
     Assert(File.Exists(verifiedInstaller.Path) && File.ReadAllBytes(verifiedInstaller.Path).SequenceEqual(installerPayload),
         "Verified update package download failed.");
+    var preparationService = new UpdateExecutionService(new StubAuthenticodeVerifier("Fixture Signer"));
+    var preparedInstaller = await preparationService.PrepareAsync(downloadUpdate, verifiedInstaller);
+    var replacementBlocked = false;
+    try
+    {
+        using var replacementAttempt = new FileStream(
+            verifiedInstaller.Path,
+            FileMode.Open,
+            FileAccess.Write,
+            FileShare.None);
+    }
+    catch (IOException)
+    {
+        replacementBlocked = true;
+    }
+    Assert(preparedInstaller.ContentLocks is { Count: > 0 } && replacementBlocked,
+        "The verified installer was not deny-write/delete locked through the quiesce window.");
+    preparationService.DiscardPrepared(preparedInstaller);
+    using (new FileStream(verifiedInstaller.Path, FileMode.Open, FileAccess.Write, FileShare.None))
+    {
+        // The lock must be released when a prepared transaction is discarded.
+    }
     var hashOnlyUpdate = downloadUpdate with
     {
         ExecutionPlan = downloadPlan with { ExpectedSigner = null, RequireAuthenticode = false }
@@ -808,7 +936,7 @@ try
 }
 finally
 {
-    Directory.Delete(firefoxFixture, recursive: true);
+    DeleteDirectoryWithRetry(firefoxFixture);
 }
 
 var policyPath = Path.Combine(AppContext.BaseDirectory, "Configuration", "application-policies.json");
@@ -870,23 +998,14 @@ if (installedChatGpt is not null)
     Assert(chatGptIdentity?.ProductId == "9PLM9XGG6VKS",
         $"ChatGPT resolved to {chatGptIdentity?.ProductId ?? chatGptStore.LastError} instead of its exact current Store product.");
     var chatGptAssessment = await new MsixStoreUpdateProvider().CheckAsync(installedChatGpt, CancellationToken.None);
-    Assert(chatGptAssessment.Status is UpdateStatus.Current or UpdateStatus.Available,
+    Assert(chatGptAssessment.Status is UpdateStatus.Current or UpdateStatus.Available or UpdateStatus.NewerReleaseKnown,
         $"ChatGPT Store assessment failed: {chatGptAssessment.Status} · {chatGptAssessment.Message}");
     Assert(chatGptAssessment.Status != UpdateStatus.Available ||
-           (chatGptAssessment.ExecutionPlan is { Kind: UpdateExecutionKind.ApplicationOwnedUpdater } && chatGptAssessment.IsInstallable),
+           (chatGptAssessment.ExecutionPlan is not null && chatGptAssessment.IsInstallable),
         "ChatGPT reports an update without an executable Store update plan.");
     Assert(chatGptAssessment.Status == UpdateStatus.Available ||
            (chatGptAssessment.ExecutionPlan is null && !chatGptAssessment.IsInstallable),
         "ChatGPT received a Store action even though no applicable update was reported.");
-    using (var chatGptProcess = Process.GetProcessesByName("ChatGPT")
-               .FirstOrDefault(static process => process.MainWindowHandle != IntPtr.Zero))
-    {
-        if (chatGptAssessment.Status == UpdateStatus.Available && chatGptProcess is not null)
-        {
-            Assert(ApplicationOwnedUpdateService.HasUpdateAction(chatGptProcess.MainWindowHandle),
-                "ChatGPT reports an update, but its accessible Update/Aktualisieren action was not found.");
-        }
-    }
     using var openAiManifestClient = new HttpClient(new StubHttpMessageHandler(_ => JsonResponse("""
         {
           "schemaVersion": 1,
@@ -895,27 +1014,62 @@ if (installedChatGpt is not null)
           "packageIdentity": "OpenAI.Codex"
         }
         """)));
-    var officialManifestAssessment = await new MsixStoreUpdateProvider(openAiManifestClient).CheckAsync(
-        installedChatGpt with
-        {
-            InstalledVersion = "26.831.2377.0",
-            NormalizedVersion = "26.831.2377.0"
-        },
+    var olderChatGpt = installedChatGpt with
+    {
+        InstalledVersion = "26.831.2377.0",
+        NormalizedVersion = "26.831.2377.0"
+    };
+    var releaseOnlyAssessment = await new MsixStoreUpdateProvider(
+            openAiManifestClient,
+            new StubStorePackageDeploymentService(new StoreUpdateAvailability(true, false, "9PLM9XGG6VKS", null, null)))
+        .CheckAsync(olderChatGpt, CancellationToken.None);
+    Assert(releaseOnlyAssessment is
+           {
+               ProviderId: "openai-codex-store",
+               Status: UpdateStatus.NewerReleaseKnown,
+               AvailableVersion: "26.901.1978.0",
+               Applicability: UpdateApplicability.NotApplicable,
+               ExecutionPlan: null
+           } && !releaseOnlyAssessment.IsInstallable,
+        "OpenAI release evidence was incorrectly promoted to an applicable update without a fulfillment route.");
+    var storeApplicableAssessment = await new MsixStoreUpdateProvider(
+            openAiManifestClient,
+            new StubStorePackageDeploymentService(new StoreUpdateAvailability(true, true, "9PLM9XGG6VKS", "26.901.1978.0", null)))
+        .CheckAsync(olderChatGpt, CancellationToken.None);
+    Assert(storeApplicableAssessment is
+           {
+               Status: UpdateStatus.Available,
+               Applicability: UpdateApplicability.Applicable,
+               ExecutionPlan:
+               {
+                   Kind: UpdateExecutionKind.StorePackage,
+                   StoreProductId: "9PLM9XGG6VKS",
+                   StorePackageFamilyName: "OpenAI.Codex_2p2nqsd0c76g0",
+                   ProcessPolicy: UpdateProcessPolicy.CloseBeforeApply
+               } storePlan
+           } && storePlan.RunningProcessNames.Contains("ChatGPT", StringComparer.OrdinalIgnoreCase) &&
+                storePlan.RunningExecutablePaths is { Count: > 0 },
+        "A Store-applicable ChatGPT update did not receive an exact non-forced Store deployment plan.");
+    var officialManifestAssessment = await new MsixStoreUpdateProvider(
+            openAiManifestClient,
+            new StubStorePackageDeploymentService(new StoreUpdateAvailability(true, true, "9PLM9XGG6VKS", "26.901.1978.0", null)))
+        .CheckAsync(
+        olderChatGpt,
         CancellationToken.None);
     Assert(officialManifestAssessment is
-           {
+        {
                ProviderId: "openai-codex-store",
                Status: UpdateStatus.Available,
                AvailableVersion: "26.901.1978.0",
                ExecutionPlan:
                {
-                   Kind: UpdateExecutionKind.ApplicationOwnedUpdater,
+                   Kind: UpdateExecutionKind.StorePackage,
                    StoreProductId: "9PLM9XGG6VKS",
                    StorePackageFamilyName: "OpenAI.Codex_2p2nqsd0c76g0"
                } manifestPlan
-           } && manifestPlan.RunningProcessNames.Contains("ChatGPT") &&
-                manifestPlan.RunningProcessNames.Contains("Codex"),
-        $"ChatGPT did not receive its official-manifest Store plan and close-first process guard: " +
+           } && manifestPlan.RunningProcessNames.Contains("ChatGPT", StringComparer.OrdinalIgnoreCase) &&
+                manifestPlan.RunningExecutablePaths is { Count: > 0 },
+        $"ChatGPT did not receive its applicable official-manifest Store plan: " +
         $"{officialManifestAssessment.ProviderId} · {officialManifestAssessment.Status} · " +
         $"{officialManifestAssessment.AvailableVersion} · {officialManifestAssessment.Message} · " +
         $"{string.Join(',', officialManifestAssessment.ExecutionPlan?.RunningProcessNames ?? [])}");
@@ -925,14 +1079,9 @@ if (installedChatGpt is not null)
         NormalizedVersion = "26.825.4187.0"
     };
     var observedPreUpdateAssessment = await new MsixStoreUpdateProvider().CheckAsync(observedPreUpdateChatGpt, CancellationToken.None);
-    Assert(observedPreUpdateAssessment.Status == UpdateStatus.Available &&
+    Assert(observedPreUpdateAssessment.Status is UpdateStatus.Available or UpdateStatus.NewerReleaseKnown &&
            VersionOrder.Compare(observedPreUpdateAssessment.AvailableVersion, "26.825.4187.0") > 0 &&
-           observedPreUpdateAssessment.ExecutionPlan is
-           {
-               Kind: UpdateExecutionKind.ApplicationOwnedUpdater,
-               StoreProductId: "9PLM9XGG6VKS",
-               StorePackageFamilyName: "OpenAI.Codex_2p2nqsd0c76g0"
-           },
+           (observedPreUpdateAssessment.Status != UpdateStatus.Available || observedPreUpdateAssessment.ExecutionPlan is not null),
         $"The observed ChatGPT Store update line was missed: {observedPreUpdateAssessment.Status} · {observedPreUpdateAssessment.AvailableVersion} · {observedPreUpdateAssessment.Message}");
 }
 
@@ -998,17 +1147,19 @@ if (installedGog is not null)
 {
     var gogUpdate = await new GogGalaxyUpdateProvider().CheckAsync(installedGog, CancellationToken.None);
     Assert(gogUpdate.ProviderId == "gog-galaxy-native" &&
-           gogUpdate.Status is UpdateStatus.Current or UpdateStatus.Available or UpdateStatus.ManagedExternally,
+           gogUpdate.Status is UpdateStatus.Current or UpdateStatus.NewerReleaseKnown or UpdateStatus.ManagedExternally,
         $"GOG GALAXY was not checked through its installed native updater: {gogUpdate.Message}");
     if (File.Exists(Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData),
             "GOG.com", "Galaxy", "autoupdate-verified", "version.update.json")))
     {
-        Assert(gogUpdate.Status == UpdateStatus.Available &&
-               VersionOrder.Compare(gogUpdate.AvailableVersion, installedGog.NormalizedVersion) > 0 &&
-               gogUpdate.ExecutionPlan?.NativeExecutable?.EndsWith("GalaxyUpdater.exe", StringComparison.OrdinalIgnoreCase) == true &&
-               Directory.Exists(gogUpdate.ExecutionPlan.NativeDependencyRoot),
-            $"GOG's staged vendor update was missed: {gogUpdate.AvailableVersion} · {gogUpdate.Message}");
+        if (VersionOrder.Compare(gogUpdate.AvailableVersion, installedGog.NormalizedVersion) > 0)
+        {
+            Assert(gogUpdate.Status == UpdateStatus.NewerReleaseKnown &&
+                   gogUpdate.ExecutionPlan is null &&
+                   gogUpdate.Applicability == UpdateApplicability.NotApplicable,
+                $"GOG's staged vendor update was not safely classified: {gogUpdate.AvailableVersion} · {gogUpdate.Message}");
+        }
     }
 }
 
@@ -1095,7 +1246,7 @@ if (installedDeepL is not null)
 {
     var deepLAssessment = await new ZeroInstallUpdateProvider(new ProcessQueryRunner())
         .CheckAsync(installedDeepL, CancellationToken.None);
-    Assert(deepLAssessment.Status is UpdateStatus.Current or UpdateStatus.Available &&
+    Assert(deepLAssessment.Status is UpdateStatus.Current or UpdateStatus.NewerReleaseKnown &&
            deepLAssessment.AvailableVersion == "26.8.2.20990" &&
            deepLAssessment.Message?.Contains("digest", StringComparison.OrdinalIgnoreCase) == true,
         $"DeepL's Zero Install refresh and cached-selection fallback both failed: {deepLAssessment.Message}");
@@ -1305,7 +1456,7 @@ static void AssertProtectedApplication(
     }
 
     Assert(application.ManagementMode == expectedMode, $"{displayName} has unexpected management mode {application.ManagementMode}.");
-    Assert(application.BlockedProviders.Contains("WinGet fallback", StringComparer.OrdinalIgnoreCase), $"{displayName} lost its producer-first fallback guard.");
+    Assert(application.BlockedProviders.Contains("winget-fallback", StringComparer.OrdinalIgnoreCase), $"{displayName} lost its producer-first fallback guard.");
     Assert(application.PrimaryInstallPath?.EndsWith(expectedPathFileName, StringComparison.OrdinalIgnoreCase) == true, $"{displayName} executable path was not resolved: {application.PrimaryInstallPath}");
     if (requireVersion)
     {
@@ -1345,6 +1496,27 @@ static void Assert(bool condition, string message)
     }
 }
 
+static void DeleteDirectoryWithRetry(string path)
+{
+    for (var attempt = 0; attempt < 10; attempt++)
+    {
+        try
+        {
+            if (Directory.Exists(path))
+            {
+                Directory.Delete(path, recursive: true);
+            }
+            return;
+        }
+        catch (IOException) when (attempt < 9)
+        {
+            GC.Collect();
+            GC.WaitForPendingFinalizers();
+            Thread.Sleep(100);
+        }
+    }
+}
+
 static InstalledApplication CreateApplication(
     string identity,
     string name,
@@ -1370,6 +1542,32 @@ static InstalledApplication CreateApplication(
         [],
         null,
         []);
+
+static UpdateCheckResult CreateCheckResult(
+    InstalledApplication application,
+    string providerId,
+    UpdateStatus status,
+    string? availableVersion = null,
+    UpdateExecutionPlan? plan = null) => new(
+        application.Identity,
+        application.DisplayName,
+        application.NormalizedVersion,
+        availableVersion,
+        status,
+        providerId,
+        providerId,
+        "neutral",
+        "fixture",
+        "x64",
+        "stable",
+        null,
+        null,
+        plan,
+        Applicability: status == UpdateStatus.Available && plan is not null
+            ? UpdateApplicability.Applicable
+            : status == UpdateStatus.Current
+                ? UpdateApplicability.NotRequired
+                : UpdateApplicability.Unknown);
 
 static HttpResponseMessage JsonResponse(string json) => new(HttpStatusCode.OK)
 {
@@ -1454,4 +1652,97 @@ sealed class ThrowingAuthenticodeVerifier : IAuthenticodeVerifier
 {
     public AuthenticodeVerificationResult Verify(string filePath, string expectedSigner) =>
         throw new InvalidOperationException("Authenticode verification must not run for an explicitly hash-only plan.");
+}
+
+sealed class StubStorePackageDeploymentService(StoreUpdateAvailability availability) : IStorePackageDeploymentService
+{
+    public string? LastError => availability.Error;
+
+    public Task<StoreUpdateAvailability> CheckForUpdateAsync(
+        string packageFamilyName,
+        string? installedDisplayName,
+        string? installedPublisher,
+        string? installedVersion,
+        string? installedArchitecture,
+        CancellationToken cancellationToken) => Task.FromResult(availability);
+
+    public Task<StoreCatalogIdentity?> ResolveAsync(
+        string packageFamilyName,
+        string? installedDisplayName,
+        string? installedPublisher,
+        CancellationToken cancellationToken) => Task.FromResult<StoreCatalogIdentity?>(
+        availability.ProductId is null
+            ? null
+            : new StoreCatalogIdentity(availability.ProductId, installedDisplayName ?? string.Empty, packageFamilyName, true));
+
+    public Task<UpdateExecutionResult> InstallOrUpdateAsync(
+        string productId,
+        string packageFamilyName,
+        string? installedDisplayName,
+        string? installedPublisher,
+        string expectedVersion,
+        CancellationToken cancellationToken) => Task.FromResult(new UpdateExecutionResult(0, true, null));
+}
+
+sealed class StubUpdateProvider(
+    string id,
+    UpdateProviderDescriptor descriptor,
+    UpdateCheckResult result) : IUpdateProvider
+{
+    public string Id { get; } = id;
+    public UpdateProviderDescriptor Descriptor { get; } = descriptor;
+    public bool CanHandle(InstalledApplication application) => true;
+    public Task<UpdateCheckResult> CheckAsync(InstalledApplication application, CancellationToken cancellationToken) =>
+        Task.FromResult(result with
+        {
+            ApplicationIdentity = application.Identity,
+            DisplayName = application.DisplayName,
+            InstalledVersion = application.NormalizedVersion
+        });
+}
+
+sealed class ScriptedTransactionBackend(
+    IEnumerable<UpdateCheckResult?> assessments,
+    UpdateExecutionResult execution) : IUpdateTransactionBackend
+{
+    private readonly Queue<UpdateCheckResult?> _assessments = new(assessments);
+    public List<string> Calls { get; } = [];
+
+    public Task<UpdateCheckResult?> RevalidateAsync(UpdateCheckResult previous, CancellationToken cancellationToken)
+    {
+        Calls.Add("Revalidate");
+        return Task.FromResult(_assessments.Count == 0 ? null : _assessments.Dequeue());
+    }
+
+    public Task<PreparedUpdateExecution> PrepareAsync(
+        UpdateCheckResult update,
+        string cacheRoot,
+        IProgress<double>? progress,
+        CancellationToken cancellationToken)
+    {
+        Calls.Add("Prepare");
+        progress?.Report(1);
+        return Task.FromResult(new PreparedUpdateExecution(null, null, null, null, null));
+    }
+
+    public Task<ApplicationCloseResult> QuiesceAsync(UpdateCheckResult update, CancellationToken cancellationToken)
+    {
+        Calls.Add("Quiesce");
+        return Task.FromResult(new ApplicationCloseResult(true, false, []));
+    }
+
+    public Task DiscardPreparedAsync(PreparedUpdateExecution prepared)
+    {
+        Calls.Add("Discard");
+        return Task.CompletedTask;
+    }
+
+    public Task<UpdateExecutionResult> ApplyAsync(
+        UpdateCheckResult update,
+        PreparedUpdateExecution prepared,
+        CancellationToken cancellationToken)
+    {
+        Calls.Add("Apply");
+        return Task.FromResult(execution);
+    }
 }
