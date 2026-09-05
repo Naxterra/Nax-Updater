@@ -7,6 +7,17 @@ using System.Text;
 using System.Text.Json;
 using Windows.ApplicationModel.Store.Preview.InstallControl;
 
+if (args.Contains("--nax-desktop-launch"))
+{
+    UpdateHostLifetime.TryDetachFromLauncher(args, Environment.ProcessPath!, 0);
+    return;
+}
+if (args is ["--close-fixture-worker", var report])
+{
+    await ProcessLifetimeRegression.RunWorkerAsync(report);
+    return;
+}
+
 var checks = 0;
 void Assert(bool condition, string message) { checks++; if (!condition) throw new InvalidOperationException(message); }
 var pairs = new (string Left, string Right, int Order)[]
@@ -263,6 +274,56 @@ try
     var nativeTarget = new PublishedStorePackage("9PLM9XGG6VKS", "0010", "OpenAI.Codex_2p2nqsd0c76g0",
         "26.901.5003.0", "OpenAI.Codex_26.901.5003.0_x64__2p2nqsd0c76g0", "x64");
     var nativeClient = new FakeNativeStore(nativeTarget);
+    using (var wslClient = new HttpClient(new Handler(_ => Json(new
+    {
+        tag_name = "2.7.13",
+        html_url = "https://github.com/microsoft/WSL/releases/tag/2.7.13",
+        draft = false,
+        prerelease = false
+    }))))
+    {
+        var wslExecutable = Path.Combine(fixture, "wsl.exe");
+        File.Copy(Path.Combine(Environment.SystemDirectory, "cmd.exe"), wslExecutable);
+        var wslApp = fixtureApp with
+        {
+            Identity = "msix:" + WslUpdateProvider.PackageFamily,
+            DisplayName = "Windows-Subsystem für Linux",
+            ManagementMode = ManagementMode.Msix,
+            InstalledVersion = "2.7.12.0",
+            NormalizedVersion = "2.7.12.0",
+            PrimaryInstallPath = wslExecutable,
+            Evidence = [new(EvidenceKind.MsixPackage, "MSIX package architecture", "x64", true)]
+        };
+        var wslProvider = new WslUpdateProvider(wslClient);
+        var wslOffer = (await new UpdateCheckService([new MsixStoreUpdateProvider(wslClient, new NoStoreUpdate()), wslProvider])
+            .CheckAsync(Snapshot(wslApp))).Results.Single();
+        Assert(wslOffer.IsInstallable && wslOffer.ProviderId == "wsl-native" && wslOffer.AvailableVersion == "2.7.13",
+            "Generic Store classification still hides Microsoft's newer WSL release.");
+        Assert(wslOffer.ExecutionPlan!.Arguments.SequenceEqual(["--update", "--web-download"]) &&
+            wslOffer.ExecutionPlan.RequiresElevation && wslOffer.ExecutionPlan.RunningProcessNames.Count == 0,
+            "WSL native plan has incorrect update, elevation or distribution shutdown arguments.");
+        Assert(!wslProvider.CanHandle(wslApp with { Identity = "msix:CanonicalGroupLimited.Ubuntu_79rhkp1fndgsc" }),
+            "WSL updater claimed a Linux distribution.");
+        Assert((await wslProvider.CheckAsync(wslApp with { NormalizedVersion = "2.7.13.0" }, CancellationToken.None)).Status == UpdateStatus.Current,
+            "Padded WSL version was treated as another update.");
+        Assert(wslOffer.ExecutionPlan.NativeExecutable == wslExecutable && wslOffer.ExecutionPlan.ExpectedSigner == "Microsoft Corporation",
+            "WSL plan did not bind the installed executable and Microsoft publisher.");
+    }
+    using (var previewClient = new HttpClient(new Handler(_ => Json(new
+    {
+        tag_name = "2.8.0",
+        html_url = "https://github.com/microsoft/WSL/releases/tag/2.8.0",
+        prerelease = true
+    }))))
+    {
+        var provider = new WslUpdateProvider(previewClient);
+        try
+        {
+            await provider.CheckAsync(fixtureApp with { Identity = "msix:" + WslUpdateProvider.PackageFamily, ManagementMode = ManagementMode.Msix }, CancellationToken.None);
+            Assert(false, "WSL preview release was accepted.");
+        }
+        catch (InvalidOperationException) { Assert(true, "Preview release rejected."); }
+    }
     foreach (var inconsistentName in new[] {
         "OpenAI.Codex_26.901.5003.0_arm64__2p2nqsd0c76g0",
         "OpenAI.Codex_26.901.5003.0_x64__differentpublisher" })
@@ -315,6 +376,13 @@ try
             selected.AnnouncedVersion == "26.901.5280.0", "A later announcement still hides an already published Store update.");
         Assert(selected.AvailabilityReason == UpdateAvailabilityReason.None &&
             selected.ExecutionPlan?.NativeStoreTarget == nativeTarget, "Published update selected the wrong architecture, SKU or availability reason.");
+        var noOfferClient = new FakeNativeStore(nativeTarget) { ReturnNoOffer = true };
+        var noOfferService = new NativeStoreUpdateService(noOfferClient, (p, t) => Task.FromResult<PublishedStorePackage?>(p));
+        var awaitingOffer = await new MsixStoreUpdateProvider(nativeMetadata, new NoStoreUpdate(), noOfferService)
+            .CheckAsync(app, CancellationToken.None);
+        Assert(awaitingOffer.Status == UpdateStatus.NewerReleaseKnown &&
+            awaitingOffer.AvailabilityReason == UpdateAvailabilityReason.AwaitingStoreOffer && !awaitingOffer.IsInstallable,
+            "A successful Store check with no applicable offer was reported as a failed check.");
         Assert(nativeClient.StartCount == 0 && !NativeStoreUpdateService.QueryOptions().AutomaticallyDownloadAndInstallUpdateIfFound,
             "Checking for updates started a Store installation.");
         Assert(NativeStoreUpdateService.QueryOptions(true).AutomaticallyDownloadAndInstallUpdateIfFound,
@@ -369,6 +437,7 @@ try
         Assert(!unverified.IsSuccess && unchangedClient.Completed,
             "Store completion alone was accepted without observing the installed target version.");
     }
+    await ProcessLifetimeRegression.RunAsync(Assert, fixture);
     Console.WriteLine($"Algorithm regression tests passed: {checks} assertions. No real installers executed.");
 }
 finally { Directory.Delete(fixture, true); }
@@ -454,6 +523,7 @@ sealed class NoStoreUpdate : IStorePackageDeploymentService
 }
 sealed class FakeNativeStore(PublishedStorePackage package) : INativeStoreUpdateClient, INativeStoreUpdateItem
 {
+    public bool ReturnNoOffer { get; init; }
     public AppInstallState FinalState { get; init; } = AppInstallState.Completed;
     public int StartCount { get; private set; }
     public int PolledStates { get; private set; }
@@ -461,7 +531,7 @@ sealed class FakeNativeStore(PublishedStorePackage package) : INativeStoreUpdate
     public string ProductId => package.ProductId;
     public string PackageFamilyName => package.PackageFamilyName;
     public Task<INativeStoreUpdateItem?> FindPausedUpdateAsync(PublishedStorePackage p, CancellationToken t) =>
-        Task.FromResult<INativeStoreUpdateItem?>(this);
+        Task.FromResult<INativeStoreUpdateItem?>(ReturnNoOffer ? null : this);
     public Task<INativeStoreUpdateItem?> StartUpdateAsync(PublishedStorePackage p, CancellationToken t)
     {
         StartCount++;

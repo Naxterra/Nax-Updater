@@ -461,7 +461,7 @@ public sealed partial class ManufacturerDriverService(HttpClient httpClient)
     private async Task<string> GetStringAsync(Uri uri, CancellationToken cancellationToken)
     {
         using var request = new HttpRequestMessage(HttpMethod.Get, uri);
-        request.Headers.UserAgent.ParseAdd("NaxUpdater/0.16.7");
+        request.Headers.UserAgent.ParseAdd("NaxUpdater/0.16.8");
         using var response = await httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
         response.EnsureSuccessStatusCode();
         return await response.Content.ReadAsStringAsync(cancellationToken);

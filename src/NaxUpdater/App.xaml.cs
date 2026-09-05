@@ -23,6 +23,12 @@ public partial class App : Application
 
     protected override void OnLaunched(LaunchActivatedEventArgs args)
     {
+        if (Environment.ProcessPath is { } executable &&
+            Core.Services.UpdateHostLifetime.TryDetachFromLauncher(Environment.GetCommandLineArgs(), executable))
+        {
+            Exit();
+            return;
+        }
         MainWindow = new MainWindow();
         MainWindow.Activate();
     }

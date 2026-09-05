@@ -154,6 +154,10 @@
   <data name="ProviderCheckProgress"><value>{0}/{1} Einträge verarbeitet · {2}</value></data>
   <data name="ProviderCheckCanceled"><value>Updateprüfung abgebrochen. Die erkannten Anwendungen bleiben verfügbar.</value></data>
   <data name="StatusStorePublicationPending"><value>Store-Veröffentlichung ausstehend</value></data>
+  <data name="StatusStoreOfferPending"><value>Store-Angebot ausstehend</value></data>
+  <data name="ProviderWsl"><value>Microsoft-WSL-Release + nativer Windows-Updater</value></data>
+  <data name="StoreOfferPendingMessage"><value>Microsoft veröffentlicht {0}; installiert ist {1}. Der Windows Store liefert für diese Installation derzeit kein anwendbares Updateangebot. Die Katalogabfrage wurde abgeschlossen. Nach einer erneuten Prüfung wird ein verfügbares Angebot zur Installation freigegeben.</value></data>
+  <data name="ProviderWslNote"><value>Die stabile WSL-Version wird direkt bei Microsoft auf GitHub geprüft. Die signierte Windows-Datei wsl.exe führt --update --web-download mit Administratorrechten aus. Linux-Distributionen werden weder abgemeldet noch neu installiert. Anschließend wird die installierte WSL-Version unabhängig geprüft. Microsoft kann eine neuere stabile Version bereitstellen.</value></data>
   <data name="StorePublicationPendingMessage"><value>OpenAI kündigt {0} an. Microsoft Store veröffentlicht für dieses Paket derzeit {1}; installiert: {2}. Das neuere Paket ist im Store noch nicht verfügbar. Prüfen Sie nach der Veröffentlichung erneut.</value></data>
   <data name="StorePublishedUpdateAvailableMessage"><value>Microsoft Store bietet {0} für das installierte Paket an. OpenAI kündigt bereits {1} an. NaxUpdater installiert das verfügbare Store-Update und prüft anschließend die installierte Version. Die spätere Ankündigung blockiert dieses Update nicht.</value></data>
 </root>

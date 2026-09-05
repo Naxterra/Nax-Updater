@@ -89,6 +89,24 @@ public sealed class UpdateExecutionService
         var updaterProcessId = updaterProcess.Id;
         var currentSession = updaterProcess.SessionId;
 
+        // Validate lifetime safety before sending even a graceful close: an
+        // ancestor can own a kill-on-close job containing NaxUpdater itself.
+        var closeTargets = new List<Process>();
+        try
+        {
+            foreach (var name in plan.RunningProcessNames.Distinct(StringComparer.OrdinalIgnoreCase))
+            {
+                foreach (var target in Process.GetProcessesByName(name))
+                {
+                    if (!target.HasExited && target.Id != updaterProcessId && target.SessionId == currentSession &&
+                        ProcessMatchesPlan(plan, target, out _)) closeTargets.Add(target);
+                    else target.Dispose();
+                }
+            }
+            UpdateHostLifetime.EnsureSafeToClose(closeTargets);
+        }
+        finally { foreach (var target in closeTargets) target.Dispose(); }
+
         var closeRequested = false;
         foreach (var processName in plan.RunningProcessNames.Distinct(StringComparer.OrdinalIgnoreCase))
         {
@@ -156,7 +174,10 @@ public sealed class UpdateExecutionService
                         if (!process.HasExited && process.Id != updaterProcessId && process.SessionId == currentSession &&
                             ProcessMatchesPlan(plan, process, out _))
                         {
-                            process.Kill(entireProcessTree: true);
+                            // Only verified executable instances belong to this
+                            // close plan. Their arbitrary descendants may include
+                            // terminals, the updater or unrelated applications.
+                            process.Kill(entireProcessTree: false);
                             forcedTerminationUsed = true;
                         }
                     }

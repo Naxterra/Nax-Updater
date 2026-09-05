@@ -11,7 +11,7 @@ internal static class GitHubApiClient
         try
         {
             using var request = new HttpRequestMessage(HttpMethod.Get, "https://api.github.com/" + endpoint);
-            request.Headers.UserAgent.ParseAdd("NaxUpdater/0.16.7");
+            request.Headers.UserAgent.ParseAdd("NaxUpdater/0.16.8");
             request.Headers.Accept.ParseAdd("application/vnd.github+json");
             using var response = await client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, token);
             if (response.IsSuccessStatusCode) return await response.Content.ReadAsStringAsync(token);

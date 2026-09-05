@@ -30,6 +30,7 @@ public static partial class LocalizationService
     {
         if (update.ProviderId == "mozilla-firefox") return Get("ProviderMozilla");
         if (update.ProviderId == "zero-install") return Get("ProviderZeroInstall");
+        if (update.ProviderId == "wsl-native") return Get("ProviderWsl");
         if (update.ProviderId == "native-updater") return update.ProviderDisplayName == "NaxUpdater manufacturer-driver view"
             ? Get("ProviderDriverWorkspace") : update.ProviderDisplayName;
         if (update.ProviderId == "unverified") return Get("ProviderUnverified");
@@ -48,6 +49,9 @@ public static partial class LocalizationService
 
     public static string ProviderMessage(UpdateCheckResult update)
     {
+        if (update.ProviderId == "wsl-native" && update.Status != UpdateStatus.Error) return Get("ProviderWslNote");
+        if (update.AvailabilityReason == UpdateAvailabilityReason.AwaitingStoreOffer)
+            return Format("StoreOfferPendingMessage", update.PublishedPackageVersion, update.InstalledVersion);
         if (update.ProviderId == "openai-codex-store" && update.Status == UpdateStatus.Available &&
             update.PublishedPackageVersion is not null)
             return Format("StorePublishedUpdateAvailableMessage", update.AvailableVersion, update.AnnouncedVersion ?? update.AvailableVersion);

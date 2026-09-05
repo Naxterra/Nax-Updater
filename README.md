@@ -33,6 +33,11 @@ The inventory engine:
 
 The current implementation includes:
 
+- WSL stable-release checks directly against Microsoft's GitHub repository, with the installed Microsoft-signed `wsl.exe --update --web-download` route and independent post-update version verification; generic Store ownership no longer hides an available WSL release;
+- a separate pending-Store-offer state when Microsoft's catalog publishes a newer ChatGPT package but a successful native query does not offer it to this installation; actual check errors remain errors;
+- an independent updater lifetime: when launched inside another application's Windows job, NaxUpdater requests a desktop-launched replacement and exits only after the replacement confirms it is outside that job;
+- process shutdown that protects the updater and its ancestors, refuses destructive work from a still-coupled host, and force-closes only executable instances bound to the approved plan, never arbitrary descendant process trees;
+- real disposable-process regression tests for desktop launch, host protection and preservation of unrelated descendants during forced shutdown;
 - selects the newest applicable published Store package independently of a later publisher announcement: a published intermediate ChatGPT build remains installable while the next build is still rolling out;
 - uses Windows' native Store update service when the WinGet Store catalog cannot resolve that offer; detection and preparation request a paused offer, while only the approved Apply step starts deployment;
 - revalidates the Store product, SKU, package family, architecture and published target before applying, waits for Store completion/error, and independently rereads the installed package version before reporting success. Windows Store owns the actual deployment and may serve a newer build; the published target is the minimum required installed version;
@@ -193,7 +198,7 @@ From this directory:
 dotnet build NaxUpdater.slnx
 dotnet run --project tests/NaxUpdater.Core.SmokeTests/NaxUpdater.Core.SmokeTests.csproj
 dotnet publish src/NaxUpdater/NaxUpdater.csproj -c Release -r win-x64 --self-contained true -o artifacts/NaxUpdater-win-x64
-./scripts/package-release.ps1 -Version 0.16.7
+./scripts/package-release.ps1 -Version 0.16.8
 ```
 
 The desktop project uses .NET 11, WinUI 3, and the Windows App SDK. It is not an Electron or WebView application.

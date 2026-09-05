@@ -29,6 +29,7 @@ public sealed class UpdateCheckService
             new GogGalaxyUpdateProvider(),
             new IvpnUpdateProvider(httpClient),
             new NodeJsUpdateProvider(httpClient),
+            new WslUpdateProvider(httpClient),
             new WinRarUpdateProvider(httpClient)
         };
         providers.AddRange(catalog.GitHub.Select(recipe => new GitHubReleaseUpdateProvider(httpClient, recipe)));
