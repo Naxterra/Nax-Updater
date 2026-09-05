@@ -1319,10 +1319,12 @@ if (installedChatGpt is not null)
         NormalizedVersion = "26.825.4187.0"
     };
     var observedPreUpdateAssessment = await new MsixStoreUpdateProvider().CheckAsync(observedPreUpdateChatGpt, CancellationToken.None);
-    Assert(observedPreUpdateAssessment.Status is UpdateStatus.Available or UpdateStatus.NewerReleaseKnown &&
-           VersionOrder.Compare(observedPreUpdateAssessment.AvailableVersion, "26.825.4187.0") > 0 &&
-           (observedPreUpdateAssessment.Status != UpdateStatus.Available || observedPreUpdateAssessment.ExecutionPlan is not null),
-        $"The observed ChatGPT Store update line was missed: {observedPreUpdateAssessment.Status} · {observedPreUpdateAssessment.AvailableVersion} · {observedPreUpdateAssessment.Message}");
+    Assert(VersionOrder.Compare(observedPreUpdateAssessment.AnnouncedVersion, "26.825.4187.0") > 0 &&
+           (observedPreUpdateAssessment.Status == UpdateStatus.Available
+               ? observedPreUpdateAssessment.IsInstallable && VersionOrder.Compare(observedPreUpdateAssessment.AvailableVersion, "26.825.4187.0") > 0
+               : observedPreUpdateAssessment.Status == UpdateStatus.Current && observedPreUpdateAssessment.AvailableVersion is null &&
+                 observedPreUpdateAssessment.AvailabilityReason == UpdateAvailabilityReason.NoApplicableStoreUpdate),
+        $"Announcement metadata and applicable ChatGPT offers were not separated: {observedPreUpdateAssessment.Status} · {observedPreUpdateAssessment.AvailableVersion} · {observedPreUpdateAssessment.Message}");
 }
 
 var liveStoreIdentities = 0;
