@@ -322,7 +322,6 @@
                             <ColumnDefinition Width="*" MinWidth="280" MaxWidth="600" />
                             <ColumnDefinition Width="105" />
                             <ColumnDefinition Width="105" />
-                            <ColumnDefinition Width="90" />
                             <ColumnDefinition Width="115" />
                             <ColumnDefinition Width="100" />
                             <ColumnDefinition Width="*" />
@@ -332,11 +331,10 @@
                         </Button>
                         <TextBlock x:Uid="InstalledHeader" Grid.Column="1" Text="Installed" FontSize="12" FontWeight="SemiBold" Style="{StaticResource MutedTextStyle}" />
                         <TextBlock x:Uid="AvailableHeader" Grid.Column="2" Text="Available" FontSize="12" FontWeight="SemiBold" Style="{StaticResource MutedTextStyle}" />
-                        <TextBlock x:Uid="LanguageHeader" Grid.Column="3" Text="Language" FontSize="12" FontWeight="SemiBold" Style="{StaticResource MutedTextStyle}" />
-                        <Button Grid.Column="4" Tag="Status" Style="{StaticResource ColumnHeaderButtonStyle}" HorizontalContentAlignment="Left" Click="UpdateResultSortHeader_Click">
+                        <Button Grid.Column="3" Tag="Status" Style="{StaticResource ColumnHeaderButtonStyle}" HorizontalContentAlignment="Left" Click="UpdateResultSortHeader_Click">
                             <TextBlock x:Name="UpdateStatusHeaderText" Text="Status ↑" />
                         </Button>
-                        <TextBlock x:Uid="ActionHeader" Grid.Column="5" Text="Action" FontSize="12" FontWeight="SemiBold" Style="{StaticResource MutedTextStyle}" />
+                        <TextBlock x:Uid="ActionHeader" Grid.Column="4" Text="Action" FontSize="12" FontWeight="SemiBold" Style="{StaticResource MutedTextStyle}" />
                     </Grid>
                     <ListView x:Name="UpdatesList" Grid.Row="2" SelectionMode="Single" SelectionChanged="UpdatesList_SelectionChanged">
                         <ListView.ItemContainerStyle>
@@ -352,7 +350,6 @@
                                         <ColumnDefinition Width="*" MinWidth="280" MaxWidth="600" />
                                         <ColumnDefinition Width="105" />
                                         <ColumnDefinition Width="105" />
-                                        <ColumnDefinition Width="90" />
                                         <ColumnDefinition Width="115" />
                                         <ColumnDefinition Width="100" />
                                         <ColumnDefinition Width="*" />
@@ -375,12 +372,11 @@
                                     </Grid>
                                     <TextBlock Grid.Column="1" Text="{Binding Installed}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
                                     <TextBlock Grid.Column="2" Text="{Binding Available}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
-                                    <TextBlock Grid.Column="3" Text="{Binding Language}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
-                                    <Border Grid.Column="4" Background="{Binding StatusBackground}" BorderBrush="{Binding StatusForeground}" BorderThickness="1" CornerRadius="10" Padding="7,3" HorizontalAlignment="Left" VerticalAlignment="Center">
+                                    <Border Grid.Column="3" Background="{Binding StatusBackground}" BorderBrush="{Binding StatusForeground}" BorderThickness="1" CornerRadius="10" Padding="7,3" HorizontalAlignment="Left" VerticalAlignment="Center">
                                         <TextBlock Text="{Binding Status}" Foreground="{Binding StatusForeground}" FontSize="11" TextWrapping="Wrap" />
                                     </Border>
                                     <Button
-                                        Grid.Column="5"
+                                        Grid.Column="4"
                                         Content="{Binding UpdateActionText}"
                                         Visibility="{Binding UpdateActionVisibility}"
                                         IsEnabled="{Binding CanInstall}"
@@ -410,8 +406,6 @@
                             <TextBlock x:Uid="VersionHeader" Text="Version" Style="{StaticResource DetailLabelStyle}" />
                             <TextBlock x:Name="UpdateVersionText" IsTextSelectionEnabled="True" TextWrapping="Wrap" />
 
-                            <TextBlock x:Uid="LanguagePreservationLabel" Text="Language preservation" Style="{StaticResource DetailLabelStyle}" />
-                            <TextBlock x:Name="UpdateLanguageText" IsTextSelectionEnabled="True" TextWrapping="Wrap" />
 
                             <TextBlock x:Uid="ArchitectureChannelLabel" Text="Architecture and channel" Style="{StaticResource DetailLabelStyle}" />
                             <TextBlock x:Name="UpdatePlatformText" TextWrapping="Wrap" />
@@ -424,6 +418,8 @@
 
                             <TextBlock x:Uid="ProviderNotesLabel" Text="Provider notes" Style="{StaticResource DetailLabelStyle}" />
                             <TextBlock x:Name="UpdateMessageText" TextWrapping="Wrap" />
+                            <TextBlock x:Uid="CheckedSourcesLabel" Text="Source check results" Style="{StaticResource DetailLabelStyle}" />
+                            <TextBlock x:Name="UpdateSourcesText" TextWrapping="Wrap" IsTextSelectionEnabled="True" />
 
                             <ProgressBar x:Name="UpdateProgress" Visibility="Collapsed" Margin="0,18,0,8" Minimum="0" Maximum="100" />
                             <TextBlock x:Uid="CloseAppsHint" Text="Starting an update authorizes NaxUpdater to close its listed application processes and force-terminate them if necessary." Style="{StaticResource MutedTextStyle}" FontSize="11" TextWrapping="Wrap" Margin="0,7,0,0" />

@@ -61,11 +61,11 @@ var steamManagedFixture = ExternalManagementClassifier.Classify(CreateApplicatio
         new ApplicationEvidence(EvidenceKind.Registry, "Uninstall registry", "LocalMachine Registry64 · Steam App 12345", true)
     ]
 });
-Assert(steamManagedFixture.ManagementMode == ManagementMode.NativeSelfUpdater &&
+Assert(steamManagedFixture.ManagementMode == ManagementMode.Registry &&
        steamManagedFixture.BlockedProviders.Contains("winget-fallback", StringComparer.OrdinalIgnoreCase) &&
        steamManagedFixture.Evidence.Any(static evidence =>
            evidence.Label == ExternalManagementClassifier.OwnerEvidenceLabel && evidence.Value == "Steam"),
-    "A Steam-owned game was left as an unsupported standalone application.");
+    "Owner classification lost physical installer identity or the storefront guard.");
 var ordinaryApplicationFixture = CreateApplication(
     "ordinary-app-fixture",
     "Ordinary App",
@@ -933,7 +933,8 @@ try
            completeAssessment.Results[0].Status == UpdateStatus.Unsupported &&
            completeAssessment.UnsupportedApplicationCount == 1,
         "The complete assessment omitted an application without a verifiable update source.");
-    var storeAssessment = await new UpdateCheckService(metadataClient, new UpdateProviderCatalog())
+    var storeAssessment = await new UpdateCheckService([new MsixStoreUpdateProvider(metadataClient,
+            new StubStorePackageDeploymentService(new StoreUpdateAvailability(false, false, null, null, "Unmatched fixture package family")))])
         .CheckAsync(new InventorySnapshot(DateTimeOffset.Now, [storeCatalogApplication with { Identity = "msix:Uncatalogued.StoreApp_abc" }], [], []));
     Assert(storeAssessment.Results.Count == 1 &&
            storeAssessment.Results[0].Status == UpdateStatus.ManagedExternally &&
@@ -964,7 +965,8 @@ try
     {
         ProviderId: "installed-authority",
         ProviderAuthority: UpdateProviderAuthority.InstalledUpdateProtocol,
-        CandidateProviderIds.Count: 1
+        CandidateProviderIds.Count: 2,
+        SourceChecks.Count: 2
     },
         "Provider ownership still depends on registration order instead of explicit authority.");
     var blockedFallbackAssessment = await new UpdateCheckService([fallbackAuthorityProvider])
@@ -1518,7 +1520,7 @@ var installedBrave = snapshot.Applications.FirstOrDefault(app =>
     app.DisplayName.Equals("Brave Origin", StringComparison.OrdinalIgnoreCase));
 if (installedBrave is not null)
 {
-    var braveAssessment = await new UpdateCheckService([])
+    var braveAssessment = await new UpdateCheckService([new ExternalOwnerUpdateProvider()])
         .CheckAsync(new InventorySnapshot(DateTimeOffset.Now, [installedBrave], [], []));
     Assert(braveAssessment.Results.Single().Status == UpdateStatus.ManagedExternally &&
            braveAssessment.Results.Single().AvailableVersion is null,
