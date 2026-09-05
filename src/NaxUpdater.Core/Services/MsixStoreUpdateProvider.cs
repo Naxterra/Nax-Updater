@@ -133,6 +133,7 @@ public sealed class MsixStoreUpdateProvider : IUpdateProvider
             string? targetVersion = plan is null ? null : storeAvailability.AvailableVersion;
             string? publishedVersion = null;
             string? nativeError = null;
+            var nativeCheckFailed = false;
             if (plan is null && !storeProductMismatch)
             {
                 var metadata = new MicrosoftStoreProductMetadataClient(_httpClient);
@@ -157,13 +158,13 @@ public sealed class MsixStoreUpdateProvider : IUpdateProvider
                                     StorePackageFamilyName: packageFamily, StorePublisher: application.Publisher,
                                     RunningExecutablePaths: bindings.Paths, NativeStoreTarget: package);
                             }
-                            else nativeError = offer.Error;
+                            else { nativeError = offer.Error; nativeCheckFailed = offer.CheckFailed; }
                         }
-                        else nativeError = "The published Store package could not be matched to the installed architecture.";
+                        else { nativeError = "The published Store package could not be matched to the installed architecture."; nativeCheckFailed = true; }
                     }
                 }
                 catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
-                catch (Exception exception) { nativeError = exception.Message; }
+                catch (Exception exception) { nativeError = exception.Message; nativeCheckFailed = true; }
             }
 
             var publishedNewer = !string.IsNullOrWhiteSpace(publishedVersion) &&
@@ -173,7 +174,7 @@ public sealed class MsixStoreUpdateProvider : IUpdateProvider
                 publishedVersion is not null && VersionOrder.Compare(publishedVersion, manifest.BuildVersion) < 0;
             var status = storeProductMismatch ? UpdateStatus.Error :
                 plan is not null ? UpdateStatus.Available :
-                publishedNewer && nativeError is not null ? UpdateStatus.Error :
+                publishedNewer && nativeCheckFailed ? UpdateStatus.Error :
                 manifestNewer || publishedNewer ? UpdateStatus.NewerReleaseKnown :
                 storeApplicable && string.IsNullOrWhiteSpace(storeAvailability.AvailableVersion) ? UpdateStatus.Error :
                 UpdateStatus.Current;
@@ -184,8 +185,10 @@ public sealed class MsixStoreUpdateProvider : IUpdateProvider
                     ? $"Microsoft Store offers {targetVersion} for this installation. OpenAI's latest announcement is {manifest.BuildVersion}."
                 : awaitingPublication
                     ? $"OpenAI announces {manifest.BuildVersion}; Microsoft Store currently publishes {publishedVersion}, which is not newer than the installed package."
-                : nativeError is not null && publishedNewer
+                : nativeCheckFailed && publishedNewer
                     ? $"Microsoft publishes {publishedVersion}, but the native Store update check failed: {nativeError}"
+                : publishedNewer
+                    ? $"Microsoft publishes {publishedVersion}, but Windows Store has not returned an applicable offer for this installation. Installed: {application.NormalizedVersion}."
                 : manifestNewer
                     ? "OpenAI reports a newer build, but Windows Store has not returned an applicable package update."
                 : "OpenAI and Microsoft Store report no newer applicable package.";
@@ -197,7 +200,8 @@ public sealed class MsixStoreUpdateProvider : IUpdateProvider
                 Applicability: plan is not null ? UpdateApplicability.Applicable :
                     status == UpdateStatus.Current ? UpdateApplicability.NotRequired :
                     status == UpdateStatus.Error ? UpdateApplicability.Unknown : UpdateApplicability.NotApplicable,
-                AvailabilityReason: awaitingPublication ? UpdateAvailabilityReason.AwaitingStorePublication : UpdateAvailabilityReason.None,
+                AvailabilityReason: awaitingPublication ? UpdateAvailabilityReason.AwaitingStorePublication :
+                    plan is null && publishedNewer && !nativeCheckFailed && !storeProductMismatch ? UpdateAvailabilityReason.AwaitingStoreOffer : UpdateAvailabilityReason.None,
                 PublishedPackageVersion: publishedVersion,
                 AnnouncedVersion: manifest.BuildVersion);
         }

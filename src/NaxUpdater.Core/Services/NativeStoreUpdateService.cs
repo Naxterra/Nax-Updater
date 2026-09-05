@@ -3,7 +3,7 @@ using Windows.ApplicationModel.Store.Preview.InstallControl;
 
 namespace NaxUpdater.Core.Services;
 
-public sealed record NativeStoreOffer(bool IsAvailable, string? Error);
+public sealed record NativeStoreOffer(bool IsAvailable, string? Error, bool CheckFailed = false);
 public sealed record NativeStoreItemState(AppInstallState State, int ErrorCode = 0);
 
 public interface INativeStoreUpdateItem
@@ -70,11 +70,11 @@ public sealed class NativeStoreUpdateService : INativeStoreUpdateService
             ValidateIdentity(item, package);
             var status = item.Status();
             return status.State is AppInstallState.Error or AppInstallState.Canceled or AppInstallState.Completed
-                ? new(false, $"Windows Store update state: {status.State} (0x{status.ErrorCode:X8}).")
+                ? new(false, $"Windows Store update state: {status.State} (0x{status.ErrorCode:X8}).", status.State == AppInstallState.Error)
                 : new(true, null);
         }
         catch (OperationCanceledException) when (token.IsCancellationRequested) { throw; }
-        catch (Exception exception) { return new(false, exception.Message); }
+        catch (Exception exception) { return new(false, exception.Message, true); }
     }
 
     public async Task<PreparedNativeStoreUpdate> PrepareAsync(PublishedStorePackage package, CancellationToken token)
