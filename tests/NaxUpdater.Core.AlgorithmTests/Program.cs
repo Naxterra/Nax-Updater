@@ -446,6 +446,7 @@ try
         Assert(!unverified.IsSuccess && unchangedClient.Completed,
             "Store completion alone was accepted without observing the installed target version.");
     }
+    await StoreFulfillmentRegression.RunAsync(Assert);
     await CoverageRegression.RunAsync(Assert);
     await ProcessLifetimeRegression.RunAsync(Assert, fixture);
     Console.WriteLine($"Algorithm regression tests passed: {checks} assertions. No real installers executed.");

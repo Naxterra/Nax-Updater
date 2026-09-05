@@ -52,6 +52,7 @@ internal sealed class MicrosoftStoreProductMetadataClient(HttpClient httpClient)
         var identities = new List<StoreProductIdentity>();
         foreach (var entry in skus.EnumerateArray())
         {
+            if (!SupportsWindowsFulfillment(entry)) continue;
             if (!TryGet(entry, "Sku", out var sku) || !TryGetString(sku, "SkuId", out var skuId) ||
                 !TryGet(sku, "Properties", out var properties) || !TryGet(properties, "Packages", out var packages) ||
                 packages.ValueKind != JsonValueKind.Array) continue;
@@ -61,6 +62,34 @@ internal sealed class MicrosoftStoreProductMetadataClient(HttpClient httpClient)
                 identities.Add(new(productId, skuId, family));
         }
         return identities.OrderBy(p => p.SkuId, StringComparer.Ordinal).FirstOrDefault();
+    }
+
+    internal static bool SupportsWindowsFulfillment(JsonElement entry, DateTimeOffset? at = null)
+    {
+        // Older/minimal catalog responses may omit availability data; in that
+        // case native eligibility remains authoritative. Explicit redeem-only,
+        // purchase-only or console-only SKUs are not Windows update routes.
+        if (!TryGet(entry, "Availabilities", out var availabilities)) return true;
+        if (availabilities.ValueKind != JsonValueKind.Array) return false;
+        var now = at ?? DateTimeOffset.UtcNow;
+        foreach (var availability in availabilities.EnumerateArray())
+        {
+            if (!TryGet(availability, "Actions", out var actions) || actions.ValueKind != JsonValueKind.Array ||
+                !actions.EnumerateArray().Any(a => a.ValueKind == JsonValueKind.String &&
+                    a.GetString()!.Equals("Fulfill", StringComparison.OrdinalIgnoreCase))) continue;
+            if (!TryGet(availability, "Conditions", out var conditions)) return true;
+            if (TryGetString(conditions, "StartDate", out var start) &&
+                (!DateTimeOffset.TryParse(start, CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal, out var from) || from > now)) continue;
+            if (TryGetString(conditions, "EndDate", out var end) &&
+                (!DateTimeOffset.TryParse(end, CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal, out var until) || until <= now)) continue;
+            if (!TryGet(conditions, "ClientConditions", out var client) ||
+                !TryGet(client, "AllowedPlatforms", out var platforms)) return true;
+            if (platforms.ValueKind != JsonValueKind.Array) continue;
+            if (platforms.EnumerateArray().Any(p => TryGetString(p, "PlatformName", out var name) &&
+                (name.Equals("Windows.Desktop", StringComparison.OrdinalIgnoreCase) ||
+                 name.Equals("Windows.Universal", StringComparison.OrdinalIgnoreCase)))) return true;
+        }
+        return false;
     }
 
     public async Task<PublishedStorePackage?> GetPublishedPackageAsync(
@@ -89,6 +118,7 @@ internal sealed class MicrosoftStoreProductMetadataClient(HttpClient httpClient)
         var candidates = new List<PublishedStorePackage>();
         foreach (var entry in skus.EnumerateArray())
         {
+            if (!SupportsWindowsFulfillment(entry)) continue;
             if (!TryGet(entry, "Sku", out var sku) || !TryGetString(sku, "SkuId", out var skuId) ||
                 !TryGet(sku, "Properties", out var properties) || !TryGet(properties, "Packages", out var packages) ||
                 packages.ValueKind != JsonValueKind.Array) continue;
@@ -135,7 +165,7 @@ internal sealed class MicrosoftStoreProductMetadataClient(HttpClient httpClient)
             CatalogBaseUri,
             $"{Uri.EscapeDataString(productId)}?market={Uri.EscapeDataString(market)}&languages={Uri.EscapeDataString(language)}");
         using var request = new HttpRequestMessage(HttpMethod.Get, uri);
-        request.Headers.UserAgent.ParseAdd("NaxUpdater/0.16.10");
+        request.Headers.UserAgent.ParseAdd("NaxUpdater/0.16.11");
         using var response = await httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
         response.EnsureSuccessStatusCode();
         await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
