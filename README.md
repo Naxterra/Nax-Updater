@@ -34,7 +34,7 @@ The inventory engine:
 The current implementation includes:
 
 - WSL stable-release checks directly against Microsoft's GitHub repository, with the installed Microsoft-signed `wsl.exe --update --web-download` route and independent post-update version verification; generic Store ownership no longer hides an available WSL release;
-- a separate pending-Store-offer state when Microsoft's catalog publishes a newer ChatGPT package but a successful native query does not offer it to this installation; actual check errors remain errors;
+- shows "No applicable update" after a successful Store check returns no applicable offer; catalog-only ChatGPT versions remain diagnostic evidence and are excluded from the available-version column and update counts; actual check errors remain errors;
 - an independent updater lifetime: when launched inside another application's Windows job, NaxUpdater requests a desktop-launched replacement and exits only after the replacement confirms it is outside that job;
 - process shutdown that protects the updater and its ancestors, refuses destructive work from a still-coupled host, and force-closes only executable instances bound to the approved plan, never arbitrary descendant process trees;
 - real disposable-process regression tests for desktop launch, host protection and preservation of unrelated descendants during forced shutdown;
@@ -44,7 +44,7 @@ The current implementation includes:
 - driver transaction identity based on present PnP devices rather than the replaceable INF name/version; recovery reads installed driver state locally and normalizes NVIDIA's Windows driver version to its public release number;
 - migration of older driver journals only when a unique matching live device can be established; a failed verification reports an affected operation without disabling unrelated application updates;
 - background provider discovery and catalog access, per-provider deadlines, a catalog-refresh deadline, progress counts and a cancel action, so slow native or network checks cannot hold the WinUI thread;
-- explicit Store-publication status for ChatGPT when OpenAI announces a build that Microsoft's exact package/architecture catalog does not yet publish; the German and English details show both versions rather than suggesting a local configuration problem;
+- distinguishes OpenAI announcements from installable ChatGPT updates; neither an announcement nor a catalog listing alone is an update offer for the installed package;
 - regression tests for version padding, semantic build metadata, numeric prerelease ordering, compact release dates, architecture/scope mismatches, release/asset version disagreement, GitHub rate-limit recovery, truthful coverage, and the full WinGet transaction through a simulated package-manager boundary;
 - version comparison without fixed-width integer parsing, so long build identifiers cannot overflow the check or post-install verifier;
 - restored WinGet fallback installation through the official Windows Package Manager API, with installed product-code correlation and retained catalog, version, and installer variant through preparation and application;
@@ -198,7 +198,7 @@ From this directory:
 dotnet build NaxUpdater.slnx
 dotnet run --project tests/NaxUpdater.Core.SmokeTests/NaxUpdater.Core.SmokeTests.csproj
 dotnet publish src/NaxUpdater/NaxUpdater.csproj -c Release -r win-x64 --self-contained true -o artifacts/NaxUpdater-win-x64
-./scripts/package-release.ps1 -Version 0.16.8
+./scripts/package-release.ps1 -Version 0.16.9
 ```
 
 The desktop project uses .NET 11, WinUI 3, and the Windows App SDK. It is not an Electron or WebView application.

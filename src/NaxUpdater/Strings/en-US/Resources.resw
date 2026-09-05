@@ -155,6 +155,8 @@
   <data name="ProviderCheckCanceled"><value>Update check canceled. Your installed application inventory is still available.</value></data>
   <data name="StatusStorePublicationPending"><value>Waiting for Store publication</value></data>
   <data name="StatusStoreOfferPending"><value>Waiting for Store offer</value></data>
+  <data name="StatusNoApplicableStoreUpdate"><value>No applicable update</value></data>
+  <data name="NoApplicableStoreUpdateMessage"><value>Windows Store reports no applicable update for this installation. Announcement or catalog version numbers are not shown or counted as available updates without a matching update offer.</value></data>
   <data name="ProviderWsl"><value>Microsoft WSL release + native Windows updater</value></data>
   <data name="StoreOfferPendingMessage"><value>Microsoft publishes {0}; installed: {1}. Windows Store currently returns no applicable update offer for this installation. The catalog check completed. Recheck to enable installation once an offer is available.</value></data>
   <data name="ProviderWslNote"><value>The stable WSL version is checked directly against Microsoft's GitHub release. Signed Windows wsl.exe runs --update --web-download with administrator privileges. Linux distributions are neither unregistered nor reinstalled. The installed WSL version is checked independently afterward. Microsoft may supply a newer stable release.</value></data>
