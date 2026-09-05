@@ -144,6 +144,14 @@ public sealed record PublishedStorePackage(
     string ProductId, string SkuId, string PackageFamilyName,
     string Version, string PackageFullName, string Architecture);
 
+public sealed record StoreProductIdentity(string ProductId, string SkuId, string PackageFamilyName)
+{
+    public static StoreProductIdentity From(PublishedStorePackage package) => new(package.ProductId, package.SkuId, package.PackageFamilyName);
+}
+public sealed record StoreProductMatch(StoreProductIdentity Identity, PublishedStorePackage? PublishedPackage,
+    IReadOnlyList<StoreProductIdentity>? AlternateIdentities = null);
+public sealed record UpdateSourceCheck(string ProviderId, string ProviderDisplayName, UpdateStatus Status, string? AvailableVersion, string? Message);
+
 public sealed record WingetUpdateTarget(
     string PackageId,
     string SourceId,
@@ -178,7 +186,8 @@ public sealed record UpdateCheckResult(
     string? CorrelationKey = null,
     UpdateAvailabilityReason AvailabilityReason = UpdateAvailabilityReason.None,
     string? PublishedPackageVersion = null,
-    string? AnnouncedVersion = null)
+    string? AnnouncedVersion = null,
+    IReadOnlyList<UpdateSourceCheck>? SourceChecks = null)
 {
     public bool IsInstallable => ExecutionPlan is not null &&
                                  Status == UpdateStatus.Available &&

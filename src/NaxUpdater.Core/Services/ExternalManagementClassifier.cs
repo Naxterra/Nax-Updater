@@ -34,7 +34,6 @@ internal static class ExternalManagementClassifier
             .ToArray();
         return application with
         {
-            ManagementMode = ManagementMode.NativeSelfUpdater,
             BlockedProviders = blocked,
             Evidence = evidence
         };

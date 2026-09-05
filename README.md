@@ -33,8 +33,13 @@ The inventory engine:
 
 The current implementation includes:
 
+- checks all compatible, non-blocked sources and retains their individual outcomes; unimplemented owner adapters no longer suppress working sources, while explicit source/channel policies and higher-authority verification failures remain binding;
+- exact Microsoft Store package-family lookup followed by native applicability checks across the matching SKUs for Store apps generally, not just ChatGPT; same-version queue items never trigger a reinstall, and unverified/failed queries are not labelled current;
+- official same-major Macrium patch checks, manufacturer device checks for driver-package entries, and Firefox maintenance-component reconciliation with the checked Firefox installation;
+- separate update ownership and check results: ownership alone is not a version check. Unimplemented protocols remain "Not checked", and source failures remain visible (including Store products rejected by the native API);
+- no language column, language detail section, or language-based filtering in the update view; installer language preservation remains enforced, and successful no-update checks use the normal "Current" status;
 - WSL stable-release checks directly against Microsoft's GitHub repository, with the installed Microsoft-signed `wsl.exe --update --web-download` route and independent post-update version verification; generic Store ownership no longer hides an available WSL release;
-- shows "No applicable update" after a successful Store check returns no applicable offer; catalog-only ChatGPT versions remain diagnostic evidence and are excluded from the available-version column and update counts; actual check errors remain errors;
+- shows "Current" after a successful Store check returns no applicable offer; catalog-only ChatGPT versions remain diagnostic evidence and are excluded from the available-version column and update counts; actual check errors remain errors;
 - an independent updater lifetime: when launched inside another application's Windows job, NaxUpdater requests a desktop-launched replacement and exits only after the replacement confirms it is outside that job;
 - process shutdown that protects the updater and its ancestors, refuses destructive work from a still-coupled host, and force-closes only executable instances bound to the approved plan, never arbitrary descendant process trees;
 - real disposable-process regression tests for desktop launch, host protection and preservation of unrelated descendants during forced shutdown;
@@ -74,7 +79,7 @@ The current implementation includes:
 
 - clicking **Update** or **Update all** authorizes a version-bound transaction; applications are closed only after the complete payload and nested contents are verified, and process termination is limited to the selected application's path-bound executable identity without carrying stale PIDs across UAC;
 
-- producer-first provider selection for every application: installed/native and producer-owned sources win, Microsoft Store handles Store-owned packages, and WinGet is consulted only when none of those sources claims the application;
+- producer-first source reconciliation: compatible installed/native, producer, Store and allowed WinGet sources are checked; verified executable offers are selected with explicit policy and verification guards preserved, without crossing installation types;
 - WinGet remains a verified last-resort fallback through exact product-code, MSI upgrade-family, or package-family correlation; it cannot override a producer source and Scoop is no longer consulted;
 
 - ChatGPT checks against OpenAI's official Windows update manifest for the exact `OpenAI.Codex` package and Store product, instead of relying on WinGet's `Unknown` Store version;
@@ -198,7 +203,7 @@ From this directory:
 dotnet build NaxUpdater.slnx
 dotnet run --project tests/NaxUpdater.Core.SmokeTests/NaxUpdater.Core.SmokeTests.csproj
 dotnet publish src/NaxUpdater/NaxUpdater.csproj -c Release -r win-x64 --self-contained true -o artifacts/NaxUpdater-win-x64
-./scripts/package-release.ps1 -Version 0.16.9
+./scripts/package-release.ps1 -Version 0.16.10
 ```
 
 The desktop project uses .NET 11, WinUI 3, and the Windows App SDK. It is not an Electron or WebView application.

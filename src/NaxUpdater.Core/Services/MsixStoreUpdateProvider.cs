@@ -58,6 +58,40 @@ public sealed class MsixStoreUpdateProvider : IUpdateProvider
             }
         }
 
+        if (_nativeStore is not null)
+        {
+            var product = await new MicrosoftStoreProductMetadataClient(_httpClient).ResolvePackageFamilyAsync(
+                packageFamily, PackageArchitecture(application), application.NormalizedVersion, cancellationToken);
+            if (product is not null)
+            {
+                var offers = new List<(StoreProductIdentity Identity, NativeStoreOffer Offer)>();
+                foreach (var identity in new[] { product.Identity }.Concat(product.AlternateIdentities ?? []))
+                    offers.Add((identity, await _nativeStore.CheckIdentityAsync(identity, cancellationToken)));
+                var found = offers.FirstOrDefault(o => o.Offer.IsAvailable);
+                if (found.Identity is null && offers.Any(o => o.Offer.CheckFailed)) return Result(application, null, UpdateStatus.Error, null, product.Identity.ProductId,
+                    string.Join("; ", offers.Where(o => o.Offer.CheckFailed).Select(o => o.Offer.Error)));
+                if (found.Identity is null) return Result(application, null, UpdateStatus.Current, null, product.Identity.ProductId,
+                    "Native Microsoft Store check completed for the exact package family; no applicable update.");
+                var package = found.Identity.SkuId == product.Identity.SkuId ? product.PublishedPackage :
+                    await new MicrosoftStoreProductMetadataClient(_httpClient).GetPublishedPackageAsync(found.Identity.ProductId,
+                        packageFamily, PackageArchitecture(application), application.NormalizedVersion, cancellationToken, found.Identity.SkuId);
+                if (package is not null && VersionOrder.Compare(package.Version, application.NormalizedVersion) <= 0)
+                    return Result(application, null, UpdateStatus.Current, null, product.Identity.ProductId,
+                        "The Store item does not contain a newer package than the installed version; no reinstall or downgrade is offered.");
+                if (package is null)
+                    return Result(application, null, UpdateStatus.Error, null, product.Identity.ProductId,
+                        "Windows Store returned an update, but its exact newer package version could not be verified.");
+                var paths = File.Exists(application.PrimaryInstallPath) && Path.GetExtension(application.PrimaryInstallPath).Equals(".exe", StringComparison.OrdinalIgnoreCase)
+                    ? new[] { application.PrimaryInstallPath! } : [];
+                var nativePlan = new UpdateExecutionPlan(UpdateExecutionKind.NativeStorePackage, null, null, null, "Microsoft Store", null, [], false, [],
+                    paths.Select(Path.GetFileNameWithoutExtension).Select(p => p!).ToArray(), StoreProductId: package.ProductId,
+                    StorePackageFamilyName: packageFamily, StorePublisher: application.Publisher,
+                    RunningExecutablePaths: paths, NativeStoreTarget: package);
+                return Result(application, nativePlan, UpdateStatus.Available, package.Version, product.Identity.ProductId,
+                    "Native Microsoft Store update verified against the exact package family, architecture and published version.");
+            }
+        }
+
         var availability = await _store.CheckForUpdateAsync(
             packageFamily,
             application.DisplayName,

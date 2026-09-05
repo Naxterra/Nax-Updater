@@ -15,12 +15,13 @@ public interface INativeStoreUpdateItem
 
 public interface INativeStoreUpdateClient
 {
-    Task<INativeStoreUpdateItem?> FindPausedUpdateAsync(PublishedStorePackage package, CancellationToken token);
+    Task<INativeStoreUpdateItem?> FindPausedUpdateAsync(StoreProductIdentity package, CancellationToken token);
     Task<INativeStoreUpdateItem?> StartUpdateAsync(PublishedStorePackage package, CancellationToken token);
 }
 
 public interface INativeStoreUpdateService
 {
+    Task<NativeStoreOffer> CheckIdentityAsync(StoreProductIdentity identity, CancellationToken token);
     Task<NativeStoreOffer> CheckAsync(PublishedStorePackage package, CancellationToken token);
     Task<PreparedNativeStoreUpdate> PrepareAsync(PublishedStorePackage package, CancellationToken token);
 }
@@ -46,7 +47,7 @@ public sealed class NativeStoreUpdateService : INativeStoreUpdateService
         _client = new NativeStoreUpdateClient();
         var metadata = new MicrosoftStoreProductMetadataClient(client ?? SharedClient);
         _refresh = (target, token) => metadata.GetPublishedPackageAsync(
-            target.ProductId, target.PackageFamilyName, target.Architecture, target.Version, token);
+            target.ProductId, target.PackageFamilyName, target.Architecture, target.Version, token, target.SkuId);
         _delay = Task.Delay;
         _installTimeout = TimeSpan.FromMinutes(20);
     }
@@ -61,7 +62,10 @@ public sealed class NativeStoreUpdateService : INativeStoreUpdateService
         _installTimeout = installTimeout ?? TimeSpan.FromMinutes(20);
     }
 
-    public async Task<NativeStoreOffer> CheckAsync(PublishedStorePackage package, CancellationToken token)
+    public Task<NativeStoreOffer> CheckAsync(PublishedStorePackage package, CancellationToken token) =>
+        CheckIdentityAsync(StoreProductIdentity.From(package), token);
+
+    public async Task<NativeStoreOffer> CheckIdentityAsync(StoreProductIdentity package, CancellationToken token)
     {
         try
         {
@@ -74,7 +78,7 @@ public sealed class NativeStoreUpdateService : INativeStoreUpdateService
                 : new(true, null);
         }
         catch (OperationCanceledException) when (token.IsCancellationRequested) { throw; }
-        catch (Exception exception) { return new(false, exception.Message, true); }
+        catch (Exception exception) { return new(false, $"Native Store API: {exception.Message} (0x{exception.HResult:X8})", true); }
     }
 
     public async Task<PreparedNativeStoreUpdate> PrepareAsync(PublishedStorePackage package, CancellationToken token)
@@ -82,7 +86,7 @@ public sealed class NativeStoreUpdateService : INativeStoreUpdateService
         var refreshed = await _refresh(package, token);
         if (refreshed != package)
             throw new InvalidOperationException("The published Store package changed after approval. Check for updates again.");
-        var item = await _client.FindPausedUpdateAsync(package, token)
+        var item = await _client.FindPausedUpdateAsync(StoreProductIdentity.From(package), token)
             ?? throw new InvalidOperationException("Windows Store no longer returns the approved update.");
         ValidateIdentity(item, package);
         return new(package, async cancellationToken =>
@@ -111,6 +115,9 @@ public sealed class NativeStoreUpdateService : INativeStoreUpdateService
     }
 
     private static void ValidateIdentity(INativeStoreUpdateItem item, PublishedStorePackage package)
+        => ValidateIdentity(item, StoreProductIdentity.From(package));
+
+    private static void ValidateIdentity(INativeStoreUpdateItem item, StoreProductIdentity package)
     {
         if (!item.ProductId.Equals(package.ProductId, StringComparison.OrdinalIgnoreCase) ||
             !item.PackageFamilyName.Equals(package.PackageFamilyName, StringComparison.OrdinalIgnoreCase))
@@ -126,19 +133,25 @@ public sealed class NativeStoreUpdateService : INativeStoreUpdateService
 
 internal sealed class NativeStoreUpdateClient : INativeStoreUpdateClient
 {
-    public async Task<INativeStoreUpdateItem?> FindPausedUpdateAsync(PublishedStorePackage package, CancellationToken token)
+    private static readonly SemaphoreSlim QuerySlots = new(8, 8);
+    public async Task<INativeStoreUpdateItem?> FindPausedUpdateAsync(StoreProductIdentity package, CancellationToken token)
         => await QueryAsync(package, false, token);
 
     public async Task<INativeStoreUpdateItem?> StartUpdateAsync(PublishedStorePackage package, CancellationToken token)
-        => await QueryAsync(package, true, token);
+        => await QueryAsync(StoreProductIdentity.From(package), true, token);
 
-    private static async Task<INativeStoreUpdateItem?> QueryAsync(PublishedStorePackage package, bool apply, CancellationToken token)
+    private static async Task<INativeStoreUpdateItem?> QueryAsync(StoreProductIdentity package, bool apply, CancellationToken token)
     {
-        var manager = new AppInstallManager();
-        var operation = manager.SearchForUpdatesAsync(
-            package.ProductId, package.SkuId, "", "", NativeStoreUpdateService.QueryOptions(apply));
-        var item = await operation.AsTask(token);
-        return item is null ? null : new Item(item, manager);
+        await QuerySlots.WaitAsync(token);
+        try
+        {
+            var manager = new AppInstallManager();
+            var operation = manager.SearchForUpdatesAsync(
+                package.ProductId, package.SkuId, "", "", NativeStoreUpdateService.QueryOptions(apply));
+            var item = await operation.AsTask(token);
+            return item is null ? null : new Item(item, manager);
+        }
+        finally { QuerySlots.Release(); }
     }
 
     private sealed class Item(AppInstallItem item, AppInstallManager manager) : INativeStoreUpdateItem

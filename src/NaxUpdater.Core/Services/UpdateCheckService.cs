@@ -8,11 +8,14 @@ public sealed class UpdateCheckService
     private readonly SemaphoreSlim _checkSlots = new(16, 16);
     private readonly TimeSpan _providerTimeout = TimeSpan.FromSeconds(45);
     private readonly TimeSpan _sourceTimeout = TimeSpan.FromSeconds(20);
+    private readonly TimeSpan _sourceCheckTimeout = TimeSpan.FromSeconds(30);
 
     public UpdateCheckService(IReadOnlyList<IUpdateProvider> providers,
-        TimeSpan? providerTimeout = null, TimeSpan? sourceTimeout = null)
+        TimeSpan? providerTimeout = null, TimeSpan? sourceTimeout = null, TimeSpan? sourceCheckTimeout = null)
     {
         _providers = providers;
+        if (sourceCheckTimeout is not null) _sourceCheckTimeout = sourceCheckTimeout.Value > TimeSpan.Zero
+            ? sourceCheckTimeout.Value : throw new ArgumentOutOfRangeException(nameof(sourceCheckTimeout));
         if (providerTimeout is not null) _providerTimeout = providerTimeout.Value > TimeSpan.Zero
             ? providerTimeout.Value : throw new ArgumentOutOfRangeException(nameof(providerTimeout));
         if (sourceTimeout is not null) _sourceTimeout = sourceTimeout.Value > TimeSpan.Zero
@@ -30,6 +33,9 @@ public sealed class UpdateCheckService
             new IvpnUpdateProvider(httpClient),
             new NodeJsUpdateProvider(httpClient),
             new WslUpdateProvider(httpClient),
+            new MacriumUpdateProvider(httpClient),
+            new DriverComponentUpdateProvider(httpClient),
+            new ExternalOwnerUpdateProvider(),
             new WinRarUpdateProvider(httpClient)
         };
         providers.AddRange(catalog.GitHub.Select(recipe => new GitHubReleaseUpdateProvider(httpClient, recipe)));
@@ -112,6 +118,7 @@ public sealed class UpdateCheckService
         }
 
         var results = await Task.WhenAll(applications.Select(CheckOneAsync));
+        ReconcileCompanionChecks(results);
         return new UpdateCheckSnapshot(
             checkedAt,
             results.OrderBy(static result => result.Status == UpdateStatus.Available ? 0 : result.Status == UpdateStatus.Error ? 1 : 2)
@@ -125,21 +132,6 @@ public sealed class UpdateCheckService
         IReadOnlyDictionary<string, string> refreshFailures, CancellationToken token)
     {
         token.ThrowIfCancellationRequested();
-        if (application.ManagementMode == ManagementMode.NativeSelfUpdater)
-        {
-            var owner = application.Evidence.FirstOrDefault(static e => e.Label == ExternalManagementClassifier.OwnerEvidenceLabel)?.Value ??
-                application.Evidence.FirstOrDefault(static e => e.Label == "Preferred update provider")?.Value ?? "Application native updater";
-            var source = application.Evidence.FirstOrDefault(static e => e.Label == ExternalManagementClassifier.SourceEvidenceLabel)?.Value;
-            return new(application.Identity, application.DisplayName, application.NormalizedVersion, null,
-                UpdateStatus.ManagedExternally, "native-updater", owner, "application-managed",
-                "Preserved by the application's updater", "application-managed", "native",
-                Uri.TryCreate(source, UriKind.Absolute, out var uri) ? uri.AbsoluteUri : null,
-                $"Update ownership belongs to {owner}; its available version was not checked.", null,
-                UpdateProviderAuthority.ExplicitApplicationPolicy,
-                "The installed application policy assigns update ownership to its native updater", ["native-updater"],
-                UpdateApplicability.Unknown);
-        }
-
         var preferredId = PreferredProviderId(application);
         IUpdateProvider? preferred = null;
         if (preferredId is not null)
@@ -161,15 +153,61 @@ public sealed class UpdateCheckService
             provider.Descriptor.Specificity == selected.Descriptor.Specificity).ToArray();
         if (preferred is null && tied.Length > 1) return AmbiguousProviderResult(application, tied);
         var ids = candidates.Select(static provider => provider.Id).ToArray();
-        if (refreshFailures.TryGetValue(selected.Id, out var refreshFailure))
-            return ProviderContractError(selected, application, ids, refreshFailure);
-        return await SafeCheckCoreAsync(selected, application, ids, preferred is not null, generation, checkedAt, token);
+        async Task<UpdateCheckResult> CheckSourceAsync(IUpdateProvider provider)
+        {
+            if (refreshFailures.TryGetValue(provider.Id, out var failure)) return ProviderContractError(provider, application, ids, failure);
+            using var sourceCancellation = CancellationTokenSource.CreateLinkedTokenSource(token);
+            var check = Task.Run(() => SafeCheckCoreAsync(provider, application, ids, preferred is not null, generation, checkedAt, sourceCancellation.Token), sourceCancellation.Token);
+            try { return await check.WaitAsync(_sourceCheckTimeout, token); }
+            catch (OperationCanceledException) when (token.IsCancellationRequested) { throw; }
+            catch (TimeoutException)
+            {
+                sourceCancellation.Cancel(); ObserveFailure(check);
+                return ProviderContractError(provider, application, ids, "This source timed out; other compatible sources were still checked.");
+            }
+        }
+        var checks = await Task.WhenAll(candidates.Select(CheckSourceAsync));
+        // Do not let an unimplemented owner adapter suppress a working source.
+        // Conversely, never bypass a higher-authority verification failure with
+        // a lower-authority installer. Explicit provider policies stay exclusive.
+        var firstDefinitive = Array.FindIndex(checks, c => c.Status is not (UpdateStatus.ManagedExternally or UpdateStatus.Unsupported));
+        var available = Array.FindIndex(checks, c => c.IsInstallable);
+        var selectedIndex = available >= 0 && !checks.Take(available).Any(c => c.Status == UpdateStatus.Error)
+            ? available : firstDefinitive >= 0 ? firstDefinitive : 0;
+        return checks[selectedIndex] with
+        {
+            SourceChecks = checks.Select(c =>
+            new UpdateSourceCheck(c.ProviderId, c.ProviderDisplayName, c.Status, c.AvailableVersion, c.Message)).ToArray()
+        };
     }
 
     private static UpdateCheckResult FailedCheck(InstalledApplication application, string error) => new(
         application.Identity, application.DisplayName, application.NormalizedVersion, null, UpdateStatus.Error,
         "provider-check", "Update provider check", "unknown", "Check did not complete",
         "unknown", "unknown", null, error, null, Applicability: UpdateApplicability.Unknown);
+
+    private static void ReconcileCompanionChecks(UpdateCheckResult[] results)
+    {
+        var firefox = results.Where(r => r.ProviderId == "mozilla-firefox").ToArray();
+        if (firefox.Length == 0 || firefox.Any(r => r.Status != UpdateStatus.Current)) return;
+        for (var i = 0; i < results.Length; i++)
+        {
+            var service = results[i];
+            if (service.DisplayName != "Mozilla Maintenance Service" || service.ProviderId != "native-updater" ||
+                string.IsNullOrWhiteSpace(service.InstalledVersion) ||
+                firefox.Any(f => string.IsNullOrWhiteSpace(f.InstalledVersion) || VersionOrder.Compare(service.InstalledVersion, f.InstalledVersion) < 0)) continue;
+            results[i] = service with
+            {
+                Status = UpdateStatus.Current,
+                ProviderId = "mozilla-maintenance",
+                ProviderDisplayName = "Mozilla Firefox maintenance component",
+                Applicability = UpdateApplicability.NotRequired,
+                ReleaseNotesUrl = firefox[0].ReleaseNotesUrl,
+                Message = "The installed Firefox release was checked against Mozilla. Its shared maintenance service is at least as recent and is updated together with Firefox.",
+                SourceChecks = firefox.SelectMany(f => f.SourceChecks ?? []).ToArray()
+            };
+        }
+    }
 
     private static void ObserveFailure(Task task) =>
         _ = task.ContinueWith(static failed => { _ = failed.Exception; }, CancellationToken.None,
@@ -376,6 +414,7 @@ public sealed class UpdateCheckService
 
     private IUpdateProvider[] ResolveHighestAuthorityCandidates(InstalledApplication application)
     {
+        var allCandidates = new List<IUpdateProvider>();
         foreach (var authorityGroup in _providers
                      .Where(provider => SupportsManagementMode(provider, application.ManagementMode) &&
                                         !IsBlocked(application, provider.Id))
@@ -389,10 +428,10 @@ public sealed class UpdateCheckService
                 .ToArray();
             if (candidates.Length > 0)
             {
-                return candidates;
+                allCandidates.AddRange(candidates);
             }
         }
-        return [];
+        return allCandidates.ToArray();
     }
 
     private static bool SupportsManagementMode(IUpdateProvider provider, ManagementMode managementMode) =>

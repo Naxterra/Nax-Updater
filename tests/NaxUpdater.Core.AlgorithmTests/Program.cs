@@ -446,6 +446,7 @@ try
         Assert(!unverified.IsSuccess && unchangedClient.Completed,
             "Store completion alone was accepted without observing the installed target version.");
     }
+    await CoverageRegression.RunAsync(Assert);
     await ProcessLifetimeRegression.RunAsync(Assert, fixture);
     Console.WriteLine($"Algorithm regression tests passed: {checks} assertions. No real installers executed.");
 }
@@ -539,7 +540,7 @@ sealed class FakeNativeStore(PublishedStorePackage package) : INativeStoreUpdate
     public bool Completed { get; private set; }
     public string ProductId => package.ProductId;
     public string PackageFamilyName => package.PackageFamilyName;
-    public Task<INativeStoreUpdateItem?> FindPausedUpdateAsync(PublishedStorePackage p, CancellationToken t) =>
+    public Task<INativeStoreUpdateItem?> FindPausedUpdateAsync(StoreProductIdentity p, CancellationToken t) =>
         Task.FromResult<INativeStoreUpdateItem?>(ReturnNoOffer ? null : this);
     public Task<INativeStoreUpdateItem?> StartUpdateAsync(PublishedStorePackage p, CancellationToken t)
     {

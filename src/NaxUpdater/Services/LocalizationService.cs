@@ -61,6 +61,7 @@ public static partial class LocalizationService
         if (update.Status is UpdateStatus.Error or UpdateStatus.NewerReleaseKnown)
             return update.Message ?? Get(update.Status == UpdateStatus.Error ? "StatusCheckFailed" : "ProviderReleaseKnownNotAutomatic");
         if (update.ProviderId == "native-updater") return Format("ProviderManagedUnchecked", ProviderName(update));
+        if (update.ProviderId is "macrium-release" or "driver-component" or "mozilla-maintenance") return update.Message ?? Get("StatusNotChecked");
         if (update.ProviderId == "unverified") return Get("ProviderUnverifiedNote");
         if (update.ProviderId == "msix-store") return update.Status switch
         {

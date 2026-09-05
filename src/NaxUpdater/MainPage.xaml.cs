@@ -366,9 +366,9 @@ public sealed partial class MainPage : Page
         row.Installed.Contains(filter, StringComparison.OrdinalIgnoreCase) ||
         row.Available.Contains(filter, StringComparison.OrdinalIgnoreCase) ||
         row.Provider.Contains(filter, StringComparison.OrdinalIgnoreCase) ||
-        row.Language.Contains(filter, StringComparison.OrdinalIgnoreCase) ||
         row.Status.Contains(filter, StringComparison.OrdinalIgnoreCase) ||
-        row.Message.Contains(filter, StringComparison.OrdinalIgnoreCase);
+        (row.Application?.Publisher.Contains(filter, StringComparison.OrdinalIgnoreCase) ?? false) ||
+        (row.Application?.Source.PrimaryInstallPath?.Contains(filter, StringComparison.OrdinalIgnoreCase) ?? false);
 
     private void UpdateResultSortHeader_Click(object sender, RoutedEventArgs e)
     {
@@ -1064,7 +1064,8 @@ public sealed partial class MainPage : Page
         UpdateNameText.Text = row.Name;
         UpdateProviderText.Text = $"{row.Provider} · {row.Status}";
         UpdateVersionText.Text = row.VersionChange;
-        UpdateLanguageText.Text = row.LanguageDetail;
+        UpdateSourcesText.Text = string.Join(Environment.NewLine, (row.Source.SourceChecks ?? []).Select(source =>
+            $"{source.ProviderDisplayName}: {LocalizationService.Get(source.Status switch { UpdateStatus.Current => "StatusCurrent", UpdateStatus.Available => "StatusUpdateAvailable", UpdateStatus.Error => "StatusCheckFailed", UpdateStatus.NewerReleaseKnown => "StatusNewerReleaseKnown", _ => "StatusNotChecked" })}"));
         UpdatePlatformText.Text = row.PlatformDetail;
         UpdateSecurityText.Text = row.SecurityDetail;
         UpdateReleaseText.Text = row.ReleaseNotes;
