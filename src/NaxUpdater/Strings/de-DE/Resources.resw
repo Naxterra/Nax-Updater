@@ -155,4 +155,5 @@
   <data name="ProviderCheckCanceled"><value>Updateprüfung abgebrochen. Die erkannten Anwendungen bleiben verfügbar.</value></data>
   <data name="StatusStorePublicationPending"><value>Store-Veröffentlichung ausstehend</value></data>
   <data name="StorePublicationPendingMessage"><value>OpenAI kündigt {0} an. Microsoft Store veröffentlicht für dieses Paket derzeit {1}; installiert: {2}. Das neuere Paket ist im Store noch nicht verfügbar. Prüfen Sie nach der Veröffentlichung erneut.</value></data>
+  <data name="StorePublishedUpdateAvailableMessage"><value>Microsoft Store bietet {0} für das installierte Paket an. OpenAI kündigt bereits {1} an. NaxUpdater installiert das verfügbare Store-Update und prüft anschließend die installierte Version. Die spätere Ankündigung blockiert dieses Update nicht.</value></data>
 </root>

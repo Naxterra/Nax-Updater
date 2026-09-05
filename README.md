@@ -33,6 +33,9 @@ The inventory engine:
 
 The current implementation includes:
 
+- selects the newest applicable published Store package independently of a later publisher announcement: a published intermediate ChatGPT build remains installable while the next build is still rolling out;
+- uses Windows' native Store update service when the WinGet Store catalog cannot resolve that offer; detection and preparation request a paused offer, while only the approved Apply step starts deployment;
+- revalidates the Store product, SKU, package family, architecture and published target before applying, waits for Store completion/error, and independently rereads the installed package version before reporting success. Windows Store owns the actual deployment and may serve a newer build; the published target is the minimum required installed version;
 - driver transaction identity based on present PnP devices rather than the replaceable INF name/version; recovery reads installed driver state locally and normalizes NVIDIA's Windows driver version to its public release number;
 - migration of older driver journals only when a unique matching live device can be established; a failed verification reports an affected operation without disabling unrelated application updates;
 - background provider discovery and catalog access, per-provider deadlines, a catalog-refresh deadline, progress counts and a cancel action, so slow native or network checks cannot hold the WinUI thread;
@@ -190,7 +193,7 @@ From this directory:
 dotnet build NaxUpdater.slnx
 dotnet run --project tests/NaxUpdater.Core.SmokeTests/NaxUpdater.Core.SmokeTests.csproj
 dotnet publish src/NaxUpdater/NaxUpdater.csproj -c Release -r win-x64 --self-contained true -o artifacts/NaxUpdater-win-x64
-./scripts/package-release.ps1 -Version 0.16.6
+./scripts/package-release.ps1 -Version 0.16.7
 ```
 
 The desktop project uses .NET 11, WinUI 3, and the Windows App SDK. It is not an Electron or WebView application.

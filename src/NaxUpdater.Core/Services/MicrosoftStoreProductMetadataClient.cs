@@ -1,11 +1,66 @@
 using System.Globalization;
 using System.Text.Json;
+using NaxUpdater.Core.Models;
 
 namespace NaxUpdater.Core.Services;
 
 internal sealed class MicrosoftStoreProductMetadataClient(HttpClient httpClient)
 {
     private static readonly Uri CatalogBaseUri = new("https://displaycatalog.mp.microsoft.com/v7.0/products/");
+
+    public async Task<PublishedStorePackage?> GetPublishedPackageAsync(
+        string productId, string family, string? architecture, string? installedVersion, CancellationToken token)
+    {
+        var market = RegionInfo.CurrentRegion.TwoLetterISORegionName;
+        var uri = new Uri(CatalogBaseUri, $"{Uri.EscapeDataString(productId)}?market={market}&languages={CultureInfo.CurrentUICulture.Name}");
+        using var response = await httpClient.GetAsync(uri, token);
+        response.EnsureSuccessStatusCode();
+        var finalUri = response.RequestMessage?.RequestUri ?? uri;
+        if (finalUri.Scheme != Uri.UriSchemeHttps || !finalUri.Host.Equals(CatalogBaseUri.Host, StringComparison.OrdinalIgnoreCase))
+            throw new InvalidOperationException("Store package metadata redirected outside the official HTTPS catalog.");
+        using var document = await JsonDocument.ParseAsync(await response.Content.ReadAsStreamAsync(token), cancellationToken: token);
+        return ParsePublishedPackage(document.RootElement, productId, family, architecture, installedVersion);
+    }
+
+    internal static PublishedStorePackage? ParsePublishedPackage(
+        JsonElement root, string productId, string family, string? architecture, string? installedVersion)
+    {
+        if (!TryGet(root, "Product", out var product) ||
+            TryGetString(product, "ProductId", out var returnedId) && returnedId != productId ||
+            !TryGet(product, "DisplaySkuAvailabilities", out var skus) || skus.ValueKind != JsonValueKind.Array)
+            return null;
+        var requested = NormalizeArchitecture(architecture);
+        if (requested is null) return null;
+        var candidates = new List<PublishedStorePackage>();
+        foreach (var entry in skus.EnumerateArray())
+        {
+            if (!TryGet(entry, "Sku", out var sku) || !TryGetString(sku, "SkuId", out var skuId) ||
+                !TryGet(sku, "Properties", out var properties) || !TryGet(properties, "Packages", out var packages) ||
+                packages.ValueKind != JsonValueKind.Array) continue;
+            foreach (var package in packages.EnumerateArray())
+            {
+                if (!TryGetString(package, "PackageFamilyName", out var packageFamily) || packageFamily != family ||
+                    IsEncryptedPackage(package) || !PackageSupportsArchitecture(package, requested) ||
+                    !TryReadVersion(package, family, out var version) ||
+                    !TryGetString(package, "PackageFullName", out var fullName) ||
+                    !PackageIdentityMatches(fullName, family, requested, version)) continue;
+                if (Version.TryParse(installedVersion, out var installed) && version.Major != installed.Major) continue;
+                candidates.Add(new(productId, skuId, family, version.ToString(4), fullName, requested));
+            }
+        }
+        return candidates.OrderByDescending(static item => item.Version, Comparer<string>.Create(VersionOrder.Compare))
+            .ThenBy(static item => item.SkuId, StringComparer.Ordinal).FirstOrDefault();
+    }
+
+    private static bool PackageIdentityMatches(string fullName, string family, string architecture, Version version)
+    {
+        var parts = fullName.Split('_');
+        return parts.Length == 5 &&
+            $"{parts[0]}_{parts[4]}".Equals(family, StringComparison.OrdinalIgnoreCase) &&
+            Version.TryParse(parts[1], out var identityVersion) && identityVersion == version &&
+            NormalizeArchitecture(parts[2]) is { } identityArchitecture &&
+            (identityArchitecture == architecture || identityArchitecture == "neutral");
+    }
 
     public async Task<string?> GetLatestPackageVersionAsync(
         string productId,
@@ -20,7 +75,7 @@ internal sealed class MicrosoftStoreProductMetadataClient(HttpClient httpClient)
             CatalogBaseUri,
             $"{Uri.EscapeDataString(productId)}?market={Uri.EscapeDataString(market)}&languages={Uri.EscapeDataString(language)}");
         using var request = new HttpRequestMessage(HttpMethod.Get, uri);
-        request.Headers.UserAgent.ParseAdd("NaxUpdater/0.16.6");
+        request.Headers.UserAgent.ParseAdd("NaxUpdater/0.16.7");
         using var response = await httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
         response.EnsureSuccessStatusCode();
         await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);

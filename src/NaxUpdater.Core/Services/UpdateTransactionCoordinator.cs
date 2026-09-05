@@ -28,7 +28,8 @@ public sealed record PreparedUpdateExecution(
     string? CleanupDirectory,
     string? ContentSha256,
     IReadOnlyList<PreparedContentLock>? ContentLocks = null,
-    PreparedCatalogUpdate? CatalogUpdate = null);
+    PreparedCatalogUpdate? CatalogUpdate = null,
+    PreparedNativeStoreUpdate? NativeStoreUpdate = null);
 
 public sealed record PreparedContentLock(string Path, FileStream Stream) : IDisposable
 {
@@ -494,6 +495,11 @@ public static class UpdatePlanValidator
                 plan.WingetTarget.SourceId != WingetPackageService.OfficialSourceId ||
                 plan.WingetTarget.Version != update.AvailableVersion
                 => "The WinGet update plan does not contain the approved official package and version.",
+            UpdateExecutionKind.NativeStorePackage when plan.NativeStoreTarget is null ||
+                plan.NativeStoreTarget.Version != update.AvailableVersion ||
+                plan.NativeStoreTarget.PackageFamilyName != plan.StorePackageFamilyName ||
+                plan.NativeStoreTarget.ProductId != plan.StoreProductId
+                => "The native Store plan does not identify the approved package and version.",
             _ => null
         };
     }

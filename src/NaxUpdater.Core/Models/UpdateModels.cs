@@ -29,7 +29,8 @@ public enum UpdateExecutionKind
     DownloadedZipDriver,
     NativeCommand,
     StorePackage,
-    WingetPackage
+    WingetPackage,
+    NativeStorePackage
 }
 
 public enum UpdateProviderAuthority
@@ -136,7 +137,12 @@ public sealed record UpdateExecutionPlan(
     string? InstalledVersionPrecondition = null,
     Guid CheckGenerationId = default,
     IReadOnlyList<string>? RunningExecutablePaths = null,
-    WingetUpdateTarget? WingetTarget = null);
+    WingetUpdateTarget? WingetTarget = null,
+    PublishedStorePackage? NativeStoreTarget = null);
+
+public sealed record PublishedStorePackage(
+    string ProductId, string SkuId, string PackageFamilyName,
+    string Version, string PackageFullName, string Architecture);
 
 public sealed record WingetUpdateTarget(
     string PackageId,
@@ -171,7 +177,8 @@ public sealed record UpdateCheckResult(
     UpdateApplicability Applicability = UpdateApplicability.Applicable,
     string? CorrelationKey = null,
     UpdateAvailabilityReason AvailabilityReason = UpdateAvailabilityReason.None,
-    string? PublishedPackageVersion = null)
+    string? PublishedPackageVersion = null,
+    string? AnnouncedVersion = null)
 {
     public bool IsInstallable => ExecutionPlan is not null &&
                                  Status == UpdateStatus.Available &&

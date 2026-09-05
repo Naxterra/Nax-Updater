@@ -12,14 +12,17 @@ public sealed class UpdateExecutionService
     private readonly IStorePackageDeploymentService _storePackageDeploymentService;
     private readonly IAuthenticodeVerifier _authenticodeVerifier;
     private readonly IWingetPackageService _wingetPackages;
+    private readonly INativeStoreUpdateService _nativeStore;
 
     public UpdateExecutionService(
         IAuthenticodeVerifier? authenticodeVerifier = null,
         IStorePackageDeploymentService? storePackageDeploymentService = null,
-        IWingetPackageService? wingetPackageService = null)
+        IWingetPackageService? wingetPackageService = null,
+        INativeStoreUpdateService? nativeStoreService = null)
     {
         _authenticodeVerifier = authenticodeVerifier ?? new NativeAuthenticodeVerifier();
         _wingetPackages = wingetPackageService ?? new WingetPackageService();
+        _nativeStore = nativeStoreService ?? new NativeStoreUpdateService();
         _storePackageDeploymentService = storePackageDeploymentService ?? new StorePackageDeploymentService();
     }
 
@@ -183,6 +186,12 @@ public sealed class UpdateExecutionService
         CancellationToken cancellationToken = default)
     {
         var plan = update.ExecutionPlan ?? throw new InvalidOperationException("The update has no execution plan.");
+        if (plan.Kind == UpdateExecutionKind.NativeStorePackage)
+        {
+            var prepared = await _nativeStore.PrepareAsync(
+                plan.NativeStoreTarget ?? throw new InvalidOperationException("The Store package target is missing."), cancellationToken);
+            return new PreparedUpdateExecution(null, null, null, null, null, NativeStoreUpdate: prepared);
+        }
         if (plan.Kind == UpdateExecutionKind.WingetPackage)
         {
             var package = await _wingetPackages.PrepareAsync(update, cancellationToken);
@@ -367,6 +376,12 @@ public sealed class UpdateExecutionService
                 cancellationToken);
         }
 
+        if (plan.Kind == UpdateExecutionKind.NativeStorePackage)
+        {
+            if (prepared.NativeStoreUpdate is null || prepared.NativeStoreUpdate.Target != plan.NativeStoreTarget)
+                throw new InvalidOperationException("The prepared native Store package does not match the approved target.");
+            return await prepared.NativeStoreUpdate.ApplyAsync(cancellationToken);
+        }
         if (plan.Kind == UpdateExecutionKind.WingetPackage)
         {
             cancellationToken.ThrowIfCancellationRequested();

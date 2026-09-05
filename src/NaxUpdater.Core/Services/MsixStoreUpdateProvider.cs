@@ -15,13 +15,16 @@ public sealed class MsixStoreUpdateProvider : IUpdateProvider
 
     private readonly IStorePackageDeploymentService _store;
     private readonly HttpClient _httpClient;
+    private readonly INativeStoreUpdateService? _nativeStore;
 
     public MsixStoreUpdateProvider(
         HttpClient? httpClient = null,
-        IStorePackageDeploymentService? store = null)
+        IStorePackageDeploymentService? store = null,
+        INativeStoreUpdateService? nativeStore = null)
     {
         _httpClient = httpClient ?? SharedHttpClient;
         _store = store ?? new StorePackageDeploymentService(_httpClient);
+        _nativeStore = nativeStore ?? (store is null ? new NativeStoreUpdateService(_httpClient) : null);
     }
 
     public string Id => "msix-store";
@@ -115,106 +118,88 @@ public sealed class MsixStoreUpdateProvider : IUpdateProvider
             }
 
             var manifestNewer = VersionOrder.Compare(manifest.BuildVersion, application.NormalizedVersion) > 0;
-            var storeAvailability = await _store.CheckForUpdateAsync(
-                packageFamily,
-                application.DisplayName,
-                application.Publisher,
-                application.NormalizedVersion,
-                PackageArchitecture(application),
-                cancellationToken);
-            var storeApplicable = storeAvailability is
-            {
-                IsResolved: true,
-                IsUpdateAvailable: true,
-                ProductId: not null
-            };
-            var storeProductMismatch = storeApplicable &&
-                                       !storeAvailability.ProductId!.Equals(manifest.StoreProductId, StringComparison.Ordinal);
-            var storeTargetNewer = storeApplicable &&
-                                   !string.IsNullOrWhiteSpace(storeAvailability.AvailableVersion) &&
-                                   VersionOrder.Compare(storeAvailability.AvailableVersion, application.NormalizedVersion) > 0;
-            var processBindings = ChatGptProcessBindings(application);
-            var plan = storeTargetNewer && !storeProductMismatch
-                ? new UpdateExecutionPlan(
-                    UpdateExecutionKind.StorePackage,
-                    null,
-                    null,
-                    null,
-                    "Microsoft Store",
-                    null,
-                    [],
-                    false,
-                    [],
-                    processBindings.Names,
-                    StoreProductId: storeAvailability!.ProductId,
-                    StorePackageFamilyName: packageFamily,
-                    StorePublisher: application.Publisher,
-                    RunningExecutablePaths: processBindings.Paths)
+            var storeAvailability = await _store.CheckForUpdateAsync(packageFamily, application.DisplayName,
+                application.Publisher, application.NormalizedVersion, PackageArchitecture(application), cancellationToken);
+            var storeApplicable = storeAvailability is { IsResolved: true, IsUpdateAvailable: true, ProductId: not null };
+            var storeProductMismatch = storeApplicable && storeAvailability.ProductId != manifest.StoreProductId;
+            var storeTargetNewer = storeApplicable && !string.IsNullOrWhiteSpace(storeAvailability.AvailableVersion) &&
+                VersionOrder.Compare(storeAvailability.AvailableVersion, application.NormalizedVersion) > 0;
+            var bindings = ChatGptProcessBindings(application);
+            UpdateExecutionPlan? plan = storeTargetNewer && !storeProductMismatch
+                ? new(UpdateExecutionKind.StorePackage, null, null, null, "Microsoft Store", null, [], false, [],
+                    bindings.Names, StoreProductId: storeAvailability.ProductId, StorePackageFamilyName: packageFamily,
+                    StorePublisher: application.Publisher, RunningExecutablePaths: bindings.Paths)
                 : null;
-            var status = storeProductMismatch
-                ? UpdateStatus.Error
-                : plan is not null
-                    ? UpdateStatus.Available
-                    : manifestNewer
-                        ? UpdateStatus.NewerReleaseKnown
-                        : storeApplicable && string.IsNullOrWhiteSpace(storeAvailability.AvailableVersion)
-                            ? UpdateStatus.Error
-                            : UpdateStatus.Current;
-            var applicability = plan is not null
-                ? UpdateApplicability.Applicable
-                : status == UpdateStatus.Current
-                    ? UpdateApplicability.NotRequired
-                    : storeAvailability.IsResolved
-                        ? UpdateApplicability.NotApplicable
-                        : UpdateApplicability.Unknown;
-            var availableVersion = plan is not null
-                ? storeAvailability.AvailableVersion
-                : manifestNewer
-                    ? manifest.BuildVersion
-                    : null;
+            string? targetVersion = plan is null ? null : storeAvailability.AvailableVersion;
             string? publishedVersion = null;
-            if (manifestNewer && plan is null && !storeProductMismatch)
+            string? nativeError = null;
+            if (plan is null && !storeProductMismatch)
             {
+                var metadata = new MicrosoftStoreProductMetadataClient(_httpClient);
                 try
                 {
-                    publishedVersion = await new MicrosoftStoreProductMetadataClient(_httpClient).GetLatestPackageVersionAsync(
-                        manifest.StoreProductId, packageFamily, PackageArchitecture(application),
-                        application.NormalizedVersion, cancellationToken);
+                    publishedVersion = await metadata.GetLatestPackageVersionAsync(manifest.StoreProductId, packageFamily,
+                        PackageArchitecture(application), application.NormalizedVersion, cancellationToken);
+                    if (_nativeStore is not null && !string.IsNullOrWhiteSpace(publishedVersion) &&
+                        VersionOrder.Compare(publishedVersion, application.NormalizedVersion) > 0)
+                    {
+                        var package = await metadata.GetPublishedPackageAsync(manifest.StoreProductId, packageFamily,
+                            PackageArchitecture(application), application.NormalizedVersion, cancellationToken);
+                        if (package is not null)
+                        {
+                            publishedVersion = package.Version;
+                            var offer = await _nativeStore.CheckAsync(package, cancellationToken);
+                            if (offer.IsAvailable)
+                            {
+                                targetVersion = package.Version;
+                                plan = new(UpdateExecutionKind.NativeStorePackage, null, null, null, "Microsoft Store", null,
+                                    [], false, [], bindings.Names, StoreProductId: package.ProductId,
+                                    StorePackageFamilyName: packageFamily, StorePublisher: application.Publisher,
+                                    RunningExecutablePaths: bindings.Paths, NativeStoreTarget: package);
+                            }
+                            else nativeError = offer.Error;
+                        }
+                        else nativeError = "The published Store package could not be matched to the installed architecture.";
+                    }
                 }
                 catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
-                catch { /* Optional rollout evidence must not hide the publisher's announcement. */ }
+                catch (Exception exception) { nativeError = exception.Message; }
             }
-            var awaitingPublication = publishedVersion is not null &&
-                VersionOrder.Compare(publishedVersion, manifest.BuildVersion) < 0;
+
+            var publishedNewer = !string.IsNullOrWhiteSpace(publishedVersion) &&
+                VersionOrder.Compare(publishedVersion, application.NormalizedVersion) > 0;
+            // Waiting for a later announcement must never hide an already published upgrade.
+            var awaitingPublication = plan is null && manifestNewer && !publishedNewer &&
+                publishedVersion is not null && VersionOrder.Compare(publishedVersion, manifest.BuildVersion) < 0;
+            var status = storeProductMismatch ? UpdateStatus.Error :
+                plan is not null ? UpdateStatus.Available :
+                publishedNewer && nativeError is not null ? UpdateStatus.Error :
+                manifestNewer || publishedNewer ? UpdateStatus.NewerReleaseKnown :
+                storeApplicable && string.IsNullOrWhiteSpace(storeAvailability.AvailableVersion) ? UpdateStatus.Error :
+                UpdateStatus.Current;
+            var availableVersion = targetVersion ?? (publishedNewer ? publishedVersion : manifestNewer ? manifest.BuildVersion : null);
             var message = storeProductMismatch
-                ? $"Microsoft Store resolved product {storeAvailability.ProductId}, but OpenAI's official release identity requires {manifest.StoreProductId}. Installation is blocked."
+                ? $"Microsoft Store resolved {storeAvailability.ProductId}, but OpenAI identifies {manifest.StoreProductId}."
                 : plan is not null
-                    ? $"Microsoft Store confirms that build {storeAvailability.AvailableVersion} is applicable to this exact ChatGPT package family."
-                    : awaitingPublication
-                        ? $"OpenAI announces {manifest.BuildVersion}, but Microsoft Store currently publishes {publishedVersion} for this package. The newer Store package has not been published yet."
-                    : manifestNewer
-                        ? "OpenAI reports a newer build, but Microsoft Store does not currently offer a version-bound update to this exact package family."
-                        : status == UpdateStatus.Error
-                            ? "Microsoft Store reports an applicable update but did not expose a target package version; installation is blocked."
-                            : "OpenAI's official manifest and Microsoft Store report that this package is current.";
+                    ? $"Microsoft Store offers {targetVersion} for this installation. OpenAI's latest announcement is {manifest.BuildVersion}."
+                : awaitingPublication
+                    ? $"OpenAI announces {manifest.BuildVersion}; Microsoft Store currently publishes {publishedVersion}, which is not newer than the installed package."
+                : nativeError is not null && publishedNewer
+                    ? $"Microsoft publishes {publishedVersion}, but the native Store update check failed: {nativeError}"
+                : manifestNewer
+                    ? "OpenAI reports a newer build, but Windows Store has not returned an applicable package update."
+                : "OpenAI and Microsoft Store report no newer applicable package.";
             return new UpdateCheckResult(
-                application.Identity,
-                application.DisplayName,
-                application.NormalizedVersion,
-                availableVersion,
-                status,
-                "openai-codex-store",
-                "OpenAI update manifest + Microsoft Store",
-                "application-managed",
-                "Preserved by Microsoft Store/MSIX package",
-                "provider-selected",
-                "stable",
-                OpenAiUpdateManifestUri.ToString(),
-                message,
-                plan,
-                Applicability: applicability,
+                application.Identity, application.DisplayName, application.NormalizedVersion, availableVersion,
+                status, "openai-codex-store", "OpenAI update manifest + Microsoft Store",
+                "application-managed", "Preserved by Microsoft Store/MSIX package", "provider-selected", "stable",
+                OpenAiUpdateManifestUri.ToString(), message, plan,
+                Applicability: plan is not null ? UpdateApplicability.Applicable :
+                    status == UpdateStatus.Current ? UpdateApplicability.NotRequired :
+                    status == UpdateStatus.Error ? UpdateApplicability.Unknown : UpdateApplicability.NotApplicable,
                 AvailabilityReason: awaitingPublication ? UpdateAvailabilityReason.AwaitingStorePublication : UpdateAvailabilityReason.None,
-                PublishedPackageVersion: publishedVersion);
+                PublishedPackageVersion: publishedVersion,
+                AnnouncedVersion: manifest.BuildVersion);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -290,6 +275,12 @@ public sealed class MsixStoreUpdateProvider : IUpdateProvider
             "Codex",
             "bin")).TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar;
         AddPath("ChatGPT", application.PrimaryInstallPath, requireCodexRoot: false);
+        var packageDirectory = Path.GetDirectoryName(application.PrimaryInstallPath);
+        if (!string.IsNullOrWhiteSpace(packageDirectory))
+        {
+            var packagedCodex = Path.Combine(packageDirectory, "Codex.exe");
+            if (File.Exists(packagedCodex)) AddPath("Codex", packagedCodex, requireCodexRoot: false);
+        }
         try
         {
             if (Directory.Exists(codexRoot))
