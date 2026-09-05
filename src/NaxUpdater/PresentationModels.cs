@@ -187,7 +187,7 @@ public sealed class UpdateRow
     public string PlatformDetail => LocalizationService.Format("PlatformDetailFormat", LocalizationService.PlatformValue(Source.Architecture), LocalizationService.PlatformValue(Source.Channel));
     public string SecurityDetail => Source.ExecutionPlan is null
         ? LocalizationService.Get("SecurityNoExternalInstaller")
-        : Source.ExecutionPlan.Kind == UpdateExecutionKind.StorePackage
+        : Source.ExecutionPlan.Kind is UpdateExecutionKind.StorePackage or UpdateExecutionKind.NativeStorePackage
             ? LocalizationService.Get("SecurityMicrosoftStoreIdentity")
         : Source.ExecutionPlan.Kind == UpdateExecutionKind.WingetPackage
             ? LocalizationService.Get("SecurityWingetProvider")

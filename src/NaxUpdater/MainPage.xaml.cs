@@ -1090,7 +1090,7 @@ public sealed partial class MainPage : Page
         }
         var queue = _allUpdates
             .Where(static row => row.CanInstall)
-            .OrderBy(static row => row.Source.ExecutionPlan?.Kind == UpdateExecutionKind.StorePackage ? 1 : 0)
+            .OrderBy(static row => row.Source.ExecutionPlan?.Kind is UpdateExecutionKind.StorePackage or UpdateExecutionKind.NativeStorePackage ? 1 : 0)
             .ThenBy(static row => row.Name, StringComparer.CurrentCultureIgnoreCase)
             .ToArray();
         if (queue.Length == 0)
@@ -1276,10 +1276,10 @@ public sealed partial class MainPage : Page
     {
         var verifiedUpdates = _allUpdates.Count(static row =>
             row.CanInstall && row.Source.Status == UpdateStatus.Available &&
-            row.Source.ExecutionPlan?.Kind != UpdateExecutionKind.StorePackage);
+            row.Source.ExecutionPlan?.Kind is not (UpdateExecutionKind.StorePackage or UpdateExecutionKind.NativeStorePackage));
         var storeActions = _allUpdates.Count(static row =>
             row.CanInstall && row.Source.Status == UpdateStatus.Available &&
-            row.Source.ExecutionPlan?.Kind == UpdateExecutionKind.StorePackage);
+            row.Source.ExecutionPlan?.Kind is UpdateExecutionKind.StorePackage or UpdateExecutionKind.NativeStorePackage);
         UpdateAllButton.Content = storeActions > 0
             ? LocalizationService.Format("UpdateAllCountWithStore", verifiedUpdates, storeActions)
             : LocalizationService.Format("UpdateAllCount", verifiedUpdates);

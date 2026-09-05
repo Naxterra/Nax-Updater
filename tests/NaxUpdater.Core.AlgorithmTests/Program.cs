@@ -5,6 +5,7 @@ using System.Net;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using Windows.ApplicationModel.Store.Preview.InstallControl;
 
 var checks = 0;
 void Assert(bool condition, string message) { checks++; if (!condition) throw new InvalidOperationException(message); }
@@ -259,6 +260,115 @@ try
             "OpenAI's announced build was not distinguished from the actual published Store package.");
         Assert(!rollout.IsInstallable, "An unpublished Store package was presented as installable.");
     }
+    var nativeTarget = new PublishedStorePackage("9PLM9XGG6VKS", "0010", "OpenAI.Codex_2p2nqsd0c76g0",
+        "26.901.5003.0", "OpenAI.Codex_26.901.5003.0_x64__2p2nqsd0c76g0", "x64");
+    var nativeClient = new FakeNativeStore(nativeTarget);
+    foreach (var inconsistentName in new[] {
+        "OpenAI.Codex_26.901.5003.0_arm64__2p2nqsd0c76g0",
+        "OpenAI.Codex_26.901.5003.0_x64__differentpublisher" })
+    {
+        using var invalidPackage = JsonDocument.Parse(JsonSerializer.Serialize(new
+        {
+            Product = new
+            {
+                ProductId = nativeTarget.ProductId,
+                DisplaySkuAvailabilities = new[] { new { Sku = new {
+                SkuId = "0010", Properties = new { Packages = new[] { new {
+                    PackageFamilyName = nativeTarget.PackageFamilyName, PackageFullName = inconsistentName, Architectures = new[]{"x64"}
+                } } } } } }
+            }
+        }));
+        Assert(MicrosoftStoreProductMetadataClient.ParsePublishedPackage(invalidPackage.RootElement,
+            nativeTarget.ProductId, nativeTarget.PackageFamilyName, "x64", "26.901.4073.0") is null,
+            "Conflicting package-full-name architecture or publisher was accepted.");
+    }
+    var nativeService = new NativeStoreUpdateService(nativeClient,
+        (p, t) => Task.FromResult<PublishedStorePackage?>(p), (_, _) => Task.CompletedTask);
+    using (var nativeMetadata = new HttpClient(new Handler(request =>
+        request.RequestUri!.Host == "persistent.oaistatic.com"
+        ? Json(new { schemaVersion = 1, buildVersion = "26.901.5280.0", storeProductId = "9PLM9XGG6VKS", packageIdentity = "OpenAI.Codex" })
+        : Json(new
+        {
+            Product = new
+            {
+                ProductId = "9PLM9XGG6VKS",
+                DisplaySkuAvailabilities = new[] {
+            new { Sku = new { SkuId = "0010", Properties = new { Packages = new[] {
+                new { PackageFamilyName = nativeTarget.PackageFamilyName, PackageFullName = nativeTarget.PackageFullName, Architectures = new[]{"x64"} },
+                new { PackageFamilyName = nativeTarget.PackageFamilyName, PackageFullName = "OpenAI.Codex_26.901.5280.0_arm64__2p2nqsd0c76g0", Architectures = new[]{"arm64"} }
+            } } } } }
+            }
+        }))))
+    {
+        var app = fixtureApp with
+        {
+            Identity = "msix:" + nativeTarget.PackageFamilyName,
+            DisplayName = "ChatGPT",
+            ManagementMode = ManagementMode.Msix,
+            InstalledVersion = "26.901.4073.0",
+            NormalizedVersion = "26.901.4073.0",
+            Evidence = [new(EvidenceKind.MsixPackage, "MSIX package architecture", "x64", true)]
+        };
+        var selected = (await new UpdateCheckService([new MsixStoreUpdateProvider(nativeMetadata, new NoStoreUpdate(), nativeService)])
+            .CheckAsync(Snapshot(app))).Results.Single();
+        Assert(selected.IsInstallable && selected.AvailableVersion == "26.901.5003.0" &&
+            selected.AnnouncedVersion == "26.901.5280.0", "A later announcement still hides an already published Store update.");
+        Assert(selected.AvailabilityReason == UpdateAvailabilityReason.None &&
+            selected.ExecutionPlan?.NativeStoreTarget == nativeTarget, "Published update selected the wrong architecture, SKU or availability reason.");
+        Assert(nativeClient.StartCount == 0 && !NativeStoreUpdateService.QueryOptions().AutomaticallyDownloadAndInstallUpdateIfFound,
+            "Checking for updates started a Store installation.");
+        Assert(NativeStoreUpdateService.QueryOptions(true).AutomaticallyDownloadAndInstallUpdateIfFound,
+            "Explicit apply cannot start the approved Store update.");
+        // Do not close any real package process while exercising the simulated apply boundary.
+        var approved = selected with { ExecutionPlan = selected.ExecutionPlan! with { RunningProcessNames = [], RunningExecutablePaths = [] } };
+        var nativeExecution = new UpdateExecutionService(nativeStoreService: nativeService);
+        var nativePrepared = await nativeExecution.PrepareAsync(approved, null);
+        Assert(nativeClient.StartCount == 0, "Preparing the native Store transaction started installation.");
+        var changed = approved with
+        {
+            ExecutionPlan = approved.ExecutionPlan! with
+            {
+                NativeStoreTarget = nativeTarget with { Version = "26.901.5280.0" }
+            }
+        };
+        try { await nativeExecution.ExecutePreparedAsync(changed, nativePrepared); Assert(false, "Changed Store target executed."); }
+        catch (InvalidOperationException) { Assert(nativeClient.StartCount == 0, "A changed target started installation."); }
+        var nativeBackend = new DefaultUpdateTransactionBackend(nativeExecution,
+            new UpdatePackageDownloader(downloadClient, new NativeAuthenticodeVerifier()),
+            (previous, t) => Task.FromResult<UpdateCheckResult?>(nativeClient.Completed
+                ? approved with { InstalledVersion = nativeTarget.Version, Status = UpdateStatus.Current, ExecutionPlan = null }
+                : approved));
+        var applied = await new UpdateTransactionCoordinator(nativeBackend).ApplyAsync(approved, fixture);
+        Assert(applied.IsSuccess && nativeClient.StartCount == 1 && nativeClient.PolledStates >= 3,
+            "Store apply did not wait for completion and verify the installed target.");
+        var drift = new NativeStoreUpdateService(new FakeNativeStore(nativeTarget),
+            (p, t) => Task.FromResult<PublishedStorePackage?>(p with { Version = "26.901.5280.0" }));
+        try { await drift.PrepareAsync(nativeTarget, CancellationToken.None); Assert(false, "Changed published package was accepted."); }
+        catch (InvalidOperationException) { Assert(true, "Published package drift blocked."); }
+        var wrongItem = new FakeNativeStore(nativeTarget with { PackageFamilyName = "Wrong.Package_family" });
+        var wrongService = new NativeStoreUpdateService(wrongItem, (p, t) => Task.FromResult<PublishedStorePackage?>(p));
+        Assert(!(await wrongService.CheckAsync(nativeTarget, CancellationToken.None)).IsAvailable && wrongItem.StartCount == 0,
+            "A different Store package family was accepted.");
+        foreach (var terminalState in new[] { AppInstallState.Error, AppInstallState.Canceled })
+        {
+            var failedClient = new FakeNativeStore(nativeTarget) { FinalState = terminalState };
+            var failedService = new NativeStoreUpdateService(failedClient,
+                (p, t) => Task.FromResult<PublishedStorePackage?>(p), (_, _) => Task.CompletedTask);
+            var failed = await (await failedService.PrepareAsync(nativeTarget, CancellationToken.None)).ApplyAsync(CancellationToken.None);
+            Assert(!failed.IsSuccess && failedClient.PolledStates >= 3,
+                $"Store {terminalState} was reported as a successful update.");
+        }
+        var unchangedClient = new FakeNativeStore(nativeTarget);
+        var unchangedService = new NativeStoreUpdateService(unchangedClient,
+            (p, t) => Task.FromResult<PublishedStorePackage?>(p), (_, _) => Task.CompletedTask);
+        var unchangedBackend = new DefaultUpdateTransactionBackend(new UpdateExecutionService(nativeStoreService: unchangedService),
+            new UpdatePackageDownloader(downloadClient, new NativeAuthenticodeVerifier()),
+            (previous, t) => Task.FromResult<UpdateCheckResult?>(approved));
+        var unverified = await new UpdateTransactionCoordinator(unchangedBackend, verificationAttempts: 1)
+            .ApplyAsync(approved, fixture);
+        Assert(!unverified.IsSuccess && unchangedClient.Completed,
+            "Store completion alone was accepted without observing the installed target version.");
+    }
     Console.WriteLine($"Algorithm regression tests passed: {checks} assertions. No real installers executed.");
 }
 finally { Directory.Delete(fixture, true); }
@@ -341,4 +451,27 @@ sealed class NoStoreUpdate : IStorePackageDeploymentService
         Task.FromResult<StoreCatalogIdentity?>(new("9PLM9XGG6VKS", name!, family, true));
     public Task<UpdateExecutionResult> InstallOrUpdateAsync(string id, string family, string? name, string? publisher,
         string version, CancellationToken token) => throw new InvalidOperationException("Read-only rollout check tried to install.");
+}
+sealed class FakeNativeStore(PublishedStorePackage package) : INativeStoreUpdateClient, INativeStoreUpdateItem
+{
+    public AppInstallState FinalState { get; init; } = AppInstallState.Completed;
+    public int StartCount { get; private set; }
+    public int PolledStates { get; private set; }
+    public bool Completed { get; private set; }
+    public string ProductId => package.ProductId;
+    public string PackageFamilyName => package.PackageFamilyName;
+    public Task<INativeStoreUpdateItem?> FindPausedUpdateAsync(PublishedStorePackage p, CancellationToken t) =>
+        Task.FromResult<INativeStoreUpdateItem?>(this);
+    public Task<INativeStoreUpdateItem?> StartUpdateAsync(PublishedStorePackage p, CancellationToken t)
+    {
+        StartCount++;
+        return Task.FromResult<INativeStoreUpdateItem?>(this);
+    }
+    public NativeStoreItemState Status()
+    {
+        if (StartCount == 0) return new(AppInstallState.ReadyToDownload);
+        PolledStates++;
+        Completed = PolledStates >= 3 && FinalState == AppInstallState.Completed;
+        return new(PolledStates == 1 ? AppInstallState.Downloading : PolledStates == 2 ? AppInstallState.Installing : FinalState);
+    }
 }

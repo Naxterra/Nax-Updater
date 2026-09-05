@@ -155,4 +155,5 @@
   <data name="ProviderCheckCanceled"><value>Update check canceled. Your installed application inventory is still available.</value></data>
   <data name="StatusStorePublicationPending"><value>Waiting for Store publication</value></data>
   <data name="StorePublicationPendingMessage"><value>OpenAI announces {0}. Microsoft Store currently publishes {1} for this package; installed: {2}. The newer package is not yet available from the Store. Check again after publication.</value></data>
+  <data name="StorePublishedUpdateAvailableMessage"><value>Microsoft Store offers {0} for your installed package. OpenAI's latest announcement is {1}. NaxUpdater will apply the available Store update and verify the installed version afterward; a later announcement does not block this update.</value></data>
 </root>

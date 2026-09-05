@@ -48,6 +48,9 @@ public static partial class LocalizationService
 
     public static string ProviderMessage(UpdateCheckResult update)
     {
+        if (update.ProviderId == "openai-codex-store" && update.Status == UpdateStatus.Available &&
+            update.PublishedPackageVersion is not null)
+            return Format("StorePublishedUpdateAvailableMessage", update.AvailableVersion, update.AnnouncedVersion ?? update.AvailableVersion);
         if (update.AvailabilityReason == UpdateAvailabilityReason.AwaitingStorePublication)
             return Format("StorePublicationPendingMessage", update.AvailableVersion, update.PublishedPackageVersion, update.InstalledVersion);
         if (update.Status is UpdateStatus.Error or UpdateStatus.NewerReleaseKnown)
