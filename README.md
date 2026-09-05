@@ -33,6 +33,7 @@ The inventory engine:
 
 The current implementation includes:
 
+- filters Store SKU candidates by current Windows fulfillment availability; redemption-only, purchase-only, console-only and inactive variants are not sent to the native update API, while valid full/trial update routes and their real failures remain visible;
 - checks all compatible, non-blocked sources and retains their individual outcomes; unimplemented owner adapters no longer suppress working sources, while explicit source/channel policies and higher-authority verification failures remain binding;
 - exact Microsoft Store package-family lookup followed by native applicability checks across the matching SKUs for Store apps generally, not just ChatGPT; same-version queue items never trigger a reinstall, and unverified/failed queries are not labelled current;
 - official same-major Macrium patch checks, manufacturer device checks for driver-package entries, and Firefox maintenance-component reconciliation with the checked Firefox installation;
@@ -203,7 +204,7 @@ From this directory:
 dotnet build NaxUpdater.slnx
 dotnet run --project tests/NaxUpdater.Core.SmokeTests/NaxUpdater.Core.SmokeTests.csproj
 dotnet publish src/NaxUpdater/NaxUpdater.csproj -c Release -r win-x64 --self-contained true -o artifacts/NaxUpdater-win-x64
-./scripts/package-release.ps1 -Version 0.16.10
+./scripts/package-release.ps1 -Version 0.16.11
 ```
 
 The desktop project uses .NET 11, WinUI 3, and the Windows App SDK. It is not an Electron or WebView application.
