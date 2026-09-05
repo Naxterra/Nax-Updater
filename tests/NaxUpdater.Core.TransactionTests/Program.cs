@@ -381,8 +381,9 @@ var releaseOnly = await new MsixStoreUpdateProvider(
     .CheckAsync(chatGpt, CancellationToken.None);
 Assert(releaseOnly is
 {
-    Status: UpdateStatus.NewerReleaseKnown,
-    Applicability: UpdateApplicability.NotApplicable,
+    Status: UpdateStatus.Current,
+    AvailableVersion: null,
+    Applicability: UpdateApplicability.NotRequired,
     ExecutionPlan: null
 }, "Release evidence was promoted to an installable ChatGPT update without applicability.");
 var releaseOnlyThroughSelection = await new UpdateCheckService([
@@ -393,8 +394,9 @@ var releaseOnlyThroughSelection = await new UpdateCheckService([
     .CheckAsync(new(DateTimeOffset.UtcNow, [chatGpt], [], []));
 Assert(releaseOnlyThroughSelection.Results.Single() is
 {
-    Status: UpdateStatus.NewerReleaseKnown,
-    Applicability: UpdateApplicability.NotApplicable,
+    Status: UpdateStatus.Current,
+    AvailableVersion: null,
+    Applicability: UpdateApplicability.NotRequired,
     ExecutionPlan: null
 }, "Provider selection erased ChatGPT's explicit not-applicable evidence.");
 var storeApplicable = await new MsixStoreUpdateProvider(
