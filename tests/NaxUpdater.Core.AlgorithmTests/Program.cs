@@ -266,9 +266,9 @@ try
         };
         var rollout = await new MsixStoreUpdateProvider(rolloutClient, new NoStoreUpdate())
             .CheckAsync(chatGpt, CancellationToken.None);
-        Assert(rollout.AvailabilityReason == UpdateAvailabilityReason.AwaitingStorePublication &&
-            rollout.PublishedPackageVersion == "26.901.4073.0" && rollout.AvailableVersion == "26.901.5003.0",
-            "OpenAI's announced build was not distinguished from the actual published Store package.");
+        Assert(rollout.AvailabilityReason == UpdateAvailabilityReason.NoApplicableStoreUpdate &&
+            rollout.Status == UpdateStatus.Current && rollout.AvailableVersion is null && rollout.AnnouncedVersion == "26.901.5003.0",
+            "An announcement without an applicable offer was displayed as an update.");
         Assert(!rollout.IsInstallable, "An unpublished Store package was presented as installable.");
     }
     var nativeTarget = new PublishedStorePackage("9PLM9XGG6VKS", "0010", "OpenAI.Codex_2p2nqsd0c76g0",
@@ -380,9 +380,18 @@ try
         var noOfferService = new NativeStoreUpdateService(noOfferClient, (p, t) => Task.FromResult<PublishedStorePackage?>(p));
         var awaitingOffer = await new MsixStoreUpdateProvider(nativeMetadata, new NoStoreUpdate(), noOfferService)
             .CheckAsync(app, CancellationToken.None);
-        Assert(awaitingOffer.Status == UpdateStatus.NewerReleaseKnown &&
-            awaitingOffer.AvailabilityReason == UpdateAvailabilityReason.AwaitingStoreOffer && !awaitingOffer.IsInstallable,
-            "A successful Store check with no applicable offer was reported as a failed check.");
+        Assert(awaitingOffer.Status == UpdateStatus.Current && awaitingOffer.AvailableVersion is null &&
+            awaitingOffer.AvailabilityReason == UpdateAvailabilityReason.NoApplicableStoreUpdate && !awaitingOffer.IsInstallable,
+            "A catalog-only build was displayed as an update for this installation.");
+        var noOfferCounts = new UpdateCheckSnapshot(DateTimeOffset.UtcNow, [awaitingOffer], 0);
+        Assert(noOfferCounts.KnownReleaseCount == 0 && noOfferCounts.InstallableUpdateCount == 0 &&
+            noOfferCounts.FailedCheckCount == 0 && noOfferCounts.CheckedVersionCount == 1,
+            "Catalog-only builds affected update or error counts.");
+        var failedNative = new NativeStoreUpdateService(new FakeNativeStore(nativeTarget with { PackageFamilyName = "Wrong_family" }),
+            (p, t) => Task.FromResult<PublishedStorePackage?>(p));
+        var failedOffer = await new MsixStoreUpdateProvider(nativeMetadata, new NoStoreUpdate(), failedNative).CheckAsync(app, CancellationToken.None);
+        Assert(failedOffer.Status == UpdateStatus.Error && failedOffer.AvailableVersion is null,
+            "A genuine native verification failure was hidden as no applicable update.");
         Assert(nativeClient.StartCount == 0 && !NativeStoreUpdateService.QueryOptions().AutomaticallyDownloadAndInstallUpdateIfFound,
             "Checking for updates started a Store installation.");
         Assert(NativeStoreUpdateService.QueryOptions(true).AutomaticallyDownloadAndInstallUpdateIfFound,

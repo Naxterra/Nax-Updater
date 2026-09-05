@@ -155,6 +155,8 @@
   <data name="ProviderCheckCanceled"><value>Updateprüfung abgebrochen. Die erkannten Anwendungen bleiben verfügbar.</value></data>
   <data name="StatusStorePublicationPending"><value>Store-Veröffentlichung ausstehend</value></data>
   <data name="StatusStoreOfferPending"><value>Store-Angebot ausstehend</value></data>
+  <data name="StatusNoApplicableStoreUpdate"><value>Kein anwendbares Update</value></data>
+  <data name="NoApplicableStoreUpdateMessage"><value>Der Windows Store meldet für diese Installation kein anwendbares Update. Versionsnummern aus Ankündigungen oder Katalogen werden ohne passendes Updateangebot nicht als verfügbare Updates angezeigt oder gezählt.</value></data>
   <data name="ProviderWsl"><value>Microsoft-WSL-Release + nativer Windows-Updater</value></data>
   <data name="StoreOfferPendingMessage"><value>Microsoft veröffentlicht {0}; installiert ist {1}. Der Windows Store liefert für diese Installation derzeit kein anwendbares Updateangebot. Die Katalogabfrage wurde abgeschlossen. Nach einer erneuten Prüfung wird ein verfügbares Angebot zur Installation freigegeben.</value></data>
   <data name="ProviderWslNote"><value>Die stabile WSL-Version wird direkt bei Microsoft auf GitHub geprüft. Die signierte Windows-Datei wsl.exe führt --update --web-download mit Administratorrechten aus. Linux-Distributionen werden weder abgemeldet noch neu installiert. Anschließend wird die installierte WSL-Version unabhängig geprüft. Microsoft kann eine neuere stabile Version bereitstellen.</value></data>

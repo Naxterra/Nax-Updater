@@ -117,7 +117,6 @@ public sealed class MsixStoreUpdateProvider : IUpdateProvider
                 return null;
             }
 
-            var manifestNewer = VersionOrder.Compare(manifest.BuildVersion, application.NormalizedVersion) > 0;
             var storeAvailability = await _store.CheckForUpdateAsync(packageFamily, application.DisplayName,
                 application.Publisher, application.NormalizedVersion, PackageArchitecture(application), cancellationToken);
             var storeApplicable = storeAvailability is { IsResolved: true, IsUpdateAvailable: true, ProductId: not null };
@@ -134,6 +133,7 @@ public sealed class MsixStoreUpdateProvider : IUpdateProvider
             string? publishedVersion = null;
             string? nativeError = null;
             var nativeCheckFailed = false;
+            var nativeOfferChecked = false;
             if (plan is null && !storeProductMismatch)
             {
                 var metadata = new MicrosoftStoreProductMetadataClient(_httpClient);
@@ -150,6 +150,7 @@ public sealed class MsixStoreUpdateProvider : IUpdateProvider
                         {
                             publishedVersion = package.Version;
                             var offer = await _nativeStore.CheckAsync(package, cancellationToken);
+                            nativeOfferChecked = true;
                             if (offer.IsAvailable)
                             {
                                 targetVersion = package.Version;
@@ -167,31 +168,21 @@ public sealed class MsixStoreUpdateProvider : IUpdateProvider
                 catch (Exception exception) { nativeError = exception.Message; nativeCheckFailed = true; }
             }
 
-            var publishedNewer = !string.IsNullOrWhiteSpace(publishedVersion) &&
-                VersionOrder.Compare(publishedVersion, application.NormalizedVersion) > 0;
-            // Waiting for a later announcement must never hide an already published upgrade.
-            var awaitingPublication = plan is null && manifestNewer && !publishedNewer &&
-                publishedVersion is not null && VersionOrder.Compare(publishedVersion, manifest.BuildVersion) < 0;
-            var status = storeProductMismatch ? UpdateStatus.Error :
+            // Announcement/catalog versions are evidence, not updates for this
+            // installation. Only a confirmed applicable offer supplies a target.
+            var status = storeProductMismatch || nativeCheckFailed ? UpdateStatus.Error :
                 plan is not null ? UpdateStatus.Available :
-                publishedNewer && nativeCheckFailed ? UpdateStatus.Error :
-                manifestNewer || publishedNewer ? UpdateStatus.NewerReleaseKnown :
                 storeApplicable && string.IsNullOrWhiteSpace(storeAvailability.AvailableVersion) ? UpdateStatus.Error :
-                UpdateStatus.Current;
-            var availableVersion = targetVersion ?? (publishedNewer ? publishedVersion : manifestNewer ? manifest.BuildVersion : null);
+                nativeOfferChecked || storeAvailability.IsResolved ? UpdateStatus.Current : UpdateStatus.ManagedExternally;
+            var availableVersion = plan is not null ? targetVersion : null;
             var message = storeProductMismatch
                 ? $"Microsoft Store resolved {storeAvailability.ProductId}, but OpenAI identifies {manifest.StoreProductId}."
                 : plan is not null
                     ? $"Microsoft Store offers {targetVersion} for this installation. OpenAI's latest announcement is {manifest.BuildVersion}."
-                : awaitingPublication
-                    ? $"OpenAI announces {manifest.BuildVersion}; Microsoft Store currently publishes {publishedVersion}, which is not newer than the installed package."
-                : nativeCheckFailed && publishedNewer
-                    ? $"Microsoft publishes {publishedVersion}, but the native Store update check failed: {nativeError}"
-                : publishedNewer
-                    ? $"Microsoft publishes {publishedVersion}, but Windows Store has not returned an applicable offer for this installation. Installed: {application.NormalizedVersion}."
-                : manifestNewer
-                    ? "OpenAI reports a newer build, but Windows Store has not returned an applicable package update."
-                : "OpenAI and Microsoft Store report no newer applicable package.";
+                : nativeCheckFailed ? $"The Store update check failed: {nativeError}"
+                : status == UpdateStatus.Current ? "Windows Store returned no applicable update for this installation. Catalog-only versions are not counted as updates."
+                : status == UpdateStatus.Error ? "Windows Store returned an update without a verifiable target version."
+                : "An applicable Store update could not be determined for this installation.";
             return new UpdateCheckResult(
                 application.Identity, application.DisplayName, application.NormalizedVersion, availableVersion,
                 status, "openai-codex-store", "OpenAI update manifest + Microsoft Store",
@@ -200,8 +191,7 @@ public sealed class MsixStoreUpdateProvider : IUpdateProvider
                 Applicability: plan is not null ? UpdateApplicability.Applicable :
                     status == UpdateStatus.Current ? UpdateApplicability.NotRequired :
                     status == UpdateStatus.Error ? UpdateApplicability.Unknown : UpdateApplicability.NotApplicable,
-                AvailabilityReason: awaitingPublication ? UpdateAvailabilityReason.AwaitingStorePublication :
-                    plan is null && publishedNewer && !nativeCheckFailed && !storeProductMismatch ? UpdateAvailabilityReason.AwaitingStoreOffer : UpdateAvailabilityReason.None,
+                AvailabilityReason: status == UpdateStatus.Current ? UpdateAvailabilityReason.NoApplicableStoreUpdate : UpdateAvailabilityReason.None,
                 PublishedPackageVersion: publishedVersion,
                 AnnouncedVersion: manifest.BuildVersion);
         }

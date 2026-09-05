@@ -170,13 +170,15 @@ public sealed class UpdateRow
     public string Status => Source.Status switch
     {
         UpdateStatus.Available => LocalizationService.Get("StatusUpdateAvailable"),
+        UpdateStatus.Current when Source.AvailabilityReason == UpdateAvailabilityReason.NoApplicableStoreUpdate =>
+            LocalizationService.Get("StatusNoApplicableStoreUpdate"),
         UpdateStatus.NewerReleaseKnown when Source.AvailabilityReason == UpdateAvailabilityReason.AwaitingStorePublication =>
             LocalizationService.Get("StatusStorePublicationPending"),
         UpdateStatus.NewerReleaseKnown when Source.AvailabilityReason == UpdateAvailabilityReason.AwaitingStoreOffer =>
             LocalizationService.Get("StatusStoreOfferPending"),
         UpdateStatus.NewerReleaseKnown => LocalizationService.Get("StatusNewerReleaseKnown"),
         UpdateStatus.Current => LocalizationService.Get("StatusCurrent"),
-        UpdateStatus.ManagedExternally when Source.ProviderId == "msix-store" => LocalizationService.Get("StatusStoreManaged"),
+        UpdateStatus.ManagedExternally when Source.ProviderId is "msix-store" or "openai-codex-store" => LocalizationService.Get("StatusStoreManaged"),
         UpdateStatus.ManagedExternally => LocalizationService.Get("StatusNativeUpdater"),
         UpdateStatus.Unsupported => LocalizationService.Get("StatusUnsupported"),
         UpdateStatus.Error => LocalizationService.Get("StatusCheckFailed"),

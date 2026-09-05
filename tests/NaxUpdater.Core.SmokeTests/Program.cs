@@ -1266,9 +1266,9 @@ if (installedChatGpt is not null)
     Assert(releaseOnlyAssessment is
     {
         ProviderId: "openai-codex-store",
-        Status: UpdateStatus.NewerReleaseKnown,
-        AvailableVersion: "26.901.1978.0",
-        Applicability: UpdateApplicability.NotApplicable,
+        Status: UpdateStatus.Current,
+        AvailableVersion: null,
+        Applicability: UpdateApplicability.NotRequired,
         ExecutionPlan: null
     } && !releaseOnlyAssessment.IsInstallable,
         "OpenAI release evidence was incorrectly promoted to an applicable update without a fulfillment route.");
