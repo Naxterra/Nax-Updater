@@ -7,7 +7,8 @@ public enum UpdateStatus
     NewerReleaseKnown,
     ManagedExternally,
     Unsupported,
-    Error
+    Error,
+    StoreQueued
 }
 
 public enum UpdateApplicability
@@ -18,7 +19,7 @@ public enum UpdateApplicability
     NotApplicable
 }
 
-public enum UpdateAvailabilityReason { None, AwaitingStorePublication, AwaitingStoreOffer, NoApplicableStoreUpdate }
+public enum UpdateAvailabilityReason { None, AwaitingStorePublication, AwaitingStoreOffer, NoApplicableStoreUpdate, StoreQueued, StoreUpdating, StorePaused }
 public sealed record UpdateCheckProgress(int Completed, int Total, string Phase, string? ApplicationName);
 
 public enum UpdateExecutionKind
@@ -30,7 +31,8 @@ public enum UpdateExecutionKind
     NativeCommand,
     StorePackage,
     WingetPackage,
-    NativeStorePackage
+    NativeStorePackage,
+    NativeStoreQueue
 }
 
 public enum UpdateProviderAuthority
@@ -51,7 +53,8 @@ public sealed record UpdateProviderDescriptor(
 
 public enum UpdateProcessPolicy
 {
-    CloseBeforeApply
+    CloseBeforeApply,
+    PlatformManaged
 }
 
 public enum UpdateTransactionStage
@@ -108,7 +111,9 @@ public sealed record UpdateOperationRecord(
     UpdateTransactionStage Stage,
     DateTimeOffset StartedAt,
     DateTimeOffset UpdatedAt,
-    string? Error = null);
+    string? Error = null,
+    UpdateExecutionKind? ExecutionKind = null,
+    StoreQueueTarget? StoreQueueTarget = null);
 
 public sealed record UpdateExecutionPlan(
     UpdateExecutionKind Kind,
@@ -138,7 +143,10 @@ public sealed record UpdateExecutionPlan(
     Guid CheckGenerationId = default,
     IReadOnlyList<string>? RunningExecutablePaths = null,
     WingetUpdateTarget? WingetTarget = null,
-    PublishedStorePackage? NativeStoreTarget = null);
+    PublishedStorePackage? NativeStoreTarget = null,
+    StoreQueueTarget? StoreQueueTarget = null);
+
+public sealed record StoreQueueTarget(string ProductId, string PackageFamilyName, string InstalledVersion);
 
 public sealed record PublishedStorePackage(
     string ProductId, string SkuId, string PackageFamilyName,
@@ -150,7 +158,8 @@ public sealed record StoreProductIdentity(string ProductId, string SkuId, string
 }
 public sealed record StoreProductMatch(StoreProductIdentity Identity, PublishedStorePackage? PublishedPackage,
     IReadOnlyList<StoreProductIdentity>? AlternateIdentities = null);
-public sealed record UpdateSourceCheck(string ProviderId, string ProviderDisplayName, UpdateStatus Status, string? AvailableVersion, string? Message);
+public sealed record UpdateSourceCheck(string ProviderId, string ProviderDisplayName, UpdateStatus Status, string? AvailableVersion, string? Message,
+    double? ElapsedMilliseconds = null);
 
 public sealed record WingetUpdateTarget(
     string PackageId,
@@ -190,9 +199,10 @@ public sealed record UpdateCheckResult(
     IReadOnlyList<UpdateSourceCheck>? SourceChecks = null)
 {
     public bool IsInstallable => ExecutionPlan is not null &&
-                                 Status == UpdateStatus.Available &&
+                                 (Status == UpdateStatus.Available && !string.IsNullOrWhiteSpace(AvailableVersion) ||
+                                  Status == UpdateStatus.StoreQueued && ExecutionPlan is { Kind: UpdateExecutionKind.NativeStoreQueue, StoreQueueTarget: not null }) &&
                                  Applicability == UpdateApplicability.Applicable &&
-                                 !string.IsNullOrWhiteSpace(AvailableVersion);
+                                 (ExecutionPlan.Kind != UpdateExecutionKind.NativeStoreQueue || Status == UpdateStatus.StoreQueued);
 }
 
 public sealed record UpdateCheckSnapshot(
@@ -203,7 +213,9 @@ public sealed record UpdateCheckSnapshot(
 {
     public int CheckedVersionCount => Results.Count(static result =>
         result.Status is UpdateStatus.Current or UpdateStatus.Available or UpdateStatus.NewerReleaseKnown);
-    public int ManagedExternallyCount => Results.Count(static result => result.Status == UpdateStatus.ManagedExternally);
+    public int ManagedExternallyCount => Results.Count(static result => result.Status == UpdateStatus.ManagedExternally ||
+        result.Status == UpdateStatus.StoreQueued && !result.IsInstallable);
+    public int StoreQueueCount => Results.Count(static result => result.Status == UpdateStatus.StoreQueued);
     public int FailedCheckCount => Results.Count(static result => result.Status == UpdateStatus.Error);
     public int InstallableUpdateCount => Results.Count(static result => result.IsInstallable);
     public int KnownReleaseCount => Results.Count(static result => result.Status == UpdateStatus.NewerReleaseKnown);

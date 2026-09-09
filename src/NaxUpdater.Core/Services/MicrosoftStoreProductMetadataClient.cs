@@ -1,4 +1,6 @@
 using System.Globalization;
+using System.Collections.Concurrent;
+using System.Runtime.CompilerServices;
 using System.Text.Json;
 using NaxUpdater.Core.Models;
 
@@ -7,12 +9,15 @@ namespace NaxUpdater.Core.Services;
 internal sealed class MicrosoftStoreProductMetadataClient(HttpClient httpClient)
 {
     private static readonly Uri CatalogBaseUri = new("https://displaycatalog.mp.microsoft.com/v7.0/products/");
+    private static readonly ConditionalWeakTable<HttpClient, ConcurrentDictionary<string, CachedDocument>> Caches = new();
+    private sealed record CachedDocument(DateTimeOffset Expires, JsonElement Root);
 
     public async Task<StoreProductMatch?> ResolvePackageFamilyAsync(string family, string? architecture, string? installedVersion, CancellationToken token)
     {
         var suffix = $"&market={RegionInfo.CurrentRegion.TwoLetterISORegionName}&languages={CultureInfo.CurrentUICulture.Name}";
-        using var lookup = await ReadOfficialAsync(new Uri(CatalogBaseUri,
-            $"lookup?alternateId=PackageFamilyName&value={Uri.EscapeDataString(family)}{suffix}"), token);
+        var lookupUri = new Uri(CatalogBaseUri,
+            $"lookup?alternateId=PackageFamilyName&value={Uri.EscapeDataString(family)}&fieldsTemplate=InstallAgent{suffix}");
+        using var lookup = await ReadCachedLookupAsync(lookupUri, token);
         if (!lookup.RootElement.TryGetProperty("Products", out var products) || products.ValueKind != JsonValueKind.Array) return null;
         var ids = products.EnumerateArray().Where(p => p.TryGetProperty("ProductId", out _))
             .Select(p => p.GetProperty("ProductId").GetString()).Where(id => !string.IsNullOrWhiteSpace(id)).Distinct().ToArray();
@@ -20,7 +25,10 @@ internal sealed class MicrosoftStoreProductMetadataClient(HttpClient httpClient)
         var matches = new List<StoreProductMatch>();
         foreach (var id in ids)
         {
-            using var full = await ReadOfficialAsync(new Uri(CatalogBaseUri, $"{Uri.EscapeDataString(id!)}?{suffix[1..]}"), token);
+            var inline = products.EnumerateArray().First(p => p.GetProperty("ProductId").GetString() == id);
+            using var full = HasPackageMetadata(inline)
+                ? JsonDocument.Parse(JsonSerializer.Serialize(new { Product = inline }))
+                : await ReadOfficialAsync(new Uri(CatalogBaseUri, $"{Uri.EscapeDataString(id!)}?fieldsTemplate=InstallAgent{suffix}"), token);
             var identity = ParseIdentity(full.RootElement, id!, family, architecture);
             if (identity is not null)
             {
@@ -35,14 +43,42 @@ internal sealed class MicrosoftStoreProductMetadataClient(HttpClient httpClient)
         return matches.SingleOrDefault();
     }
 
+    private static bool HasPackageMetadata(JsonElement product) =>
+        TryGet(product, "DisplaySkuAvailabilities", out var entries) && entries.ValueKind == JsonValueKind.Array &&
+        entries.EnumerateArray().Any(e => TryGet(e, "Sku", out var sku) && TryGet(sku, "Properties", out var props) && TryGet(props, "Packages", out _));
+
+    private async Task<JsonDocument> ReadCachedLookupAsync(Uri uri, CancellationToken token)
+    {
+        var cache = Caches.GetValue(httpClient, _ => new());
+        if (cache.TryGetValue(uri.AbsoluteUri, out var cached) && cached.Expires > DateTimeOffset.UtcNow)
+            return JsonDocument.Parse(cached.Root.GetRawText());
+        using var fresh = await ReadOfficialAsync(uri, token);
+        // Cache only public routing metadata. Native eligibility is checked on
+        // every scan; any positive offer refreshes its target package separately.
+        cache[uri.AbsoluteUri] = new(DateTimeOffset.UtcNow.AddMinutes(2), fresh.RootElement.Clone());
+        return JsonDocument.Parse(fresh.RootElement.GetRawText());
+    }
+
     private async Task<JsonDocument> ReadOfficialAsync(Uri uri, CancellationToken token)
     {
-        using var response = await httpClient.GetAsync(uri, token);
-        response.EnsureSuccessStatusCode();
-        var final = response.RequestMessage?.RequestUri ?? uri;
-        if (final.Scheme != Uri.UriSchemeHttps || !final.Host.Equals(CatalogBaseUri.Host, StringComparison.OrdinalIgnoreCase))
-            throw new InvalidOperationException("Store metadata redirected outside the official catalog.");
-        return JsonDocument.Parse(await response.Content.ReadAsStringAsync(token));
+        for (var attempt = 0; ; attempt++)
+        {
+            using var deadline = CancellationTokenSource.CreateLinkedTokenSource(token);
+            deadline.CancelAfter(TimeSpan.FromSeconds(8));
+            try
+            {
+                using var response = await httpClient.GetAsync(uri, deadline.Token);
+                if (attempt == 0 && ((int)response.StatusCode >= 500 || response.StatusCode == System.Net.HttpStatusCode.RequestTimeout))
+                    continue;
+                response.EnsureSuccessStatusCode();
+                var final = response.RequestMessage?.RequestUri ?? uri;
+                if (final.Scheme != Uri.UriSchemeHttps || !final.Host.Equals(CatalogBaseUri.Host, StringComparison.OrdinalIgnoreCase))
+                    throw new InvalidOperationException("Store metadata redirected outside the official catalog.");
+                return JsonDocument.Parse(await response.Content.ReadAsStringAsync(deadline.Token));
+            }
+            catch (OperationCanceledException) when (!token.IsCancellationRequested && attempt == 0) { }
+            catch (HttpRequestException exception) when (attempt == 0 && exception.StatusCode is null) { }
+        }
     }
 
     internal static StoreProductIdentity? ParseIdentity(JsonElement root, string productId, string family, string? architecture, string? requestedSku = null)
@@ -97,12 +133,7 @@ internal sealed class MicrosoftStoreProductMetadataClient(HttpClient httpClient)
     {
         var market = RegionInfo.CurrentRegion.TwoLetterISORegionName;
         var uri = new Uri(CatalogBaseUri, $"{Uri.EscapeDataString(productId)}?market={market}&languages={CultureInfo.CurrentUICulture.Name}");
-        using var response = await httpClient.GetAsync(uri, token);
-        response.EnsureSuccessStatusCode();
-        var finalUri = response.RequestMessage?.RequestUri ?? uri;
-        if (finalUri.Scheme != Uri.UriSchemeHttps || !finalUri.Host.Equals(CatalogBaseUri.Host, StringComparison.OrdinalIgnoreCase))
-            throw new InvalidOperationException("Store package metadata redirected outside the official HTTPS catalog.");
-        using var document = await JsonDocument.ParseAsync(await response.Content.ReadAsStreamAsync(token), cancellationToken: token);
+        using var document = await ReadOfficialAsync(uri, token);
         return ParsePublishedPackage(document.RootElement, productId, family, architecture, installedVersion, skuId);
     }
 
@@ -165,7 +196,7 @@ internal sealed class MicrosoftStoreProductMetadataClient(HttpClient httpClient)
             CatalogBaseUri,
             $"{Uri.EscapeDataString(productId)}?market={Uri.EscapeDataString(market)}&languages={Uri.EscapeDataString(language)}");
         using var request = new HttpRequestMessage(HttpMethod.Get, uri);
-        request.Headers.UserAgent.ParseAdd("NaxUpdater/0.16.11");
+        request.Headers.UserAgent.ParseAdd("NaxUpdater/0.17.2");
         using var response = await httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
         response.EnsureSuccessStatusCode();
         await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);

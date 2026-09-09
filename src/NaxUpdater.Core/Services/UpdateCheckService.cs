@@ -6,6 +6,7 @@ public sealed class UpdateCheckService
 {
     private readonly IReadOnlyList<IUpdateProvider> _providers;
     private readonly SemaphoreSlim _checkSlots = new(16, 16);
+    private readonly SemaphoreSlim _storeCheckSlots = new(8, 8);
     private readonly TimeSpan _providerTimeout = TimeSpan.FromSeconds(45);
     private readonly TimeSpan _sourceTimeout = TimeSpan.FromSeconds(20);
     private readonly TimeSpan _sourceCheckTimeout = TimeSpan.FromSeconds(30);
@@ -85,7 +86,12 @@ public sealed class UpdateCheckService
         progress?.Report(new(0, applications.Length, "checks", null));
         async Task<UpdateCheckResult> CheckOneAsync(InstalledApplication application)
         {
-            await _checkSlots.WaitAsync(token);
+            // Admission time is not execution time. Limit Store families before
+            // starting the per-app/per-source budgets or occupying generic slots.
+            var store = application.ManagementMode == ManagementMode.Msix;
+            if (store) await _storeCheckSlots.WaitAsync(token);
+            try { await _checkSlots.WaitAsync(token); }
+            catch { if (store) _storeCheckSlots.Release(); throw; }
             using var checkCancellation = CancellationTokenSource.CreateLinkedTokenSource(token);
             Task<UpdateCheckResult>? task = null;
             try
@@ -113,6 +119,7 @@ public sealed class UpdateCheckService
             finally
             {
                 _checkSlots.Release();
+                if (store) _storeCheckSlots.Release();
                 progress?.Report(new(Interlocked.Increment(ref completed), applications.Length, "checks", application.DisplayName));
             }
         }
@@ -153,8 +160,12 @@ public sealed class UpdateCheckService
             provider.Descriptor.Specificity == selected.Descriptor.Specificity).ToArray();
         if (preferred is null && tied.Length > 1) return AmbiguousProviderResult(application, tied);
         var ids = candidates.Select(static provider => provider.Id).ToArray();
+        var durations = new System.Collections.Concurrent.ConcurrentDictionary<string, double>();
         async Task<UpdateCheckResult> CheckSourceAsync(IUpdateProvider provider)
         {
+            var started = System.Diagnostics.Stopwatch.GetTimestamp();
+            try
+            {
             if (refreshFailures.TryGetValue(provider.Id, out var failure)) return ProviderContractError(provider, application, ids, failure);
             using var sourceCancellation = CancellationTokenSource.CreateLinkedTokenSource(token);
             var check = Task.Run(() => SafeCheckCoreAsync(provider, application, ids, preferred is not null, generation, checkedAt, sourceCancellation.Token), sourceCancellation.Token);
@@ -165,6 +176,8 @@ public sealed class UpdateCheckService
                 sourceCancellation.Cancel(); ObserveFailure(check);
                 return ProviderContractError(provider, application, ids, "This source timed out; other compatible sources were still checked.");
             }
+            }
+            finally { durations[provider.Id] = System.Diagnostics.Stopwatch.GetElapsedTime(started).TotalMilliseconds; }
         }
         var checks = await Task.WhenAll(candidates.Select(CheckSourceAsync));
         // Do not let an unimplemented owner adapter suppress a working source.
@@ -174,10 +187,17 @@ public sealed class UpdateCheckService
         var available = Array.FindIndex(checks, c => c.IsInstallable);
         var selectedIndex = available >= 0 && !checks.Take(available).Any(c => c.Status == UpdateStatus.Error)
             ? available : firstDefinitive >= 0 ? firstDefinitive : 0;
+        // A platform-owned deployment blocks duplicate execution through any
+        // other provider. A Current result must not hide another source's error.
+        var queued = Array.FindIndex(checks, c => c.Status == UpdateStatus.StoreQueued);
+        var error = Array.FindIndex(checks, c => c.Status == UpdateStatus.Error);
+        if (queued >= 0) selectedIndex = queued;
+        else if (!checks[selectedIndex].IsInstallable && error >= 0) selectedIndex = error;
         return checks[selectedIndex] with
         {
-            SourceChecks = checks.Select(c =>
-            new UpdateSourceCheck(c.ProviderId, c.ProviderDisplayName, c.Status, c.AvailableVersion, c.Message)).ToArray()
+            SourceChecks = checks.Select((c, index) =>
+            new UpdateSourceCheck(c.ProviderId, c.ProviderDisplayName, c.Status, c.AvailableVersion, c.Message,
+                durations.GetValueOrDefault(candidates[index].Id))).ToArray()
         };
     }
 
@@ -235,7 +255,7 @@ public sealed class UpdateCheckService
                     "The provider returned an application or provider identity outside its registered claim.");
             }
             if (result.ExecutionPlan is not null &&
-                (result.Status != UpdateStatus.Available || result.Applicability == UpdateApplicability.NotApplicable))
+                (result.Status != UpdateStatus.Available && !(result.Status == UpdateStatus.StoreQueued && result.ExecutionPlan.Kind == UpdateExecutionKind.NativeStoreQueue) || result.Applicability == UpdateApplicability.NotApplicable))
             {
                 return ProviderContractError(
                     provider,
@@ -257,7 +277,7 @@ public sealed class UpdateCheckService
                     : result.Applicability,
                 _ => result.Applicability
             };
-            var plan = normalizedStatus != UpdateStatus.Available || result.ExecutionPlan is null
+            var plan = normalizedStatus is not (UpdateStatus.Available or UpdateStatus.StoreQueued) || result.ExecutionPlan is null
                 ? null
                 : result.ExecutionPlan with
                 {
@@ -286,7 +306,7 @@ public sealed class UpdateCheckService
             if (boundResult.Status == UpdateStatus.Current && boundResult.AvailableVersion is not null &&
                 VersionOrder.Compare(boundResult.AvailableVersion, boundResult.InstalledVersion) < 0)
                 boundResult = boundResult with { AvailableVersion = null };
-            if (boundResult.ExecutionPlan is not null && boundResult.Status != UpdateStatus.Available)
+            if (boundResult.ExecutionPlan is not null && boundResult.Status is not (UpdateStatus.Available or UpdateStatus.StoreQueued))
             {
                 return ProviderContractError(
                     provider,

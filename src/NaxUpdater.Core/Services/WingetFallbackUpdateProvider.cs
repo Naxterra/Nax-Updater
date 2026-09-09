@@ -428,7 +428,7 @@ public sealed partial class WingetFallbackUpdateProvider(
             "WinGet fallback",
             string.IsNullOrWhiteSpace(plan?.WingetTarget?.Locale) ? "application-managed" : plan.WingetTarget.Locale,
             "Selected by Windows Package Manager for the installed application",
-            plan?.WingetTarget?.Architecture.ToLowerInvariant() ?? DetectArchitecture(application.PrimaryInstallPath) ?? "unknown",
+            plan?.WingetTarget?.Architecture.ToLowerInvariant() ?? InstalledApplicationMetadata.Architecture(application) ?? "unknown",
             "stable",
             $"https://github.com/microsoft/winget-pkgs/tree/master/manifests/{char.ToLowerInvariant(identity.Id[0])}/{string.Join('/', identity.Id.Split('.'))}",
             message ?? $"{identity.MatchKind} match to {identity.Id}; {source} reports the current version.",

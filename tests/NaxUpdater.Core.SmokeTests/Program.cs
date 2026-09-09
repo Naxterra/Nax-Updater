@@ -1240,12 +1240,12 @@ if (installedChatGpt is not null)
     Assert(chatGptIdentity?.ProductId == "9PLM9XGG6VKS",
         $"ChatGPT resolved to {chatGptIdentity?.ProductId ?? chatGptStore.LastError} instead of its exact current Store product.");
     var chatGptAssessment = await new MsixStoreUpdateProvider().CheckAsync(installedChatGpt, CancellationToken.None);
-    Assert(chatGptAssessment.Status is UpdateStatus.Current or UpdateStatus.Available or UpdateStatus.NewerReleaseKnown,
+    Assert(chatGptAssessment.Status is UpdateStatus.Current or UpdateStatus.Available or UpdateStatus.NewerReleaseKnown or UpdateStatus.StoreQueued,
         $"ChatGPT Store assessment failed: {chatGptAssessment.Status} · {chatGptAssessment.Message}");
     Assert(chatGptAssessment.Status != UpdateStatus.Available ||
            (chatGptAssessment.ExecutionPlan is not null && chatGptAssessment.IsInstallable),
         "ChatGPT reports an update without an executable Store update plan.");
-    Assert(chatGptAssessment.Status == UpdateStatus.Available ||
+    Assert(chatGptAssessment.Status is UpdateStatus.Available or UpdateStatus.StoreQueued ||
            (chatGptAssessment.ExecutionPlan is null && !chatGptAssessment.IsInstallable),
         "ChatGPT received a Store action even though no applicable update was reported.");
     using var openAiManifestClient = new HttpClient(new StubHttpMessageHandler(_ => JsonResponse("""
@@ -1321,7 +1321,9 @@ if (installedChatGpt is not null)
         NormalizedVersion = "26.825.4187.0"
     };
     var observedPreUpdateAssessment = await new MsixStoreUpdateProvider().CheckAsync(observedPreUpdateChatGpt, CancellationToken.None);
-    Assert(VersionOrder.Compare(observedPreUpdateAssessment.AnnouncedVersion, "26.825.4187.0") > 0 &&
+    Assert(observedPreUpdateAssessment.Status == UpdateStatus.StoreQueued
+           ? observedPreUpdateAssessment.IsInstallable && observedPreUpdateAssessment.ExecutionPlan?.Kind == UpdateExecutionKind.NativeStoreQueue && observedPreUpdateAssessment.AvailableVersion is null
+           : VersionOrder.Compare(observedPreUpdateAssessment.AnnouncedVersion, "26.825.4187.0") > 0 &&
            (observedPreUpdateAssessment.Status == UpdateStatus.Available
                ? observedPreUpdateAssessment.IsInstallable && VersionOrder.Compare(observedPreUpdateAssessment.AvailableVersion, "26.825.4187.0") > 0
                : observedPreUpdateAssessment.Status == UpdateStatus.Current && observedPreUpdateAssessment.AvailableVersion is null &&
@@ -1347,7 +1349,7 @@ if (installedCamera is not null)
         Assert(cameraStoreIdentity.PackageFamilyMatched, "Windows Camera should resolve through its exact Store package family.");
         var cameraAssessment = await new MsixStoreUpdateProvider().CheckAsync(installedCamera, CancellationToken.None);
         Assert(cameraAssessment.Status != UpdateStatus.Available ||
-               (cameraAssessment.ExecutionPlan is { Kind: UpdateExecutionKind.StorePackage } && cameraAssessment.IsInstallable),
+               (cameraAssessment.ExecutionPlan is { Kind: UpdateExecutionKind.StorePackage or UpdateExecutionKind.NativeStorePackage } && cameraAssessment.IsInstallable),
             "Windows Camera reports an update without an executable Store update plan.");
         Assert(cameraAssessment.Status == UpdateStatus.Available ||
                (cameraAssessment.ExecutionPlan is null && !cameraAssessment.IsInstallable),

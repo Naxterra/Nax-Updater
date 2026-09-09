@@ -13,6 +13,7 @@ public sealed class GitHubUpdateRecipe
     public string DisplayName { get; init; } = string.Empty;
     public string? PublisherContains { get; init; }
     public string Repository { get; init; } = string.Empty;
+    public string? ReleaseTagPrefix { get; init; }
     public string AssetNamePattern { get; init; } = string.Empty;
     public string Architecture { get; init; } = "neutral";
     public string Language { get; init; } = "neutral";

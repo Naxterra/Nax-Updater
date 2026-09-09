@@ -19,7 +19,19 @@ internal static class CoverageRegression
         high.Status = UpdateStatus.Error;
         var guarded = (await new UpdateCheckService([high, low]).CheckAsync(new(DateTimeOffset.UtcNow, [app], [], []))).Results.Single();
         assert(guarded.Status == UpdateStatus.Error && !guarded.IsInstallable, "A lower-priority installer bypassed a higher-priority verification failure.");
+        high.Status = UpdateStatus.Current;
+        low.Status = UpdateStatus.Error;
+        var conflict = await new UpdateCheckService([high, low]).CheckAsync(new(DateTimeOffset.UtcNow, [app], [], []));
+        assert(conflict.Results.Single().Status == UpdateStatus.Error && conflict.FailedCheckCount == 1,
+            "A producer Current result hid a Store verification failure.");
+        high.Status = UpdateStatus.Available;
+        low.Status = UpdateStatus.StoreQueued;
+        var queued = await new UpdateCheckService([high, low]).CheckAsync(new(DateTimeOffset.UtcNow, [app], [], []));
+        assert(queued.Results.Single().Status == UpdateStatus.StoreQueued && queued.StoreQueueCount == 1 &&
+            queued.InstallableUpdateCount == 0 && !queued.AllCurrent && queued.ManagedExternallyCount == 1,
+            "A producer installer overrode an existing Store deployment or its summary reported Current.");
         high.Status = UpdateStatus.ManagedExternally;
+        low.Status = UpdateStatus.Available;
         var fallback = (await new UpdateCheckService([high, low]).CheckAsync(new(DateTimeOffset.UtcNow, [app], [], []))).Results.Single();
         assert(fallback.IsInstallable, "An unsupported native protocol suppressed a compatible working source.");
         var beforeLow = low.Calls;
@@ -53,8 +65,8 @@ internal static class CoverageRegression
         assert(offer.ExecutionPlan?.StorePackageFamilyName == family && offer.AvailableVersion == "2.0.0.0",
             "Generic Store offer lost its exact package/version binding.");
         var sameVersion = await storeProvider.CheckAsync(storeApp with { NormalizedVersion = "2.0.0.0" }, CancellationToken.None);
-        assert(sameVersion.Status == UpdateStatus.Current && !sameVersion.IsInstallable,
-            "A same-version Store queue item was treated as an upgrade or check failure.");
+        assert(sameVersion.Status == UpdateStatus.Error && !sameVersion.IsInstallable,
+            "A native Store offer with an equal catalog target must expose the conflict, not claim Current or offer a downgrade.");
         nativeClient.Available = false;
         var current = await storeProvider.CheckAsync(storeApp, CancellationToken.None);
         assert(current.Status == UpdateStatus.Current && current.AvailableVersion is null,

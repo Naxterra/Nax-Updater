@@ -19,6 +19,8 @@ public interface IUpdateTransactionBackend
         UpdateCheckResult update,
         PreparedUpdateExecution prepared,
         CancellationToken cancellationToken);
+    Task<UpdateExecutionResult> ApplyWithProgressAsync(UpdateCheckResult update, PreparedUpdateExecution prepared,
+        IProgress<double> progress, CancellationToken token) => ApplyAsync(update, prepared, token);
 }
 
 public sealed record PreparedUpdateExecution(
@@ -29,7 +31,8 @@ public sealed record PreparedUpdateExecution(
     string? ContentSha256,
     IReadOnlyList<PreparedContentLock>? ContentLocks = null,
     PreparedCatalogUpdate? CatalogUpdate = null,
-    PreparedNativeStoreUpdate? NativeStoreUpdate = null);
+    PreparedNativeStoreUpdate? NativeStoreUpdate = null,
+    PreparedStoreQueueUpdate? StoreQueueUpdate = null);
 
 public sealed record PreparedContentLock(string Path, FileStream Stream) : IDisposable
 {
@@ -89,6 +92,9 @@ public sealed class DefaultUpdateTransactionBackend(
         PreparedUpdateExecution prepared,
         CancellationToken cancellationToken) =>
         executionService.ExecutePreparedAsync(update, prepared, cancellationToken);
+
+    public Task<UpdateExecutionResult> ApplyWithProgressAsync(UpdateCheckResult update, PreparedUpdateExecution prepared,
+        IProgress<double> progress, CancellationToken token) => executionService.ExecutePreparedAsync(update, prepared, token, progress);
 }
 
 public sealed class UpdateTransactionCoordinator
@@ -238,14 +244,16 @@ public sealed class UpdateTransactionCoordinator
 
             report(UpdateTransactionStage.Applying, null);
             changeMayHaveStarted = true;
-            execution = await _backend.ApplyAsync(freshAssessment, prepared, cancellationToken);
+            execution = await _backend.ApplyWithProgressAsync(freshAssessment, prepared,
+                new Progress<double>(fraction => report(UpdateTransactionStage.Applying, fraction)), cancellationToken);
             prepared = null;
 
             report(UpdateTransactionStage.Verifying, null);
             var observed = execution.ExitCode == 1223
                 ? await _backend.RevalidateAsync(freshAssessment, cancellationToken)
                 : await ObserveInstalledTargetAsync(freshAssessment, cancellationToken);
-            if (ReachedTarget(freshAssessment, observed))
+            if (ReachedTarget(freshAssessment, observed) ||
+                execution.IsSuccess && ReconciledStoreQueue(freshAssessment, observed))
             {
                 var completedStage = execution.ExitCode is 1641 or 3010
                     ? UpdateTransactionStage.PendingReboot
@@ -353,19 +361,28 @@ public sealed class UpdateTransactionCoordinator
     internal static bool SameApprovedOffer(UpdateCheckResult approved, UpdateCheckResult? fresh) =>
         fresh is
         {
-            Status: UpdateStatus.Available,
             IsInstallable: true,
-            ExecutionPlan: not null,
-            AvailableVersion: not null
+            ExecutionPlan: not null
         } &&
         fresh.ApplicationIdentity.Equals(approved.ApplicationIdentity, StringComparison.Ordinal) &&
         string.Equals(fresh.CorrelationKey, approved.CorrelationKey, StringComparison.Ordinal) &&
         string.Equals(fresh.InstalledVersion, approved.InstalledVersion, StringComparison.OrdinalIgnoreCase) &&
         fresh.ProviderId.Equals(approved.ProviderId, StringComparison.Ordinal) &&
         fresh.ProviderAuthority == approved.ProviderAuthority &&
-        fresh.AvailableVersion.Equals(approved.AvailableVersion, StringComparison.OrdinalIgnoreCase) &&
+        string.Equals(fresh.AvailableVersion, approved.AvailableVersion, StringComparison.OrdinalIgnoreCase) &&
         approved.ExecutionPlan is not null &&
         SameExecutionIntent(approved.ExecutionPlan, fresh.ExecutionPlan);
+
+    // The Store does not expose a trustworthy target version on a queue item.
+    // This is a servicing operation, not a fabricated version-bound offer:
+    // require Windows completion AND independently observed installed identity,
+    // no active queue entry, and no downgrade relative to the approved baseline.
+    internal static bool ReconciledStoreQueue(UpdateCheckResult expected, UpdateCheckResult? observed) =>
+        expected.ExecutionPlan?.StoreQueueTarget is { } target && observed is not null &&
+        observed.Status is not (UpdateStatus.StoreQueued or UpdateStatus.Error) &&
+        !string.IsNullOrWhiteSpace(expected.CorrelationKey) && expected.CorrelationKey == observed.CorrelationKey &&
+        !string.IsNullOrWhiteSpace(observed.InstalledVersion) &&
+        VersionOrder.Compare(observed.InstalledVersion, target.InstalledVersion) >= 0;
 
     internal static bool ReachedTarget(UpdateCheckResult expected, UpdateCheckResult? observed) =>
         observed is not null &&
@@ -390,7 +407,7 @@ public sealed class UpdateTransactionCoordinator
         for (var attempt = 0; attempt < _verificationAttempts; attempt++)
         {
             observed = await _backend.RevalidateAsync(expected, cancellationToken);
-            if (ReachedTarget(expected, observed) || attempt + 1 >= _verificationAttempts)
+            if (ReachedTarget(expected, observed) || ReconciledStoreQueue(expected, observed) || attempt + 1 >= _verificationAttempts)
             {
                 return observed;
             }
@@ -443,7 +460,7 @@ public static class UpdatePlanValidator
         {
             return "The installed-version precondition no longer matches the checked application.";
         }
-        if (string.IsNullOrWhiteSpace(update.AvailableVersion))
+        if (string.IsNullOrWhiteSpace(update.AvailableVersion) && plan.Kind != UpdateExecutionKind.NativeStoreQueue)
         {
             return "The execution plan has no target version.";
         }
@@ -459,6 +476,13 @@ public static class UpdatePlanValidator
         }
         return plan.Kind switch
         {
+            UpdateExecutionKind.NativeStoreQueue when plan.StoreQueueTarget is not { } target ||
+                string.IsNullOrWhiteSpace(target.ProductId) || !Version.TryParse(target.InstalledVersion, out _) ||
+                target.InstalledVersion != update.InstalledVersion || target.ProductId != plan.StoreProductId ||
+                target.PackageFamilyName != plan.StorePackageFamilyName ||
+                !update.ApplicationIdentity.Equals("msix:" + target.PackageFamilyName, StringComparison.OrdinalIgnoreCase) ||
+                plan.ProcessPolicy != UpdateProcessPolicy.PlatformManaged || plan.RunningProcessNames.Count != 0
+                => "The Store queue action is not bound to the installed package identity and baseline version.",
             UpdateExecutionKind.DownloadedExe or
             UpdateExecutionKind.DownloadedMsi or
             UpdateExecutionKind.DownloadedZipMsi or
