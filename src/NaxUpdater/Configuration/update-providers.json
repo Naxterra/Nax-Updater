@@ -1,6 +1,21 @@
 {
   "github": [
     {
+      "id": "Ente.Ensu",
+      "displayName": "Ensu",
+      "publisherContains": "ente",
+      "repository": "ente/ente",
+      "releaseTagPrefix": "ensu-v",
+      "assetNamePattern": "^Ensu_(?<version>[0-9]+(?:\\.[0-9]+)+)_x64-setup\\.exe$",
+      "architecture": "x64",
+      "language": "neutral",
+      "expectedSigner": "ENTE TECHNOLOGIES, INC.",
+      "installerKind": "DownloadedExe",
+      "installerArguments": [ "/S" ],
+      "runningProcessNames": [ "Ensu" ],
+      "requiresElevation": false
+    },
+    {
       "id": "Nextcloud.NextcloudDesktop",
       "displayName": "Nextcloud",
       "publisherContains": "Nextcloud",

@@ -49,6 +49,9 @@ public sealed class MsixStoreUpdateProvider : IUpdateProvider
                 "The installed MSIX package family could not be read.");
         }
 
+        if (_nativeStore is not null && await _nativeStore.ReadQueueAsync(packageFamily, cancellationToken) is { } queued)
+            return QueueResult(application, queued);
+
         if (packageFamily.Equals(OpenAiPackageFamily, StringComparison.OrdinalIgnoreCase))
         {
             var openAiResult = await CheckOpenAiManifestAsync(application, packageFamily, cancellationToken);
@@ -58,39 +61,8 @@ public sealed class MsixStoreUpdateProvider : IUpdateProvider
             }
         }
 
-        if (_nativeStore is not null)
-        {
-            var product = await new MicrosoftStoreProductMetadataClient(_httpClient).ResolvePackageFamilyAsync(
-                packageFamily, PackageArchitecture(application), application.NormalizedVersion, cancellationToken);
-            if (product is not null)
-            {
-                var offers = new List<(StoreProductIdentity Identity, NativeStoreOffer Offer)>();
-                foreach (var identity in new[] { product.Identity }.Concat(product.AlternateIdentities ?? []))
-                    offers.Add((identity, await _nativeStore.CheckIdentityAsync(identity, cancellationToken)));
-                var found = offers.FirstOrDefault(o => o.Offer.IsAvailable);
-                if (found.Identity is null && offers.Any(o => o.Offer.CheckFailed)) return Result(application, null, UpdateStatus.Error, null, product.Identity.ProductId,
-                    string.Join("; ", offers.Where(o => o.Offer.CheckFailed).Select(o => o.Offer.Error)));
-                if (found.Identity is null) return Result(application, null, UpdateStatus.Current, null, product.Identity.ProductId,
-                    "Native Microsoft Store check completed for the exact package family; no applicable update.");
-                var package = found.Identity.SkuId == product.Identity.SkuId ? product.PublishedPackage :
-                    await new MicrosoftStoreProductMetadataClient(_httpClient).GetPublishedPackageAsync(found.Identity.ProductId,
-                        packageFamily, PackageArchitecture(application), application.NormalizedVersion, cancellationToken, found.Identity.SkuId);
-                if (package is not null && VersionOrder.Compare(package.Version, application.NormalizedVersion) <= 0)
-                    return Result(application, null, UpdateStatus.Current, null, product.Identity.ProductId,
-                        "The Store item does not contain a newer package than the installed version; no reinstall or downgrade is offered.");
-                if (package is null)
-                    return Result(application, null, UpdateStatus.Error, null, product.Identity.ProductId,
-                        "Windows Store returned an update, but its exact newer package version could not be verified.");
-                var paths = File.Exists(application.PrimaryInstallPath) && Path.GetExtension(application.PrimaryInstallPath).Equals(".exe", StringComparison.OrdinalIgnoreCase)
-                    ? new[] { application.PrimaryInstallPath! } : [];
-                var nativePlan = new UpdateExecutionPlan(UpdateExecutionKind.NativeStorePackage, null, null, null, "Microsoft Store", null, [], false, [],
-                    paths.Select(Path.GetFileNameWithoutExtension).Select(p => p!).ToArray(), StoreProductId: package.ProductId,
-                    StorePackageFamilyName: packageFamily, StorePublisher: application.Publisher,
-                    RunningExecutablePaths: paths, NativeStoreTarget: package);
-                return Result(application, nativePlan, UpdateStatus.Available, package.Version, product.Identity.ProductId,
-                    "Native Microsoft Store update verified against the exact package family, architecture and published version.");
-            }
-        }
+        var nativeAssessment = await CheckNativeCatalogAsync(application, packageFamily, cancellationToken);
+        if (nativeAssessment is not null) return nativeAssessment;
 
         var availability = await _store.CheckForUpdateAsync(
             packageFamily,
@@ -127,6 +99,83 @@ public sealed class MsixStoreUpdateProvider : IUpdateProvider
             "Microsoft Store reports an applicable update for the exact installed package family.");
     }
 
+    private async Task<UpdateCheckResult?> CheckNativeCatalogAsync(InstalledApplication application, string packageFamily,
+        CancellationToken cancellationToken, string? expectedProductId = null)
+    {
+        if (_nativeStore is not null)
+        {
+            var product = await new MicrosoftStoreProductMetadataClient(_httpClient).ResolvePackageFamilyAsync(
+                packageFamily, PackageArchitecture(application), application.NormalizedVersion, cancellationToken);
+            if (product is not null)
+            {
+                if (expectedProductId is not null && product.Identity.ProductId != expectedProductId)
+                    return Result(application, null, UpdateStatus.Error, null, product.Identity.ProductId, "The Store product does not match the publisher's identity.");
+                var offers = new List<(StoreProductIdentity Identity, NativeStoreOffer Offer)>();
+                // One native request per admitted Store family. Parallel SKU
+                // fan-out otherwise consumes all broker slots before later
+                // families can start their own checks.
+                foreach (var identity in new[] { product.Identity }.Concat(product.AlternateIdentities ?? []))
+                    offers.Add((identity, await _nativeStore.CheckIdentityAsync(identity, cancellationToken)));
+                if (offers.Select(o => o.Offer.QueueEntry).FirstOrDefault(q => q is not null) is { } queued)
+                    return QueueResult(application, queued);
+                var found = offers.FirstOrDefault(o => o.Offer.IsAvailable);
+                if (found.Identity is null && offers.Any(o => o.Offer.CheckFailed)) return Result(application, null, UpdateStatus.Error, null, product.Identity.ProductId,
+                    string.Join("; ", offers.Where(o => o.Offer.CheckFailed).Select(o => o.Offer.Error)));
+                if (found.Identity is null) return Result(application, null, UpdateStatus.Current, null, product.Identity.ProductId,
+                    "Native Microsoft Store check completed for the exact package family; no applicable update.");
+                var package = await new MicrosoftStoreProductMetadataClient(_httpClient).GetPublishedPackageAsync(found.Identity.ProductId,
+                        packageFamily, PackageArchitecture(application), application.NormalizedVersion, cancellationToken, found.Identity.SkuId);
+                if (package is not null && VersionOrder.Compare(package.Version, application.NormalizedVersion) <= 0)
+                    return Result(application, null, UpdateStatus.Error, null, product.Identity.ProductId,
+                        "Windows Store reports an update, but the public catalog does not identify a newer target. The sources disagree; no reinstall or downgrade is offered.");
+                if (package is null)
+                    return Result(application, null, UpdateStatus.Error, null, product.Identity.ProductId,
+                        "Windows Store returned an update, but its exact newer package version could not be verified.");
+                var paths = File.Exists(application.PrimaryInstallPath) && Path.GetExtension(application.PrimaryInstallPath).Equals(".exe", StringComparison.OrdinalIgnoreCase)
+                    ? new[] { application.PrimaryInstallPath! } : [];
+                var bindings = packageFamily.Equals(OpenAiPackageFamily, StringComparison.OrdinalIgnoreCase)
+                    ? ChatGptProcessBindings(application) : (Names: (IReadOnlyList<string>)paths.Select(Path.GetFileNameWithoutExtension).Select(p => p!).ToArray(), Paths: (IReadOnlyList<string>)paths);
+                var nativePlan = new UpdateExecutionPlan(UpdateExecutionKind.NativeStorePackage, null, null, null, "Microsoft Store", null, [], false, [],
+                    bindings.Names, StoreProductId: package.ProductId,
+                    StorePackageFamilyName: packageFamily, StorePublisher: application.Publisher,
+                    RunningExecutablePaths: bindings.Paths, NativeStoreTarget: package);
+                return Result(application, nativePlan, UpdateStatus.Available, package.Version, product.Identity.ProductId,
+                    "Native Microsoft Store update verified against the exact package family, architecture and published version.");
+            }
+        }
+
+        return null;
+    }
+
+    private UpdateCheckResult QueueResult(InstalledApplication application, NativeStoreQueueEntry queued)
+    {
+        if (queued.State == Windows.ApplicationModel.Store.Preview.InstallControl.AppInstallState.Error &&
+            queued.ErrorCode == NativeStoreUpdateService.PackageIdentityConflictCode)
+            return Result(application, null, UpdateStatus.Error, null, queued.ProductId, NativeStoreUpdateService.PackageIdentityConflictMessage);
+        var reason = queued.State switch
+        {
+            Windows.ApplicationModel.Store.Preview.InstallControl.AppInstallState.Downloading or
+            Windows.ApplicationModel.Store.Preview.InstallControl.AppInstallState.Installing or
+            Windows.ApplicationModel.Store.Preview.InstallControl.AppInstallState.RestoringData => UpdateAvailabilityReason.StoreUpdating,
+            Windows.ApplicationModel.Store.Preview.InstallControl.AppInstallState.Paused or
+            Windows.ApplicationModel.Store.Preview.InstallControl.AppInstallState.PausedLowBattery or
+            Windows.ApplicationModel.Store.Preview.InstallControl.AppInstallState.PausedWiFiRecommended or
+            Windows.ApplicationModel.Store.Preview.InstallControl.AppInstallState.PausedWiFiRequired => UpdateAvailabilityReason.StorePaused,
+            _ => UpdateAvailabilityReason.StoreQueued
+        };
+        var canBind = Version.TryParse(application.NormalizedVersion, out _) && !string.IsNullOrWhiteSpace(queued.ProductId);
+        var target = canBind ? new StoreQueueTarget(queued.ProductId, queued.PackageFamilyName, application.NormalizedVersion!) : null;
+        var plan = target is null || queued.MayAffectOtherItems ? null : new UpdateExecutionPlan(
+            UpdateExecutionKind.NativeStoreQueue, null, null, null, "Microsoft Store", null, [], false, [], [],
+            StoreProductId: queued.ProductId, StorePackageFamilyName: queued.PackageFamilyName,
+            ProcessPolicy: UpdateProcessPolicy.PlatformManaged, StoreQueueTarget: target);
+        return Result(application, plan, UpdateStatus.StoreQueued, null, queued.ProductId,
+            $"Microsoft Store queue: {queued.State} (0x{queued.ErrorCode:X8}). " +
+            (plan is not null ? "NaxUpdater can resume this existing operation or track it if already running, then independently reread the installed package version."
+                : "The queue identity cannot be bound safely, or Windows reports that resuming it affects other packages."))
+            with { AvailabilityReason = reason, Applicability = plan is null ? UpdateApplicability.Unknown : UpdateApplicability.Applicable };
+    }
+
     private async Task<UpdateCheckResult?> CheckOpenAiManifestAsync(
         InstalledApplication application,
         string packageFamily,
@@ -150,6 +199,12 @@ public sealed class MsixStoreUpdateProvider : IUpdateProvider
             {
                 return null;
             }
+
+            var nativeAssessment = await CheckNativeCatalogAsync(application, packageFamily, cancellationToken, manifest.StoreProductId);
+            if (nativeAssessment is not null)
+                return nativeAssessment with { ProviderId = "openai-codex-store", ProviderDisplayName = "OpenAI update manifest + Microsoft Store",
+                    AnnouncedVersion = manifest.BuildVersion, PublishedPackageVersion = nativeAssessment.AvailableVersion,
+                    AvailabilityReason = nativeAssessment.Status == UpdateStatus.Current ? UpdateAvailabilityReason.NoApplicableStoreUpdate : nativeAssessment.AvailabilityReason };
 
             var storeAvailability = await _store.CheckForUpdateAsync(packageFamily, application.DisplayName,
                 application.Publisher, application.NormalizedVersion, PackageArchitecture(application), cancellationToken);

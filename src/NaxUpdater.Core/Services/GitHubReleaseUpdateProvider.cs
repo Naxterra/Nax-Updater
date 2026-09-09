@@ -45,12 +45,14 @@ public sealed class GitHubReleaseUpdateProvider : IUpdateProvider
         }
         catch (Exception exception) when (exception is (HttpRequestException or TaskCanceledException) && !cancellationToken.IsCancellationRequested)
         {
+            if (recipe.ReleaseTagPrefix is not null) return Error(application, exception.Message);
             return await CheckLatestTagFallbackAsync(application, exception.Message, cancellationToken);
         }
         using (response)
         {
             if (!response.IsSuccessStatusCode)
             {
+                if (recipe.ReleaseTagPrefix is not null) return Error(application, "The product-specific release feed could not be resolved.");
                 return await CheckLatestTagFallbackAsync(
                     application,
                     $"GitHub API returned {(int)response.StatusCode} {response.ReasonPhrase}.",
@@ -63,6 +65,11 @@ public sealed class GitHubReleaseUpdateProvider : IUpdateProvider
                 (root.TryGetProperty("prerelease", out var prerelease) && prerelease.ValueKind == JsonValueKind.True))
                 return Error(application, "The release is not a published stable release.");
             var tag = root.TryGetProperty("tag_name", out var tagValue) ? tagValue.GetString()?.TrimStart('v', 'V') : null;
+            if (recipe.ReleaseTagPrefix is { } prefix)
+            {
+                if (tag?.StartsWith(prefix, StringComparison.Ordinal) != true) return Error(application, "The release belongs to a different product.");
+                tag = tag[prefix.Length..].TrimStart('v', 'V');
+            }
             var releasePage = root.TryGetProperty("html_url", out var htmlValue) ? htmlValue.GetString() : null;
             if (string.IsNullOrWhiteSpace(tag) || !root.TryGetProperty("assets", out var assets))
             {
@@ -196,6 +203,19 @@ public sealed class GitHubReleaseUpdateProvider : IUpdateProvider
 
     private async Task<HttpResponseMessage> GetLatestReleaseResponseAsync(CancellationToken cancellationToken)
     {
+        if (recipe.ReleaseTagPrefix is { } prefix)
+        {
+            var json = await GitHubApiClient.ReadAsync(httpClient, $"repos/{recipe.Repository}/releases?per_page=100", cancellationToken);
+            if (json is null) return new(HttpStatusCode.ServiceUnavailable);
+            using var releases = JsonDocument.Parse(json);
+            var matches = releases.RootElement.EnumerateArray().Where(r =>
+                r.TryGetProperty("tag_name", out var tag) && tag.GetString()?.StartsWith(prefix, StringComparison.Ordinal) == true &&
+                (!r.TryGetProperty("draft", out var draft) || draft.ValueKind != JsonValueKind.True) &&
+                (!r.TryGetProperty("prerelease", out var prerelease) || prerelease.ValueKind != JsonValueKind.True))
+                .OrderByDescending(r => r.GetProperty("tag_name").GetString()![prefix.Length..], Comparer<string>.Create(VersionOrder.Compare)).ToArray();
+            return matches.Length == 0 ? new(HttpStatusCode.NotFound) : new(HttpStatusCode.OK)
+                { Content = new StringContent(matches[0].GetRawText(), Encoding.UTF8, "application/json") };
+        }
         HttpResponseMessage? response = null;
         for (var attempt = 0; attempt < 2; attempt++)
         {
@@ -203,7 +223,7 @@ public sealed class GitHubReleaseUpdateProvider : IUpdateProvider
             using var request = new HttpRequestMessage(
                 HttpMethod.Get,
                 $"https://api.github.com/repos/{recipe.Repository}/releases/latest");
-            request.Headers.UserAgent.ParseAdd("NaxUpdater/0.16.11");
+            request.Headers.UserAgent.ParseAdd("NaxUpdater/0.17.2");
             request.Headers.Accept.ParseAdd("application/vnd.github+json");
             try
             {
@@ -249,7 +269,7 @@ public sealed class GitHubReleaseUpdateProvider : IUpdateProvider
         using var request = new HttpRequestMessage(
             HttpMethod.Get,
             $"https://github.com/{recipe.Repository}/releases/latest");
-        request.Headers.UserAgent.ParseAdd("NaxUpdater/0.16.11");
+        request.Headers.UserAgent.ParseAdd("NaxUpdater/0.17.2");
         using var response = await httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
         var finalUri = response.RequestMessage?.RequestUri;
         var match = finalUri is null

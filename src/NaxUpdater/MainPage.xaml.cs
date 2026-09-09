@@ -31,6 +31,8 @@ public sealed partial class MainPage : Page
     private bool _loaded;
     private bool _updateBusy;
     private bool _massUpdateBusy;
+    private bool _stopBatch;
+    private CancellationTokenSource? _operationCancellation;
     private bool _restartPending;
     private CancellationTokenSource? _providerCheckCancellation;
     private ApplicationSortColumn _sortColumn = ApplicationSortColumn.Name;
@@ -110,9 +112,9 @@ public sealed partial class MainPage : Page
                         !string.IsNullOrWhiteSpace(interruptedOperation.CorrelationKey) &&
                         UpdateCorrelation.ForApplication(application).Equals(interruptedOperation.CorrelationKey, StringComparison.Ordinal))?.NormalizedVersion;
             }
-            var reachedTarget = !string.IsNullOrWhiteSpace(observedVersion) &&
-                                !string.IsNullOrWhiteSpace(interruptedOperation.TargetVersion) &&
-                                VersionOrder.Compare(observedVersion, interruptedOperation.TargetVersion) >= 0;
+            var recoveredAssessment = _allUpdates.Select(row => row.Source).FirstOrDefault(update =>
+                update.ApplicationIdentity.Equals(interruptedOperation.ApplicationIdentity, StringComparison.OrdinalIgnoreCase));
+            var reachedTarget = UpdateRecoveryVerifier.HasReachedTarget(interruptedOperation, observedVersion, recoveredAssessment);
             var changeMayHaveStarted = interruptedOperation.Stage is
                 UpdateTransactionStage.Applying or
                 UpdateTransactionStage.Verifying or
@@ -128,7 +130,7 @@ public sealed partial class MainPage : Page
                 interruptedOperation,
                 recoveredStage,
                 DateTimeOffset.UtcNow,
-                reachedTarget ? null : "NaxUpdater restarted before the target version could be confirmed.");
+                reachedTarget ? null : interruptedOperation.Error ?? "NaxUpdater restarted before the target version could be confirmed.");
             // A failed verification is not a reboot requirement. A fresh update
             // transaction revalidates its own target; unrelated apps remain usable.
             UpdateBar.Title = reachedTarget
@@ -413,6 +415,7 @@ public sealed partial class MainPage : Page
 
     private static int UpdateStatusPriority(UpdateStatus status) => status switch
     {
+        UpdateStatus.StoreQueued => 1,
         UpdateStatus.Available => 0,
         UpdateStatus.NewerReleaseKnown => 1,
         UpdateStatus.Error => 2,
@@ -550,6 +553,9 @@ public sealed partial class MainPage : Page
         DetailInstallDateText.Text = row.InstallationDateDetail;
         DetailBlockedText.Text = row.BlockedProviders;
         UninstallButton.IsEnabled = row.Source.RemovalPlan is not null;
+        RemovalExplanation.Text = row.Source.RemovalPlan is not null ? string.Empty : LocalizationService.Get(
+            row.Source.IsSystemComponent ? "RemovalWindowsComponent" : "RemovalUnavailable");
+        RemovalExplanation.Visibility = row.Source.RemovalPlan is null ? Visibility.Visible : Visibility.Collapsed;
         EvidenceItems.ItemsSource = row.Source.Evidence.Select(static evidence => new EvidenceRow(evidence)).ToArray();
     }
 
@@ -652,6 +658,7 @@ public sealed partial class MainPage : Page
 
     private async Task CheckUpdatesAsync(bool showWorkspace)
     {
+        var checkTimer = Stopwatch.StartNew();
         if (_snapshot is null)
         {
             await ScanAsync();
@@ -680,6 +687,8 @@ public sealed partial class MainPage : Page
                     : LocalizationService.Format("ProviderCheckProgress", state.Completed, state.Total, state.ApplicationName ?? "");
             });
             var result = await service.CheckAsync(_snapshot, cancellation.Token, progress);
+            ReconcileCompletedOperation(result);
+            await SaveScanDiagnosticsAsync(result, checkTimer.Elapsed);
 
             var applicationsByIdentity = _allApplications.ToDictionary(static row => row.Source.Identity, StringComparer.Ordinal);
             _allUpdates = result.Results.Select(update => new UpdateRow(
@@ -712,11 +721,14 @@ public sealed partial class MainPage : Page
 
             UpdateBar.Title = available > 0
                 ? LocalizationService.Format("UpdatesAvailableTitle", available)
+                : result.StoreQueueCount > 0
+                    ? LocalizationService.Format("StoreQueueTitle", result.StoreQueueCount)
                 : knownReleases > 0
                     ? LocalizationService.Format("ReleasesKnownTitle", knownReleases)
                     : LocalizationService.Get(result.AllCurrent ? "ApplicationsCurrent" :
                         errors > 0 ? "ChecksIncomplete" : "NoUpdatesAmongChecked");
             UpdateBar.Message = StatusText.Text;
+            StatusText.Text += $" · {checkTimer.Elapsed.TotalSeconds:N1} s";
             UpdateBar.Severity = errors > 0 ? InfoBarSeverity.Warning : available > 0 ? InfoBarSeverity.Success : InfoBarSeverity.Informational;
             UpdateBar.IsOpen = true;
         }
@@ -739,6 +751,33 @@ public sealed partial class MainPage : Page
             ScanButtonLabel.Text = LocalizationService.Get("ApplicationScanText");
             SetUpdateBusy(false, null);
         }
+    }
+
+    private static async Task SaveScanDiagnosticsAsync(UpdateCheckSnapshot snapshot, TimeSpan elapsed)
+    {
+        try
+        {
+            var directory = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "NaxUpdater");
+            Directory.CreateDirectory(directory);
+            var report = new { snapshot.CheckedAt, ElapsedSeconds = elapsed.TotalSeconds, snapshot.CheckedVersionCount,
+                snapshot.FailedCheckCount, snapshot.InstallableUpdateCount, snapshot.StoreQueueCount,
+                Results = snapshot.Results.Select(r => new { r.DisplayName, r.ProviderId, r.InstalledVersion, r.AvailableVersion, r.Architecture,
+                    Status = r.Status.ToString(), r.Message, r.SourceChecks }) };
+            await File.WriteAllTextAsync(Path.Combine(directory, "last-scan.json"), System.Text.Json.JsonSerializer.Serialize(report));
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException) { }
+    }
+
+    private void ReconcileCompletedOperation(UpdateCheckSnapshot snapshot)
+    {
+        if (_operationCancellation is not null || _massUpdateBusy) return;
+        using var lease = _updateTransactionLease.TryAcquire();
+        if (lease is null) return; // Startup recovery or another update owns it.
+        var operation = _updateOperationJournal.ReadLatest();
+        if (operation is null || operation.Stage is not (UpdateTransactionStage.FailedNeedsAttention or UpdateTransactionStage.Indeterminate)) return;
+        var assessment = snapshot.Results.FirstOrDefault(r => r.ApplicationIdentity.Equals(operation.ApplicationIdentity, StringComparison.OrdinalIgnoreCase));
+        if (UpdateRecoveryVerifier.HasReachedTarget(operation, assessment?.InstalledVersion, assessment))
+            _updateOperationJournal.Record(operation, UpdateTransactionStage.Succeeded, DateTimeOffset.UtcNow);
     }
 
     private void ShowApplicationsButton_Click(object sender, RoutedEventArgs e)
@@ -1065,7 +1104,7 @@ public sealed partial class MainPage : Page
         UpdateProviderText.Text = $"{row.Provider} · {row.Status}";
         UpdateVersionText.Text = row.VersionChange;
         UpdateSourcesText.Text = string.Join(Environment.NewLine, (row.Source.SourceChecks ?? []).Select(source =>
-            $"{source.ProviderDisplayName}: {LocalizationService.Get(source.Status switch { UpdateStatus.Current => "StatusCurrent", UpdateStatus.Available => "StatusUpdateAvailable", UpdateStatus.Error => "StatusCheckFailed", UpdateStatus.NewerReleaseKnown => "StatusNewerReleaseKnown", _ => "StatusNotChecked" })}"));
+            $"{source.ProviderDisplayName}: {LocalizationService.Get(source.Status switch { UpdateStatus.Current => "StatusCurrent", UpdateStatus.Available => "StatusUpdateAvailable", UpdateStatus.Error => "StatusCheckFailed", UpdateStatus.StoreQueued => "StatusStoreQueued", UpdateStatus.NewerReleaseKnown => "StatusNewerReleaseKnown", _ => "StatusNotChecked" })}"));
         UpdatePlatformText.Text = row.PlatformDetail;
         UpdateSecurityText.Text = row.SecurityDetail;
         UpdateReleaseText.Text = row.ReleaseNotes;
@@ -1091,7 +1130,7 @@ public sealed partial class MainPage : Page
         }
         var queue = _allUpdates
             .Where(static row => row.CanInstall)
-            .OrderBy(static row => row.Source.ExecutionPlan?.Kind is UpdateExecutionKind.StorePackage or UpdateExecutionKind.NativeStorePackage ? 1 : 0)
+            .OrderBy(static row => row.Source.ExecutionPlan?.Kind is UpdateExecutionKind.StorePackage or UpdateExecutionKind.NativeStorePackage or UpdateExecutionKind.NativeStoreQueue ? 1 : 0)
             .ThenBy(static row => row.Name, StringComparer.CurrentCultureIgnoreCase)
             .ToArray();
         if (queue.Length == 0)
@@ -1100,6 +1139,7 @@ public sealed partial class MainPage : Page
         }
 
         _massUpdateBusy = true;
+        _stopBatch = false;
         _restartPending = false;
         var completed = 0;
         var failed = 0;
@@ -1107,6 +1147,7 @@ public sealed partial class MainPage : Page
         {
             foreach (var row in queue)
             {
+                if (_stopBatch) break;
                 UpdatesList.SelectedItem = row;
                 StatusText.Text = LocalizationService.Format("MassUpdateProgress", completed + failed + 1, queue.Length, row.Name);
                 if (await ExecuteUpdateAsync(row, null, rescanAfterSuccess: false))
@@ -1143,6 +1184,12 @@ public sealed partial class MainPage : Page
             return false;
         }
         SetUpdateBusy(true, LocalizationService.Format("RevalidatingUpdate", row.Name));
+        using var operationCancellation = new CancellationTokenSource();
+        _operationCancellation = operationCancellation;
+        var storeQueue = row.Source.ExecutionPlan.Kind == UpdateExecutionKind.NativeStoreQueue;
+        StopOperationButton.Content = LocalizationService.Get(storeQueue ? "StopStoreWaiting" : "StopAfterCurrent");
+        StopOperationButton.Visibility = storeQueue || _massUpdateBusy ? Visibility.Visible : Visibility.Collapsed;
+        StopOperationButton.IsEnabled = true;
         if (button is not null)
         {
             button.IsEnabled = false;
@@ -1182,7 +1229,7 @@ public sealed partial class MainPage : Page
                 _updateTransactionLease).ApplyAsync(
                 row.Source,
                 cacheRoot,
-                transactionProgress);
+                transactionProgress, operationCancellation.Token);
 
             if (rescanAfterSuccess)
             {
@@ -1205,7 +1252,9 @@ public sealed partial class MainPage : Page
                 : transaction.Stage == UpdateTransactionStage.PendingReboot
                     ? LocalizationService.Get("RestartRequired")
                     : transaction.IsSuccess
-                        ? LocalizationService.Get("UpdateCompletedMessage")
+                        ? row.Source.ExecutionPlan.Kind == UpdateExecutionKind.NativeStoreQueue
+                            ? LocalizationService.Format("StoreOperationCompleted", transaction.FreshAssessment?.InstalledVersion ?? "?")
+                            : LocalizationService.Get("UpdateCompletedMessage")
                         : transaction.Error ?? LocalizationService.Get("UpdateTransactionFailed");
             UpdateBar.Severity = transaction.IsSuccess
                 ? InfoBarSeverity.Success
@@ -1220,6 +1269,8 @@ public sealed partial class MainPage : Page
         }
         finally
         {
+            _operationCancellation = null;
+            StopOperationButton.Visibility = Visibility.Collapsed;
             UpdateProgress.Visibility = Visibility.Collapsed;
             UpdateProgress.IsIndeterminate = false;
             if (button is not null)
@@ -1228,6 +1279,14 @@ public sealed partial class MainPage : Page
             }
             SetUpdateBusy(false, null);
         }
+    }
+
+    private async void StopOperationButton_Click(object sender, RoutedEventArgs e)
+    {
+        _stopBatch = true;
+        StopOperationButton.IsEnabled = false;
+        if (StopOperationButton.Content?.ToString() == LocalizationService.Get("StopStoreWaiting") && _operationCancellation is { } cancellation)
+            await cancellation.CancelAsync();
     }
 
     private async Task<UpdateCheckResult?> RevalidateUpdateAsync(
@@ -1277,10 +1336,10 @@ public sealed partial class MainPage : Page
     {
         var verifiedUpdates = _allUpdates.Count(static row =>
             row.CanInstall && row.Source.Status == UpdateStatus.Available &&
-            row.Source.ExecutionPlan?.Kind is not (UpdateExecutionKind.StorePackage or UpdateExecutionKind.NativeStorePackage));
+            row.Source.ExecutionPlan?.Kind is not (UpdateExecutionKind.StorePackage or UpdateExecutionKind.NativeStorePackage or UpdateExecutionKind.NativeStoreQueue));
         var storeActions = _allUpdates.Count(static row =>
             row.CanInstall && row.Source.Status == UpdateStatus.Available &&
-            row.Source.ExecutionPlan?.Kind is UpdateExecutionKind.StorePackage or UpdateExecutionKind.NativeStorePackage);
+            row.Source.ExecutionPlan?.Kind is UpdateExecutionKind.StorePackage or UpdateExecutionKind.NativeStorePackage or UpdateExecutionKind.NativeStoreQueue);
         UpdateAllButton.Content = storeActions > 0
             ? LocalizationService.Format("UpdateAllCountWithStore", verifiedUpdates, storeActions)
             : LocalizationService.Format("UpdateAllCount", verifiedUpdates);

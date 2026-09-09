@@ -164,4 +164,16 @@
   <data name="ProviderWslNote"><value>Die stabile WSL-Version wird direkt bei Microsoft auf GitHub geprüft. Die signierte Windows-Datei wsl.exe führt --update --web-download mit Administratorrechten aus. Linux-Distributionen werden weder abgemeldet noch neu installiert. Anschließend wird die installierte WSL-Version unabhängig geprüft. Microsoft kann eine neuere stabile Version bereitstellen.</value></data>
   <data name="StorePublicationPendingMessage"><value>OpenAI kündigt {0} an. Microsoft Store veröffentlicht für dieses Paket derzeit {1}; installiert: {2}. Das neuere Paket ist im Store noch nicht verfügbar. Prüfen Sie nach der Veröffentlichung erneut.</value></data>
   <data name="StorePublishedUpdateAvailableMessage"><value>Microsoft Store bietet {0} für das installierte Paket an. OpenAI kündigt bereits {1} an. NaxUpdater installiert das verfügbare Store-Update und prüft anschließend die installierte Version. Die spätere Ankündigung blockiert dieses Update nicht.</value></data>
+  <data name="StatusStoreQueued"><value>In Store-Warteschlange</value></data>
+  <data name="StatusStoreUpdating"><value>Store aktualisiert</value></data>
+  <data name="StatusStorePaused"><value>Im Store pausiert</value></data>
+  <data name="StoreQueueTitle"><value>{0} Paket(e) in der Microsoft-Store-Warteschlange</value></data>
+  <data name="StoreQueueMessage"><value>Dieses Paket befindet sich in der Microsoft-Store-Warteschlange. NaxUpdater setzt den bestehenden Vorgang fort oder verfolgt ihn, falls er bereits läuft. Windows überprüft das Paket; anschließend liest NaxUpdater die installierte Version erneut ein. Es wird keine zweite Installation gestartet.</value></data>
+  <data name="ContinueStoreUpdate"><value>Fortsetzen</value></data>
+  <data name="TrackStoreUpdate"><value>Verfolgen</value></data>
+  <data name="StoreOperationCompleted"><value>Windows hat den Store-Vorgang abgeschlossen. Unabhängig ermittelte installierte Version: {0}. Store-Wartung kann ohne Änderung der Versionsnummer abgeschlossen werden.</value></data>
+  <data name="StopStoreWaiting"><value>Warten beenden (Store läuft weiter)</value></data>
+  <data name="StopAfterCurrent"><value>Nach diesem Vorgang stoppen</value></data>
+  <data name="RemovalWindowsComponent"><value>Windows verwaltet diese Systemkomponente. NaxUpdater bietet dafür keine direkte Paket-Deinstallation an. Geschützte Pakete werden nicht zwangsweise entfernt.</value></data>
+  <data name="RemovalUnavailable"><value>Für diese Anwendung wurde keine unterstützte Deinstallationsmethode gefunden.</value></data>
 </root>

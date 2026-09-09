@@ -176,6 +176,12 @@ public sealed class UpdateRow
             LocalizationService.Get("StatusStoreOfferPending"),
         UpdateStatus.NewerReleaseKnown => LocalizationService.Get("StatusNewerReleaseKnown"),
         UpdateStatus.Current => LocalizationService.Get("StatusCurrent"),
+        UpdateStatus.StoreQueued => LocalizationService.Get(Source.AvailabilityReason switch
+        {
+            UpdateAvailabilityReason.StoreUpdating => "StatusStoreUpdating",
+            UpdateAvailabilityReason.StorePaused => "StatusStorePaused",
+            _ => "StatusStoreQueued"
+        }),
         UpdateStatus.ManagedExternally => LocalizationService.Get("StatusNotChecked"),
         UpdateStatus.Unsupported => LocalizationService.Get("StatusUnsupported"),
         UpdateStatus.Error => LocalizationService.Get("StatusCheckFailed"),
@@ -205,7 +211,9 @@ public sealed class UpdateRow
     public string Message => LocalizationService.ProviderMessage(Source);
     public string ReleaseNotes => Source.ReleaseNotesUrl ?? LocalizationService.Get("NotProvided");
     public bool CanInstall => Source.IsInstallable;
-    public string UpdateActionText => Source.ProviderId == "gog-galaxy-native"
+    public string UpdateActionText => Source.ExecutionPlan?.Kind == UpdateExecutionKind.NativeStoreQueue
+        ? LocalizationService.Get(Source.AvailabilityReason == UpdateAvailabilityReason.StoreUpdating ? "TrackStoreUpdate" : "ContinueStoreUpdate")
+        : Source.ProviderId == "gog-galaxy-native"
         ? LocalizationService.Get("UpdateShort")
         : Source.ExecutionPlan?.Kind == UpdateExecutionKind.NativeCommand
         ? LocalizationService.Get("RunUpdateShort")
@@ -217,6 +225,7 @@ public sealed class UpdateRow
         UpdateStatus.NewerReleaseKnown => "NaxBlueBrush",
         UpdateStatus.Current => "NaxGreenBrush",
         UpdateStatus.ManagedExternally => "NaxBlueBrush",
+        UpdateStatus.StoreQueued => "NaxBlueBrush",
         UpdateStatus.Unsupported => "NaxPurpleBrush",
         _ => "NaxPinkBrush"
     });
@@ -226,6 +235,7 @@ public sealed class UpdateRow
         UpdateStatus.NewerReleaseKnown => "NaxBlueCardBrush",
         UpdateStatus.Current => "NaxGreenCardBrush",
         UpdateStatus.ManagedExternally => "NaxBlueCardBrush",
+        UpdateStatus.StoreQueued => "NaxBlueCardBrush",
         UpdateStatus.Unsupported => "NaxPurpleCardBrush",
         _ => "NaxPinkCardBrush"
     });

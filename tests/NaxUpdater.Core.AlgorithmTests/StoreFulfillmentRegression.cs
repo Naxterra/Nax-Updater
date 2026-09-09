@@ -40,7 +40,8 @@ internal static class StoreFulfillmentRegression
         assert(MicrosoftStoreProductMetadataClient.ParsePublishedPackage(json.RootElement, Product, Family, "x64", "1.0.0.0", "0017") is null,
             "A redeem-only SKU could still produce a prepared installation target.");
 
-        using var http = new HttpClient(new Handler(json.RootElement.GetRawText()));
+        var handler = new Handler(json.RootElement.GetRawText());
+        using var http = new HttpClient(handler);
         var nativeClient = new Client();
         var metadata = new MicrosoftStoreProductMetadataClient(http);
         var native = new NativeStoreUpdateService(nativeClient, (p, t) => metadata.GetPublishedPackageAsync(
@@ -53,42 +54,131 @@ internal static class StoreFulfillmentRegression
         assert(result.Status == UpdateStatus.Current && result.AvailableVersion is null,
             "Valid no-update results were poisoned by a non-fulfillable alternate SKU.");
         assert(nativeClient.Queried.SequenceEqual(["0010", "0011"]), "A non-fulfillable SKU reached the native Store API.");
+        assert(handler.Requests == 1, "Inline package-family metadata caused a redundant product request.");
+
+        await provider.CheckAsync(app, CancellationToken.None);
+        assert(handler.Requests == 1 && nativeClient.Queried.Count == 4,
+            "Warm checks must reuse routing metadata but query native eligibility again.");
 
         nativeClient.FailEligible = true;
         var failed = await provider.CheckAsync(app, CancellationToken.None);
         assert(failed.Status == UpdateStatus.Error, "An actual failure on a valid fulfillment SKU was suppressed.");
         nativeClient.FailEligible = false;
         nativeClient.Offer = true;
+        handler.ProductJson = handler.ProductJson.Replace("2.0.0.0", "3.0.0.0");
         var available = await provider.CheckAsync(app, CancellationToken.None);
         assert(available.IsInstallable && available.ExecutionPlan?.NativeStoreTarget?.SkuId == "0011",
             "Filtering non-fulfillable SKUs hid a valid alternate update offer.");
+        assert(available.AvailableVersion == "3.0.0.0" && handler.Requests == 2,
+            "A positive native offer must refresh its exact target rather than reuse cached package versions.");
+        handler.ProductJson = handler.ProductJson.Replace("3.0.0.0", "1.0.0.0");
+        assert((await provider.CheckAsync(app, CancellationToken.None)).Status == UpdateStatus.Error,
+            "A native update offer with an equal public-catalog target was falsely labeled Current.");
         try
         {
             await native.PrepareAsync(new(Product, "0017", Family, "2.0.0.0", FullName, "x64"), CancellationToken.None);
             assert(false, "Preparation accepted a SKU that no longer provides fulfillment.");
         }
         catch (InvalidOperationException) { assert(true, "Non-fulfillable prepared target rejected."); }
+
+        var retryHandler = new Handler(json.RootElement.GetRawText()) { FailuresRemaining = 1 };
+        using var retryHttp = new HttpClient(retryHandler);
+        var retryMetadata = new MicrosoftStoreProductMetadataClient(retryHttp);
+        assert(await retryMetadata.ResolvePackageFamilyAsync(Family, "x64", "1.0.0.0", CancellationToken.None) is not null && retryHandler.Requests == 2,
+            "A transient Store catalog failure was not retried once.");
+        retryHandler.FailuresRemaining = 2;
+        using var failureHttp = new HttpClient(retryHandler);
+        var failureMetadata = new MicrosoftStoreProductMetadataClient(failureHttp);
+        try
+        {
+            await failureMetadata.ResolvePackageFamilyAsync(Family, "x64", "1.0.0.0", CancellationToken.None);
+            assert(false, "Repeated catalog failure was reported as a successful check.");
+        }
+        catch (HttpRequestException) { assert(true, "Repeated catalog failure remains an error."); }
+        assert(await failureMetadata.ResolvePackageFamilyAsync(Family, "x64", "1.0.0.0", CancellationToken.None) is not null && retryHandler.Requests == 5,
+            "A failed Store lookup was cached and prevented a subsequent successful check.");
+
+        var requestsBeforeQueue = handler.Requests;
+        var queriesBeforeQueue = nativeClient.Queried.Count;
+        foreach (var state in new[] { AppInstallState.ReadyToDownload, AppInstallState.Pending,
+            AppInstallState.Downloading, AppInstallState.Installing, AppInstallState.Paused })
+        {
+            nativeClient.Queue = new(Product, Family, state);
+            var queued = await provider.CheckAsync(app, CancellationToken.None);
+            assert(queued.Status == UpdateStatus.StoreQueued && queued.IsInstallable && queued.AvailableVersion is null &&
+                queued.ExecutionPlan?.Kind == UpdateExecutionKind.NativeStoreQueue,
+                $"A {state} Store queue entry did not offer an identity-bound existing-queue action.");
+            assert(handler.Requests == requestsBeforeQueue && nativeClient.Queried.Count == queriesBeforeQueue,
+                "A known queued package still performed redundant catalog/update requests.");
+        }
+        nativeClient.Queue = new(Product, Family, AppInstallState.Downloading);
+        try
+        {
+            await native.PrepareAsync(new(Product, "0011", Family, "2.0.0.0", FullName, "x64"), CancellationToken.None);
+            assert(false, "A downloading Store package could be prepared for duplicate execution.");
+        }
+        catch (InvalidOperationException) { assert(true, "An active Store deployment blocked duplicate preparation."); }
+        nativeClient.Queue = new(Product, Family, AppInstallState.Error, unchecked((int)0x80004005));
+        assert((await provider.CheckAsync(app, CancellationToken.None)) is { Status: UpdateStatus.StoreQueued, IsInstallable: true },
+            "An errored Store queue entry did not offer an explicitly approved retry.");
+        nativeClient.Queue = new(Product, Family, AppInstallState.Error, NativeStoreUpdateService.PackageIdentityConflictCode);
+        assert((await provider.CheckAsync(app, CancellationToken.None)) is { Status: UpdateStatus.Error, IsInstallable: false },
+            "An unchanged Store package content conflict was offered for retry or labeled Current.");
+        nativeClient.Queue = new(Product, "Wrong_family", AppInstallState.Downloading);
+        try
+        {
+            await native.ReadQueueAsync(Family, CancellationToken.None);
+            assert(false, "A queue entry for a different family was accepted.");
+        }
+        catch (InvalidOperationException) { assert(true, "Queue identity mismatch rejected."); }
+        foreach (var terminal in new[] { AppInstallState.Completed, AppInstallState.Canceled })
+        {
+            nativeClient.Queue = new(Product, Family, terminal);
+            assert(await native.ReadQueueAsync(Family, CancellationToken.None) is null,
+                "A terminal queue record prevented a fresh update check.");
+        }
+        nativeClient.Queue = null;
+        nativeClient.Offer = false;
+        nativeClient.QueueAfterQuery = new(Product, Family, AppInstallState.Downloading);
+        assert((await native.CheckIdentityAsync(new(Product, "0010", Family), CancellationToken.None)).QueueEntry?.State == AppInstallState.Downloading,
+            "A queue entry appearing during a null update query was mislabeled Current.");
     }
 
     private sealed class Handler(string productJson) : HttpMessageHandler
     {
-        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken token) =>
-            Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+        public string ProductJson { get; set; } = productJson;
+        public int Requests { get; private set; }
+        public int FailuresRemaining { get; set; }
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken token)
+        {
+            Requests++;
+            if (FailuresRemaining > 0)
+            {
+                FailuresRemaining--;
+                return Task.FromResult(new HttpResponseMessage(HttpStatusCode.ServiceUnavailable));
+            }
+            using var document = JsonDocument.Parse(ProductJson);
+            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
             {
                 Content = new StringContent(
-                request.RequestUri!.AbsolutePath.EndsWith("/lookup") ? JsonSerializer.Serialize(new { Products = new[] { new { ProductId = Product } } }) : productJson)
+                request.RequestUri!.AbsolutePath.EndsWith("/lookup") ? JsonSerializer.Serialize(new { Products = new[] { document.RootElement.GetProperty("Product") } }) : ProductJson)
             });
+        }
     }
     private sealed class Client : INativeStoreUpdateClient, INativeStoreUpdateItem
     {
         public List<string> Queried { get; } = [];
         public bool FailEligible { get; set; }
         public bool Offer { get; set; }
+        public NativeStoreQueueEntry? Queue { get; set; }
+        public NativeStoreQueueEntry? QueueAfterQuery { get; set; }
+        public Task<NativeStoreQueueEntry?> ReadQueueAsync(string family, CancellationToken token) => Task.FromResult(Queue);
         public string ProductId => Product;
         public string PackageFamilyName => Family;
         public Task<INativeStoreUpdateItem?> FindPausedUpdateAsync(StoreProductIdentity identity, CancellationToken token)
         {
             Queried.Add(identity.SkuId);
+            if (QueueAfterQuery is not null) Queue = QueueAfterQuery;
             if (identity.SkuId is not ("0010" or "0011") || FailEligible && identity.SkuId == "0011") throw new ArgumentException("Rejected SKU");
             return Task.FromResult<INativeStoreUpdateItem?>(Offer && identity.SkuId == "0011" ? this : null);
         }

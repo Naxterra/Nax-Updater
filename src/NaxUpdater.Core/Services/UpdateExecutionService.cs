@@ -207,6 +207,9 @@ public sealed class UpdateExecutionService
         CancellationToken cancellationToken = default)
     {
         var plan = update.ExecutionPlan ?? throw new InvalidOperationException("The update has no execution plan.");
+        if (plan.Kind == UpdateExecutionKind.NativeStoreQueue)
+            return new PreparedUpdateExecution(null, null, null, null, null, StoreQueueUpdate:
+                await _nativeStore.PrepareQueueAsync(plan.StoreQueueTarget ?? throw new InvalidOperationException("Missing Store queue target."), cancellationToken));
         if (plan.Kind == UpdateExecutionKind.NativeStorePackage)
         {
             var prepared = await _nativeStore.PrepareAsync(
@@ -362,9 +365,16 @@ public sealed class UpdateExecutionService
     public async Task<UpdateExecutionResult> ExecutePreparedAsync(
         UpdateCheckResult update,
         PreparedUpdateExecution prepared,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        IProgress<double>? progress = null)
     {
         var plan = update.ExecutionPlan ?? throw new InvalidOperationException("The update has no execution plan.");
+        if (plan.Kind == UpdateExecutionKind.NativeStoreQueue)
+        {
+            if (prepared.StoreQueueUpdate is null || prepared.StoreQueueUpdate.Target != plan.StoreQueueTarget)
+                throw new InvalidOperationException("The prepared Store queue item differs from the approved identity.");
+            return await prepared.StoreQueueUpdate.Apply(progress, cancellationToken);
+        }
         var running = FindRunningProcesses(update);
         if (running.Count > 0)
         {
@@ -410,7 +420,7 @@ public sealed class UpdateExecutionService
                 !string.Equals(System.Text.Json.JsonSerializer.Serialize(prepared.CatalogUpdate.Target),
                     System.Text.Json.JsonSerializer.Serialize(plan.WingetTarget), StringComparison.Ordinal))
                 throw new InvalidOperationException("The prepared WinGet package does not match the approved target.");
-            return await prepared.CatalogUpdate.ApplyAsync(cancellationToken);
+            return await prepared.CatalogUpdate.ApplyAsync(cancellationToken, progress);
         }
         if (string.IsNullOrWhiteSpace(prepared.ExecutablePath) || !File.Exists(prepared.ExecutablePath))
         {

@@ -13,12 +13,15 @@ public interface IWingetPackageService
     Task<PreparedCatalogUpdate> PrepareAsync(UpdateCheckResult update, CancellationToken token);
 }
 
-public sealed class PreparedCatalogUpdate(
-    WingetUpdateTarget target,
-    Func<CancellationToken, Task<UpdateExecutionResult>> apply)
+public sealed class PreparedCatalogUpdate
 {
-    public WingetUpdateTarget Target { get; } = target;
-    public Task<UpdateExecutionResult> ApplyAsync(CancellationToken token) => apply(token);
+    private readonly Func<IProgress<double>?, CancellationToken, Task<UpdateExecutionResult>> _apply;
+    public PreparedCatalogUpdate(WingetUpdateTarget target, Func<CancellationToken, Task<UpdateExecutionResult>> apply)
+        : this(target, (_, token) => apply(token)) { }
+    public PreparedCatalogUpdate(WingetUpdateTarget target, Func<IProgress<double>?, CancellationToken, Task<UpdateExecutionResult>> apply)
+        { Target = target; _apply = apply; }
+    public WingetUpdateTarget Target { get; }
+    public Task<UpdateExecutionResult> ApplyAsync(CancellationToken token, IProgress<double>? progress = null) => _apply(progress, token);
 }
 
 // The package manager owns manifest authentication, download hashes, dependencies,
@@ -35,10 +38,10 @@ public sealed class WingetPackageService : IWingetPackageService
         try
         {
             var (_, catalog) = await ConnectAsync(token);
-            var package = await FindAsync(catalog, packageId, token);
+            var registeredIds = RegisteredIds(application).ToArray();
+            var package = await FindAsync(catalog, packageId, registeredIds, token);
             if (package?.InstalledVersion is null)
                 return new(null, "WinGet could not correlate this package with an installed application.");
-            var registeredIds = RegisteredIds(application);
             var installedIds = Copy(package.InstalledVersion.ProductCodes);
             if (!registeredIds.Intersect(installedIds, StringComparer.OrdinalIgnoreCase).Any())
                 return new(null, "The installed product code does not match the package selected by WinGet.");
@@ -72,7 +75,7 @@ public sealed class WingetPackageService : IWingetPackageService
         if (target.SourceId != OfficialSourceId || target.Version != update.AvailableVersion)
             throw new InvalidOperationException("The approved WinGet identity or version does not match.");
         var (manager, catalog) = await ConnectAsync(token, reopen: true);
-        var package = await FindAsync(catalog, target.PackageId, token)
+        var package = await FindAsync(catalog, target.PackageId, target.InstalledProductCodes, token)
             ?? throw new InvalidOperationException("The approved WinGet package is no longer present.");
         var key = VersionKey(package, target.Version)
             ?? throw new InvalidOperationException("The approved WinGet version is no longer present.");
@@ -81,7 +84,7 @@ public sealed class WingetPackageService : IWingetPackageService
         options.InstallerType = Enum.Parse<PackageInstallerType>(target.InstallerType);
         ValidatePrepared(package, key, options, target);
         // Keep this catalog package, version key and options alive through Apply.
-        return new PreparedCatalogUpdate(target, async cancellationToken =>
+        return new PreparedCatalogUpdate(target, async (progress, cancellationToken) =>
         {
             ValidatePrepared(package, key, options, target);
             var operation = manager.UpgradePackageAsync(package, options);
@@ -89,7 +92,9 @@ public sealed class WingetPackageService : IWingetPackageService
             {
                 // Once submitted, Windows owns installation and possible UAC. Await its
                 // actual result even if the caller stops waiting; never kill an installer.
-                var result = await operation.AsTask();
+                var result = await operation.AsTask(new Progress<InstallProgress>(state =>
+                    progress?.Report(state.State == PackageInstallProgressState.Downloading
+                        ? state.DownloadProgress * 0.5 : 0.5 + state.InstallationProgress * 0.5)));
                 var success = result.Status == InstallResultStatus.Ok;
                 var code = result.RebootRequired ? 3010 : unchecked((int)result.InstallerErrorCode);
                 if (!success && code == 0) code = result.ExtendedErrorCode?.HResult ?? -1;
@@ -171,7 +176,7 @@ public sealed class WingetPackageService : IWingetPackageService
             source.AcceptSourceAgreements = true;
             var composite = new CreateCompositePackageCatalogOptions
             {
-                CompositeSearchBehavior = CompositeSearchBehavior.RemotePackagesFromAllCatalogs,
+                CompositeSearchBehavior = CompositeSearchBehavior.LocalCatalogs,
                 InstalledScope = PackageInstallScope.Any
             };
             composite.Catalogs.Add(source);
@@ -184,19 +189,25 @@ public sealed class WingetPackageService : IWingetPackageService
         finally { _connectionGate.Release(); }
     }
 
-    private static async Task<CatalogPackage?> FindAsync(PackageCatalog catalog, string id, CancellationToken token)
+    private static async Task<CatalogPackage?> FindAsync(PackageCatalog catalog, string id, IEnumerable<string> installedCodes, CancellationToken token)
     {
-        var options = new FindPackagesOptions { ResultLimit = 2 };
-        options.Selectors.Add(new PackageMatchFilter
+        var codes = installedCodes.Where(c => !string.IsNullOrWhiteSpace(c)).Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
+        if (codes.Length is 0 or > 32) return null;
+        var options = new FindPackagesOptions { ResultLimit = 32 };
+        // Remote-first ID lookup collapses side-by-side installations and can
+        // bind x64 to an already-current x86 runtime. Search local product codes
+        // first, then require the same official remote package ID and code.
+        foreach (var code in codes) options.Selectors.Add(new PackageMatchFilter
         {
-            Field = PackageMatchField.Id,
+            Field = PackageMatchField.ProductCode,
             Option = PackageFieldMatchOption.EqualsCaseInsensitive,
-            Value = id
+            Value = code
         });
         var result = await catalog.FindPackagesAsync(options).AsTask(token);
         if (result.Status != FindPackagesResultStatus.Ok || result.WasLimitExceeded) return null;
         var packages = Copy(result.Matches).Select(static match => match.CatalogPackage)
-            .Where(package => package.Id.Equals(id, StringComparison.OrdinalIgnoreCase)).ToArray();
+            .Where(package => package.Id.Equals(id, StringComparison.OrdinalIgnoreCase) && package.InstalledVersion is not null &&
+                Copy(package.InstalledVersion.ProductCodes).Intersect(codes, StringComparer.OrdinalIgnoreCase).Any()).ToArray();
         return packages.Length == 1 ? packages[0] : null;
     }
 

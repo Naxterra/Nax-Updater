@@ -58,7 +58,9 @@ public sealed class FileUpdateOperationJournal(string path) : IUpdateOperationJo
             UpdateExecutionIntent.Fingerprint(plan),
             UpdateTransactionStage.Created,
             now,
-            now);
+            now,
+            ExecutionKind: plan.Kind,
+            StoreQueueTarget: plan.StoreQueueTarget);
         Write(operation);
         return operation;
     }

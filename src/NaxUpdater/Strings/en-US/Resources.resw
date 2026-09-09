@@ -164,4 +164,16 @@
   <data name="ProviderWslNote"><value>The stable WSL version is checked directly against Microsoft's GitHub release. Signed Windows wsl.exe runs --update --web-download with administrator privileges. Linux distributions are neither unregistered nor reinstalled. The installed WSL version is checked independently afterward. Microsoft may supply a newer stable release.</value></data>
   <data name="StorePublicationPendingMessage"><value>OpenAI announces {0}. Microsoft Store currently publishes {1} for this package; installed: {2}. The newer package is not yet available from the Store. Check again after publication.</value></data>
   <data name="StorePublishedUpdateAvailableMessage"><value>Microsoft Store offers {0} for your installed package. OpenAI's latest announcement is {1}. NaxUpdater will apply the available Store update and verify the installed version afterward; a later announcement does not block this update.</value></data>
+  <data name="StatusStoreQueued"><value>In Store queue</value></data>
+  <data name="StatusStoreUpdating"><value>Store updating</value></data>
+  <data name="StatusStorePaused"><value>Paused in Store</value></data>
+  <data name="StoreQueueTitle"><value>{0} package(s) in the Microsoft Store queue</value></data>
+  <data name="StoreQueueMessage"><value>This package is in the Microsoft Store queue. NaxUpdater resumes the existing operation or observes it if already running. Windows verifies the package; NaxUpdater then independently rereads the installed version. No duplicate installation is started.</value></data>
+  <data name="ContinueStoreUpdate"><value>Continue</value></data>
+  <data name="TrackStoreUpdate"><value>Track</value></data>
+  <data name="StoreOperationCompleted"><value>Windows completed the Store operation. Independently observed installed version: {0}. Store servicing can complete without changing the version number.</value></data>
+  <data name="StopStoreWaiting"><value>Stop waiting (Store keeps running)</value></data>
+  <data name="StopAfterCurrent"><value>Stop after current operation</value></data>
+  <data name="RemovalWindowsComponent"><value>Windows manages this system component. NaxUpdater does not offer direct package removal for it. Protected packages will not be forcibly removed.</value></data>
+  <data name="RemovalUnavailable"><value>No supported uninstall method was found for this application.</value></data>
 </root>
