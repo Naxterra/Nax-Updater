@@ -357,12 +357,36 @@ public sealed class MsixStoreUpdateProvider : IUpdateProvider
             "OpenAI",
             "Codex",
             "bin")).TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar;
-        AddPath("ChatGPT", application.PrimaryInstallPath, requireCodexRoot: false);
-        var packageDirectory = Path.GetDirectoryName(application.PrimaryInstallPath);
-        if (!string.IsNullOrWhiteSpace(packageDirectory))
+        // For an MSIX app, PrimaryInstallPath is the package's installed root
+        // *directory* (e.g. "...\OpenAI.Codex_<version>_x64__<publisherId>"),
+        // not an executable - AddPath's own extension check silently rejects
+        // it, and Path.GetDirectoryName on a directory returns its *parent*
+        // (WindowsApps), not the package's own contents. Search inside the
+        // package root instead, where the manifest's app-list entry actually
+        // places "app\ChatGPT.exe" (and a packaged Codex.exe, if present).
+        if (!string.IsNullOrWhiteSpace(application.PrimaryInstallPath) && Directory.Exists(application.PrimaryInstallPath))
         {
-            var packagedCodex = Path.Combine(packageDirectory, "Codex.exe");
-            if (File.Exists(packagedCodex)) AddPath("Codex", packagedCodex, requireCodexRoot: false);
+            try
+            {
+                foreach (var chatGptPath in Directory.EnumerateFiles(application.PrimaryInstallPath, "ChatGPT.exe", SearchOption.AllDirectories).Take(8))
+                {
+                    AddPath("ChatGPT", chatGptPath, requireCodexRoot: false);
+                }
+                foreach (var packagedCodex in Directory.EnumerateFiles(application.PrimaryInstallPath, "Codex.exe", SearchOption.AllDirectories).Take(8))
+                {
+                    AddPath("Codex", packagedCodex, requireCodexRoot: false);
+                }
+            }
+            catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+            {
+                // Dynamic process enumeration below can still bind a currently running helper.
+            }
+        }
+        else
+        {
+            // Defensive fallback if PrimaryInstallPath is ever a direct file
+            // path instead (e.g. a non-MSIX identity reusing this binding logic).
+            AddPath("ChatGPT", application.PrimaryInstallPath, requireCodexRoot: false);
         }
         try
         {

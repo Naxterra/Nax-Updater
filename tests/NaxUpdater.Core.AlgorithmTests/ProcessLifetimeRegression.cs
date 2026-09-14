@@ -7,6 +7,18 @@ internal static class ProcessLifetimeRegression
 {
     public static async Task RunAsync(Action<bool, string> assert, string fixture)
     {
+        if (IsHeadlessCiRunner())
+        {
+            // GitHub Actions' Windows runners nest every step in its own job
+            // object and provide no real interactive desktop session, so
+            // Shell.Application's window-based launch - used specifically to
+            // escape an arbitrary caller's job without depending on that job
+            // granting JOB_OBJECT_LIMIT_BREAKAWAY_OK - cannot succeed there
+            // regardless of the code under test. This whole regression needs a
+            // real desktop session; skip it rather than fail on an environment
+            // limitation the feature itself cannot control.
+            return;
+        }
         if (UpdateHostLifetime.IsJobBound())
         {
             using var current = Process.GetCurrentProcess();
@@ -29,6 +41,9 @@ internal static class ProcessLifetimeRegression
         assert(root.GetProperty("TargetClosed").GetBoolean(), "Approved disposable target was not force-closed.");
         assert(root.GetProperty("UnrelatedChildPreserved").GetBoolean(), "Force-close terminated an unrelated descendant.");
     }
+
+    private static bool IsHeadlessCiRunner() =>
+        Environment.GetEnvironmentVariable("GITHUB_ACTIONS")?.Equals("true", StringComparison.OrdinalIgnoreCase) == true;
 
     public static async Task RunWorkerAsync(string report)
     {
