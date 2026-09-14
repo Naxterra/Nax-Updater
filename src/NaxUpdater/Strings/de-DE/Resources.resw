@@ -144,6 +144,7 @@
   <data name="TransactionCloseFailed"><value>Diese pfadverifizierten Anwendungsprozesse verbleiben nach normalem Schließen und erzwungener Beendigung. NaxUpdater erhöht keine veralteten Prozess-IDs; schließen Sie sie manuell und versuchen Sie es erneut:\n\n{0}</value></data>
   <data name="ProviderReleaseKnownNotAutomatic"><value>Der Hersteller meldet eine neuere Version, aber dieser Ausführungsweg erfüllt derzeit nicht die Anforderungen von NaxUpdater an Anwendbarkeit, unveränderbares Staging, Sprache, Herausgeber und unabhängige Installationsprüfung. Es wird kein automatisches Update versucht.</value></data>
   <data name="SecurityWingetProvider"><value>Offizielle WinGet-Paketidentität und ausgewählte Version · Download und Installer-Integrität werden vom Windows-Paket-Manager geprüft</value></data>
+  <data name="SecurityChocolateyProvider"><value>Exakte Chocolatey-Community-Paketidentität und ausgewählte Version · das Installationsskript des Pakets wird von Chocolateys eigenem installiertem Client ausgeführt und geprüft, nicht von NaxUpdater</value></data>
   <data name="UpdateCheckedStatusDetailed"><value>{0} Versionen geprüft · {1} installierbare Updates · {2} extern verwaltet · {3} nicht unterstützt · {4} Prüfprobleme · {5} weitere bekannte Versionen</value></data>
   <data name="NoUpdatesAmongChecked"><value>Keine Updates für die geprüften Anwendungen gefunden</value></data>
   <data name="ChecksIncomplete"><value>Einige Updateprüfungen konnten nicht abgeschlossen werden</value></data>

@@ -214,7 +214,12 @@ internal sealed class NativeStoreUpdateClient : INativeStoreUpdateClient
     private Task<INativeStoreUpdateItem[]>? _queueSnapshot;
     private long _queueSnapshotAt;
     private volatile bool _queueUnresponsive;
-    private volatile bool _searchUnresponsive;
+    // 0 = responsive; otherwise the Stopwatch timestamp it was marked
+    // unresponsive at. A single field updated via Interlocked, rather than a
+    // separate bool+long pair, so a concurrent reader can never observe one
+    // half of the state updated and not the other.
+    private long _searchUnresponsiveSetAt;
+    private static readonly TimeSpan SearchUnresponsiveCooldown = TimeSpan.FromSeconds(10);
     private readonly Func<INativeStoreUpdateItem[]> _readQueue;
     private readonly TimeSpan _queueTimeout;
     internal NativeStoreUpdateClient(Func<INativeStoreUpdateItem[]>? readQueue = null, TimeSpan? queueTimeout = null)
@@ -227,7 +232,7 @@ internal sealed class NativeStoreUpdateClient : INativeStoreUpdateClient
         var item = FindQueueItem(await QueueSnapshotAsync(false, token), family);
         if (item is null)
         {
-            if (_searchUnresponsive) throw new TimeoutException("The shared Microsoft Store update service timed out earlier in this scan. This app was not declared current; retry the scan after the service recovers.");
+            if (IsSearchUnresponsive()) throw new TimeoutException("The shared Microsoft Store update service timed out earlier in this scan. This app was not declared current; retry the scan after the service recovers.");
             return null;
         }
         var status = item.Status();
@@ -287,13 +292,29 @@ internal sealed class NativeStoreUpdateClient : INativeStoreUpdateClient
     public async Task<INativeStoreUpdateItem?> StartUpdateAsync(PublishedStorePackage package, CancellationToken token)
         => await QueryAsync(StoreProductIdentity.From(package), true, token);
 
+    private bool IsSearchUnresponsive()
+    {
+        // A single slow/stalled broker call must not permanently condemn every
+        // other app for the rest of a large scan (it previously did: nothing ever
+        // cleared this flag). Treat it as a short cooldown instead, like the
+        // queue-read path already does, so the scan recovers on its own.
+        var setAt = Interlocked.Read(ref _searchUnresponsiveSetAt);
+        if (setAt == 0) return false;
+        if (System.Diagnostics.Stopwatch.GetElapsedTime(setAt) > SearchUnresponsiveCooldown)
+        {
+            Interlocked.CompareExchange(ref _searchUnresponsiveSetAt, 0, setAt);
+            return false;
+        }
+        return true;
+    }
+
     private async Task<INativeStoreUpdateItem?> QueryAsync(StoreProductIdentity package, bool apply, CancellationToken token)
     {
-        if (!apply && _searchUnresponsive) throw new TimeoutException("The shared Microsoft Store update service timed out earlier in this scan. Retry the scan after it recovers.");
+        if (!apply && IsSearchUnresponsive()) throw new TimeoutException("The shared Microsoft Store update service timed out earlier in this scan. Retry the scan after it recovers.");
         await QuerySlots.WaitAsync(token);
         try
         {
-            if (!apply && _searchUnresponsive) throw new TimeoutException("The shared Microsoft Store update service is not responding.");
+            if (!apply && IsSearchUnresponsive()) throw new TimeoutException("The shared Microsoft Store update service is not responding.");
             var manager = _manager.Value;
             using var deadline = CancellationTokenSource.CreateLinkedTokenSource(token);
             var query = Task.Factory.StartNew(() => manager.SearchForUpdatesAsync(
@@ -303,7 +324,7 @@ internal sealed class NativeStoreUpdateClient : INativeStoreUpdateClient
             try { item = apply ? await query : await query.WaitAsync(TimeSpan.FromSeconds(20), token); }
             catch (TimeoutException)
             {
-                if (!apply) { _searchUnresponsive = true; deadline.Cancel(); }
+                if (!apply) { Interlocked.Exchange(ref _searchUnresponsiveSetAt, System.Diagnostics.Stopwatch.GetTimestamp()); deadline.Cancel(); }
                 _ = query.ContinueWith(t => _ = t.Exception, TaskContinuationOptions.OnlyOnFaulted);
                 throw new TimeoutException("The native Microsoft Store update query exceeded 20 seconds. The scan will not repeat the same stalled service request for every app.");
             }

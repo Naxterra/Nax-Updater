@@ -106,11 +106,20 @@ public sealed partial class MainPage : Page
             }
             else
             {
-                observedVersion = _snapshot?.Applications.FirstOrDefault(application =>
-                    application.Identity.Equals(interruptedOperation.ApplicationIdentity, StringComparison.Ordinal))?.NormalizedVersion ??
-                    _snapshot?.Applications.FirstOrDefault(application =>
-                        !string.IsNullOrWhiteSpace(interruptedOperation.CorrelationKey) &&
-                        UpdateCorrelation.ForApplication(application).Equals(interruptedOperation.CorrelationKey, StringComparison.Ordinal))?.NormalizedVersion;
+                observedVersion = _snapshot is null ? null : UpdateCorrelation.FindMatch(
+                    _snapshot.Applications,
+                    interruptedOperation.ApplicationIdentity,
+                    interruptedOperation.CorrelationKey)?.NormalizedVersion;
+                if (observedVersion is null && _snapshot is not null && !string.IsNullOrWhiteSpace(interruptedOperation.CorrelationKey))
+                {
+                    // The identity match (if any) had no resolved version yet;
+                    // fall back to a pure correlation-key match, which may point
+                    // at a fresher inventory entry with a known version. Passing
+                    // an identity no real application can equal forces FindMatch
+                    // into its correlation-only path, reusing its ambiguity guard.
+                    observedVersion = UpdateCorrelation.FindMatch(
+                        _snapshot.Applications, "", interruptedOperation.CorrelationKey)?.NormalizedVersion;
+                }
             }
             var recoveredAssessment = _allUpdates.Select(row => row.Source).FirstOrDefault(update =>
                 update.ApplicationIdentity.Equals(interruptedOperation.ApplicationIdentity, StringComparison.OrdinalIgnoreCase));
@@ -1294,11 +1303,8 @@ public sealed partial class MainPage : Page
         CancellationToken cancellationToken)
     {
         var inventory = await _inventoryService.ScanAsync(cancellationToken);
-        var application = inventory.Applications.FirstOrDefault(candidate =>
-            candidate.Identity.Equals(previous.ApplicationIdentity, StringComparison.Ordinal)) ??
-            inventory.Applications.FirstOrDefault(candidate =>
-                !string.IsNullOrWhiteSpace(previous.CorrelationKey) &&
-                UpdateCorrelation.ForApplication(candidate).Equals(previous.CorrelationKey, StringComparison.Ordinal));
+        var application = UpdateCorrelation.FindMatch(
+            inventory.Applications, previous.ApplicationIdentity, previous.CorrelationKey);
         if (application is null)
         {
             return null;

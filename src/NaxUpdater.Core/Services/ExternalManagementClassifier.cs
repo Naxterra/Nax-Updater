@@ -29,6 +29,7 @@ internal static class ExternalManagementClassifier
         }
         var blocked = application.BlockedProviders
             .Append("winget-fallback")
+            .Append("chocolatey-fallback")
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .Order(StringComparer.OrdinalIgnoreCase)
             .ToArray();
@@ -45,6 +46,16 @@ internal static class ExternalManagementClassifier
                 evidence.Label == "Uninstall registry" &&
                 RegistryKey(evidence.Value).StartsWith("Steam App ", StringComparison.OrdinalIgnoreCase)))
         {
+            return new("Steam", new Uri("https://store.steampowered.com/about/"));
+        }
+        if (application.DisplayName.Equals("Steam", StringComparison.OrdinalIgnoreCase) &&
+            application.Publisher?.Contains("Valve", StringComparison.OrdinalIgnoreCase) == true)
+        {
+            // The Steam client silently self-updates in the background; its registry
+            // DisplayVersion, steam.exe's file/product version, its own in-client
+            // build id, and any package-manager-reported version are five mutually
+            // incompatible numbering schemes for the same installation. No general
+            // version comparison against any of them is meaningful.
             return new("Steam", new Uri("https://store.steampowered.com/about/"));
         }
 

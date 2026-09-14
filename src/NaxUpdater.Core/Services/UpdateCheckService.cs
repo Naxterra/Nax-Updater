@@ -44,6 +44,9 @@ public sealed class UpdateCheckService
         // Registration order is not authoritative. Explicit descriptors below arbitrate
         // installed protocols, producer sources, Store, and fallback catalogs.
         providers.Add(new WingetFallbackUpdateProvider());
+        // Below WinGet in the same FallbackCatalog authority tier (lower Specificity):
+        // consulted only when neither a producer-owned source nor WinGet claims the app.
+        providers.Add(new ChocolateyUpdateProvider());
         _providers = providers;
     }
 
@@ -179,7 +182,52 @@ public sealed class UpdateCheckService
             }
             finally { durations[provider.Id] = System.Diagnostics.Stopwatch.GetElapsedTime(started).TotalMilliseconds; }
         }
-        var checks = await Task.WhenAll(candidates.Select(CheckSourceAsync));
+        // Authority tiers are independent update channels - e.g. the Store can
+        // have its own offer even while a producer feed says Current - and are
+        // always all checked, concurrently with each other. Within a tier,
+        // candidates are checked in specificity order; an actionable offer
+        // (IsInstallable) stops the tier immediately (provably safe: see the
+        // selection logic below, which can only pick an installable result
+        // outright). A mere Current only skips a remaining same-tier sibling
+        // that has explicitly opted in via SkippableAfterHigherSiblingResolves -
+        // anything that has not opted in is still always checked, so a genuine
+        // Error from it can never be silently hidden behind a Current result.
+        // Each result is paired with its own provider directly (not by array
+        // position), so duration/SourceChecks attribution can never drift.
+        var tiers = new List<IUpdateProvider[]>();
+        for (var i = 0; i < candidates.Length;)
+        {
+            var tierAuthority = candidates[i].Descriptor.Authority;
+            var j = i;
+            while (j < candidates.Length && candidates[j].Descriptor.Authority == tierAuthority) j++;
+            tiers.Add(candidates[i..j]);
+            i = j;
+        }
+        async Task<List<(IUpdateProvider Provider, UpdateCheckResult Result)>> CheckTierAsync(IUpdateProvider[] tierCandidates)
+        {
+            var tierChecks = new List<(IUpdateProvider, UpdateCheckResult)>();
+            for (var i = 0; i < tierCandidates.Length; i++)
+            {
+                var candidate = tierCandidates[i];
+                var result = await CheckSourceAsync(candidate);
+                tierChecks.Add((candidate, result));
+                if (result.Status == UpdateStatus.StoreQueued || result.IsInstallable)
+                {
+                    break;
+                }
+                if (result.Status == UpdateStatus.Current)
+                {
+                    while (i + 1 < tierCandidates.Length && tierCandidates[i + 1].Descriptor.SkippableAfterHigherSiblingResolves)
+                    {
+                        i++;
+                    }
+                }
+            }
+            return tierChecks;
+        }
+        var tierResults = await Task.WhenAll(tiers.Select(CheckTierAsync));
+        var checkResults = tierResults.SelectMany(t => t).ToArray();
+        var checks = checkResults.Select(c => c.Result).ToArray();
         // Do not let an unimplemented owner adapter suppress a working source.
         // Conversely, never bypass a higher-authority verification failure with
         // a lower-authority installer. Explicit provider policies stay exclusive.
@@ -195,9 +243,9 @@ public sealed class UpdateCheckService
         else if (!checks[selectedIndex].IsInstallable && error >= 0) selectedIndex = error;
         return checks[selectedIndex] with
         {
-            SourceChecks = checks.Select((c, index) =>
-            new UpdateSourceCheck(c.ProviderId, c.ProviderDisplayName, c.Status, c.AvailableVersion, c.Message,
-                durations.GetValueOrDefault(candidates[index].Id))).ToArray()
+            SourceChecks = checkResults.Select(c =>
+            new UpdateSourceCheck(c.Result.ProviderId, c.Result.ProviderDisplayName, c.Result.Status, c.Result.AvailableVersion, c.Result.Message,
+                durations.GetValueOrDefault(c.Provider.Id))).ToArray()
         };
     }
 
@@ -511,6 +559,35 @@ public static class UpdateCorrelation
         {
             return application.Identity.ToLowerInvariant();
         }
+        // Bootstrapper-staged installers (WiX Burn "Package Cache\{bundleGuid}\..."
+        // and similar) register a fresh uninstall key and cache path per version,
+        // by design, on every successful update. A raw path/registry correlation
+        // key is then guaranteed to change across the exact event it needs to
+        // survive. When the installed version is literally baked into the display
+        // name (e.g. ".NET Desktop Runtime - 9.0.3 (x86)"), key on the
+        // version-stripped name instead, which stays stable across the update.
+        var version = application.NormalizedVersion ?? application.InstalledVersion;
+        if (!string.IsNullOrWhiteSpace(version) &&
+            application.DisplayName.Contains(version, StringComparison.OrdinalIgnoreCase))
+        {
+            var strippedName = application.DisplayName
+                .Replace(version, "", StringComparison.OrdinalIgnoreCase)
+                .Trim();
+            if (strippedName.Length > 0)
+            {
+                var publisher = (application.Publisher ?? "").Trim().ToUpperInvariant();
+                // Keep the major version in the key: distinct major-version lines
+                // of the same product can be installed side by side (e.g. .NET
+                // Desktop Runtime 8.x and 9.x) and must not collapse onto one
+                // key, while a patch/minor bump within the same major line - the
+                // case this branch exists for - still keys identically across
+                // the update that needs to survive.
+                var major = Version.TryParse(version, out var parsedVersion)
+                    ? parsedVersion.Major.ToString()
+                    : version.ToUpperInvariant();
+                return $"versioned-name:{publisher}|{strippedName.ToUpperInvariant()}|{major}";
+            }
+        }
         if (!string.IsNullOrWhiteSpace(application.PrimaryInstallPath))
         {
             try
@@ -523,5 +600,32 @@ public static class UpdateCorrelation
             }
         }
         return $"identity:{application.Identity}";
+    }
+
+    // Resolves the single application that identifies as the one referenced by a
+    // prior check: exact inventory identity first, else the one application whose
+    // correlation key matches. If more than one installed application shares that
+    // correlation key (e.g. two side-by-side versions of the same product), the
+    // match is ambiguous and must not be guessed at.
+    public static InstalledApplication? FindMatch(
+        IEnumerable<InstalledApplication> candidates,
+        string identity,
+        string? correlationKey)
+    {
+        var applications = candidates as IReadOnlyList<InstalledApplication> ?? candidates.ToArray();
+        var byIdentity = applications.FirstOrDefault(candidate =>
+            candidate.Identity.Equals(identity, StringComparison.Ordinal));
+        if (byIdentity is not null)
+        {
+            return byIdentity;
+        }
+        if (string.IsNullOrWhiteSpace(correlationKey))
+        {
+            return null;
+        }
+        var byCorrelation = applications
+            .Where(candidate => ForApplication(candidate).Equals(correlationKey, StringComparison.Ordinal))
+            .ToArray();
+        return byCorrelation.Length == 1 ? byCorrelation[0] : null;
     }
 }

@@ -32,7 +32,8 @@ public enum UpdateExecutionKind
     StorePackage,
     WingetPackage,
     NativeStorePackage,
-    NativeStoreQueue
+    NativeStoreQueue,
+    ChocolateyPackage
 }
 
 public enum UpdateProviderAuthority
@@ -49,7 +50,14 @@ public sealed record UpdateProviderDescriptor(
     UpdateProviderAuthority Authority,
     int Specificity,
     string SelectionReason,
-    IReadOnlyList<ManagementMode>? SupportedManagementModes = null);
+    IReadOnlyList<ManagementMode>? SupportedManagementModes = null,
+    // Opt-in only: true means a same-tier, higher-specificity sibling resolving
+    // to Current is enough reason to skip this provider entirely (its own
+    // errors are rarely actionable once a more trustworthy same-tier source
+    // already answered). False (the default) means this provider is always
+    // checked, so a genuine Error from it can never be silently hidden behind
+    // a sibling's clean result.
+    bool SkippableAfterHigherSiblingResolves = false);
 
 public enum UpdateProcessPolicy
 {
@@ -144,9 +152,12 @@ public sealed record UpdateExecutionPlan(
     IReadOnlyList<string>? RunningExecutablePaths = null,
     WingetUpdateTarget? WingetTarget = null,
     PublishedStorePackage? NativeStoreTarget = null,
-    StoreQueueTarget? StoreQueueTarget = null);
+    StoreQueueTarget? StoreQueueTarget = null,
+    ChocolateyUpdateTarget? ChocolateyTarget = null);
 
 public sealed record StoreQueueTarget(string ProductId, string PackageFamilyName, string InstalledVersion);
+
+public sealed record ChocolateyUpdateTarget(string PackageId, string Version);
 
 public sealed record PublishedStorePackage(
     string ProductId, string SkuId, string PackageFamilyName,

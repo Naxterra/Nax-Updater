@@ -40,6 +40,14 @@
       "preferredProvider": "native-updater",
       "appliesWhenAbsent": false,
       "reason": "Brave Origin keeps its installed native update channel; the WinGet fallback cannot replace its channel."
+    },
+    {
+      "id": "TechSmith.Snagit",
+      "displayName": "Snagit",
+      "publisherContains": "TechSmith",
+      "blockedProviders": [ "chocolatey-fallback" ],
+      "appliesWhenAbsent": false,
+      "reason": "TechSmith's installed registry version truncates the calendar year (e.g. 26.3.1 for release 2026.3.1) while the Chocolatey community package publishes the full year; naive comparison falsely reports every current install as outdated."
     }
   ]
 }

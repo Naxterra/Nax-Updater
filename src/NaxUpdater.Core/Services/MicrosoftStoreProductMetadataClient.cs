@@ -334,6 +334,10 @@ internal sealed class MicrosoftStoreProductMetadataClient(HttpClient httpClient)
         "arm" => "arm",
         "arm64" => "arm64",
         "neutral" => "neutral",
+        // Windows.System.ProcessorArchitecture.X86OnArm64: the deployed package is
+        // an x86 package running under emulation on an ARM64 device, so it must be
+        // matched against the catalog's "x86" architecture entries, not dropped.
+        "x86onarm64" => "x86",
         _ => null
     };
 

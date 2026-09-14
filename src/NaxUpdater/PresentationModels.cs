@@ -200,6 +200,8 @@ public sealed class UpdateRow
             ? LocalizationService.Get("SecurityWingetProvider")
         : Source.ExecutionPlan.Kind == UpdateExecutionKind.NativeCommand
             ? LocalizationService.Get("SecurityNativeProvider")
+        : Source.ExecutionPlan.Kind == UpdateExecutionKind.ChocolateyPackage
+            ? LocalizationService.Get("SecurityChocolateyProvider")
             : !Source.ExecutionPlan.RequireAuthenticode
                 ? LocalizationService.Get("SecurityHashOnly")
                 : LocalizationService.Format(
