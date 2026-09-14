@@ -127,6 +127,12 @@ The current implementation includes:
 - twelve-way bounded Store catalog checking, reducing the complete local application scan and update check from roughly 27 seconds to about 7–8 seconds on the validated workstation without omitting packages.
 - version/architecture-aware MSIX integration correlation, attaching WinRAR's shell-extension package to the real Win32 installation instead of displaying a duplicate source-less package row;
 - equivalent compact and dotted date-release versions such as PotPlayer `260819` and `26.08.19.0` are treated as the same release;
+- a Chocolatey community-feed fallback beneath WinGet, using the installed `choco.exe` for both detection and application so package execution stays within Chocolatey's own trust boundary rather than NaxUpdater re-implementing it;
+- a same-tier skip that only elides an explicitly opted-in lower-specificity fallback (currently Chocolatey) once a higher-specificity sibling resolves cleanly, so a genuine error from any other compatible source can never be hidden behind a clean result;
+- version-stripped name and publisher correlation, disambiguated by major version, for installers whose registry key or install path is inherently version-specific (such as .NET Desktop Runtime's staged bootstrapper cache), so a successful update is recognized instead of reported as unresolved;
+- Steam and Snagit excluded from generic fallback version comparison after their own installed-version surfaces proved mutually inconsistent or format-mismatched against catalog data;
+- a short cooldown replacing a permanent native Store search-timeout latch that previously disabled Store checks for the remainder of a scan after a single slow broker call;
+- WinGet fallback no longer trusts its own unresolved (`Unknown`) tracked installed version to gate update availability.
 
 ## Manufacturer drivers
 
