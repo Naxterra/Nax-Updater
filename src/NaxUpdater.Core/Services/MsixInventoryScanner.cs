@@ -29,14 +29,18 @@ internal sealed class MsixInventoryScanner
                     var version = FormatVersion(package.Id.Version);
                     var installedOn = ReadInstalledDate(package);
                     var isSystemComponent = package.SignatureKind == PackageSignatureKind.System;
-                    var removalPlan = isSystemComponent
-                        ? null
-                        : new RemovalPlan(
-                            RemovalKind.MsixPackage,
-                            null,
-                            null,
-                            package.Id.FullName,
-                            false);
+                    // Microsoft-system-signed packages are still removable on
+                    // explicit user request: the removal flow's own
+                    // type-the-exact-name confirmation remains the safety
+                    // gate. isSystemComponent itself is untouched, so these
+                    // packages stay hidden by default and excluded from
+                    // update checks - only the uninstall action is unlocked.
+                    var removalPlan = new RemovalPlan(
+                        RemovalKind.MsixPackage,
+                        null,
+                        null,
+                        package.Id.FullName,
+                        false);
                     var candidate = new ApplicationCandidate
                     {
                         Identity = $"msix:{package.Id.FamilyName}",
