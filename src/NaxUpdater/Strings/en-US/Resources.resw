@@ -144,6 +144,7 @@
   <data name="TransactionCloseFailed"><value>These path-verified application processes remain after normal and forced termination. NaxUpdater will not elevate stale process IDs; close them manually and retry:\n\n{0}</value></data>
   <data name="ProviderReleaseKnownNotAutomatic"><value>The producer reports a newer release, but this execution route cannot currently satisfy NaxUpdater's applicability, immutable-staging, language, publisher, and independent post-install verification requirements. No automatic update will be attempted.</value></data>
   <data name="SecurityWingetProvider"><value>Official WinGet package identity and selected version · downloads and installer integrity verified by Windows Package Manager</value></data>
+  <data name="SecurityChocolateyProvider"><value>Exact Chocolatey community package identity and selected version · the package's install script is run and verified by Chocolatey's own installed client, not by NaxUpdater</value></data>
   <data name="UpdateCheckedStatusDetailed"><value>{0} versions checked · {1} installable updates · {2} managed elsewhere · {3} unsupported · {4} failed checks · {5} other known releases</value></data>
   <data name="NoUpdatesAmongChecked"><value>No updates found among checked applications</value></data>
   <data name="ChecksIncomplete"><value>Some update checks could not be completed</value></data>

@@ -45,6 +45,17 @@ public sealed class WingetPackageService : IWingetPackageService
             var installedIds = Copy(package.InstalledVersion.ProductCodes);
             if (!registeredIds.Intersect(installedIds, StringComparer.OrdinalIgnoreCase).Any())
                 return new(null, "The installed product code does not match the package selected by WinGet.");
+            // WinGet's own bookkeeping can fail to resolve an installed version at all
+            // (surfaced by its CLI as "Unknown") while still reporting IsUpdateAvailable.
+            // That combination cannot be trusted to mean an update is genuinely needed:
+            // it has been observed repeatedly re-offering an already-current package.
+            // NaxUpdater already knows the real installed version independently
+            // (application.NormalizedVersion, from its own registry/executable scan);
+            // require WinGet's own tracked version to actually be resolvable before
+            // deferring to its upgrade-availability signal.
+            var trackedVersion = package.InstalledVersion.Version;
+            if (string.IsNullOrWhiteSpace(trackedVersion) || trackedVersion.Equals("Unknown", StringComparison.OrdinalIgnoreCase))
+                return new(null, "WinGet does not track a resolvable installed version for this package, so its update-availability signal cannot be trusted.");
             if (!package.IsUpdateAvailable)
                 return new(null, "WinGet reports a newer release but no applicable upgrade for this installation.");
             var key = VersionKey(package, version);
@@ -99,8 +110,14 @@ public sealed class WingetPackageService : IWingetPackageService
                 var code = result.RebootRequired ? 3010 : unchecked((int)result.InstallerErrorCode);
                 if (!success && code == 0) code = result.ExtendedErrorCode?.HResult ?? -1;
                 if (result.ExtendedErrorCode?.HResult == unchecked((int)0x800704C7)) code = 1223;
+                // ExtendedErrorCode is frequently null even on failure; fall back to the
+                // installer/HRESULT code already resolved above so the message is never
+                // just "WinGet returned <Status>: " with no diagnostic content.
+                var detail = result.ExtendedErrorCode?.Message;
+                if (string.IsNullOrWhiteSpace(detail))
+                    detail = $"code 0x{unchecked((uint)code):X8}";
                 return new UpdateExecutionResult(code, success,
-                    success ? null : $"WinGet returned {result.Status}: {result.ExtendedErrorCode?.Message}");
+                    success ? null : $"WinGet returned {result.Status}: {detail}");
             }
             catch (Exception exception)
             {

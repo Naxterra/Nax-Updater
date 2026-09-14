@@ -32,7 +32,16 @@ public sealed record PreparedUpdateExecution(
     IReadOnlyList<PreparedContentLock>? ContentLocks = null,
     PreparedCatalogUpdate? CatalogUpdate = null,
     PreparedNativeStoreUpdate? NativeStoreUpdate = null,
-    PreparedStoreQueueUpdate? StoreQueueUpdate = null);
+    PreparedStoreQueueUpdate? StoreQueueUpdate = null,
+    PreparedChocolateyUpdate? ChocolateyUpdate = null);
+
+public sealed class PreparedChocolateyUpdate(
+    ChocolateyUpdateTarget target,
+    Func<IProgress<double>?, CancellationToken, Task<UpdateExecutionResult>> apply)
+{
+    public ChocolateyUpdateTarget Target { get; } = target;
+    public Task<UpdateExecutionResult> ApplyAsync(CancellationToken token, IProgress<double>? progress = null) => apply(progress, token);
+}
 
 public sealed record PreparedContentLock(string Path, FileStream Stream) : IDisposable
 {
@@ -524,6 +533,9 @@ public static class UpdatePlanValidator
                 plan.NativeStoreTarget.PackageFamilyName != plan.StorePackageFamilyName ||
                 plan.NativeStoreTarget.ProductId != plan.StoreProductId
                 => "The native Store plan does not identify the approved package and version.",
+            UpdateExecutionKind.ChocolateyPackage when plan.ChocolateyTarget is null ||
+                plan.ChocolateyTarget.Version != update.AvailableVersion
+                => "The Chocolatey update plan does not contain the approved package and version.",
             _ => null
         };
     }

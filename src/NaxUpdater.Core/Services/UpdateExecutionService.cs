@@ -13,17 +13,20 @@ public sealed class UpdateExecutionService
     private readonly IAuthenticodeVerifier _authenticodeVerifier;
     private readonly IWingetPackageService _wingetPackages;
     private readonly INativeStoreUpdateService _nativeStore;
+    private readonly IChocolateyPackageService _chocolateyPackages;
 
     public UpdateExecutionService(
         IAuthenticodeVerifier? authenticodeVerifier = null,
         IStorePackageDeploymentService? storePackageDeploymentService = null,
         IWingetPackageService? wingetPackageService = null,
-        INativeStoreUpdateService? nativeStoreService = null)
+        INativeStoreUpdateService? nativeStoreService = null,
+        IChocolateyPackageService? chocolateyPackageService = null)
     {
         _authenticodeVerifier = authenticodeVerifier ?? new NativeAuthenticodeVerifier();
         _wingetPackages = wingetPackageService ?? new WingetPackageService();
         _nativeStore = nativeStoreService ?? new NativeStoreUpdateService();
         _storePackageDeploymentService = storePackageDeploymentService ?? new StorePackageDeploymentService();
+        _chocolateyPackages = chocolateyPackageService ?? new ChocolateyPackageService();
     }
 
     public IReadOnlyList<string> FindRunningProcesses(UpdateCheckResult update)
@@ -220,6 +223,11 @@ public sealed class UpdateExecutionService
         {
             var package = await _wingetPackages.PrepareAsync(update, cancellationToken);
             return new PreparedUpdateExecution(null, null, null, null, null, CatalogUpdate: package);
+        }
+        if (plan.Kind == UpdateExecutionKind.ChocolateyPackage)
+        {
+            var package = await _chocolateyPackages.PrepareAsync(update, cancellationToken);
+            return new PreparedUpdateExecution(null, null, null, null, null, ChocolateyUpdate: package);
         }
         if (plan.Kind == UpdateExecutionKind.StorePackage)
         {
@@ -421,6 +429,14 @@ public sealed class UpdateExecutionService
                     System.Text.Json.JsonSerializer.Serialize(plan.WingetTarget), StringComparison.Ordinal))
                 throw new InvalidOperationException("The prepared WinGet package does not match the approved target.");
             return await prepared.CatalogUpdate.ApplyAsync(cancellationToken, progress);
+        }
+        if (plan.Kind == UpdateExecutionKind.ChocolateyPackage)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            if (prepared.ChocolateyUpdate is null ||
+                prepared.ChocolateyUpdate.Target != plan.ChocolateyTarget)
+                throw new InvalidOperationException("The prepared Chocolatey package does not match the approved target.");
+            return await prepared.ChocolateyUpdate.ApplyAsync(cancellationToken, progress);
         }
         if (string.IsNullOrWhiteSpace(prepared.ExecutablePath) || !File.Exists(prepared.ExecutablePath))
         {
