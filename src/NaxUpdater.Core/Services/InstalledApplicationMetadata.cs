@@ -13,6 +13,11 @@ internal static class InstalledApplicationMetadata
         if (!string.IsNullOrWhiteSpace(application.PrimaryInstallPath)) paths.Add(application.PrimaryInstallPath);
         paths.AddRange(application.Evidence.Where(static e => e.Verified &&
             e.Label is "Resolved application executable" or "Display icon path" or "Install location").Select(static e => e.Value));
+        // Some installers (e.g. GitHub CLI's MSI) register an uninstall entry
+        // without InstallLocation or DisplayIcon, leaving no path evidence at
+        // all. Fall back to the conventional per-scope install directory named
+        // after the display name before giving up.
+        paths.AddRange(ConventionalInstallDirectories(application).Where(Directory.Exists));
         foreach (var path in paths.Distinct(StringComparer.OrdinalIgnoreCase))
         {
             if (File.Exists(path) && Path.GetExtension(path).Equals(".exe", StringComparison.OrdinalIgnoreCase) &&
@@ -30,6 +35,20 @@ internal static class InstalledApplicationMetadata
             }
         }
         return null;
+    }
+
+    private static IEnumerable<string> ConventionalInstallDirectories(InstalledApplication application)
+    {
+        if (string.IsNullOrWhiteSpace(application.DisplayName)) yield break;
+        if (application.Scope == InstallScope.Machine)
+        {
+            yield return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), application.DisplayName);
+            yield return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86), application.DisplayName);
+        }
+        else
+        {
+            yield return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Programs", application.DisplayName);
+        }
     }
 
     public static string? Architecture(InstalledApplication application)
