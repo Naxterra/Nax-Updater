@@ -127,6 +127,8 @@
   <data name="ApplicationPathsSummary"><value>Paths resolved</value></data>
   <data name="ApplicationGuardsSummary"><value>Provider guards</value></data>
   <data name="StatusNewerReleaseKnown"><value>Newer release known · not currently applicable</value></data>
+  <data name="StatusAwaitingReleaseVerification"><value>Newer release known · verification pending, try rescanning shortly</value></data>
+  <data name="AwaitingReleaseVerificationMessage"><value>The producer has published this release, but not yet its checksum and publisher signature — NaxUpdater refuses to install anything it cannot verify. This is usually resolved within minutes of the release going live; rescan to check again.</value></data>
   <data name="ProviderOpenAiReleaseKnown"><value>OpenAI's official manifest reports a newer build, but Microsoft Store does not currently expose a version-bound applicable upgrade for this exact package family. No update will be attempted.</value></data>
   <data name="RevalidatingUpdate"><value>Rechecking {0} and its update offer…</value></data>
   <data name="ApplyingUpdate"><value>Applying the verified update for {0}…</value></data>
