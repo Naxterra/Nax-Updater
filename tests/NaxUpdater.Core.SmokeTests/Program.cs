@@ -1202,8 +1202,14 @@ Assert(snapshot.Applications.Any(static app => app.InstalledOn.HasValue), "No Wi
 Assert(snapshot.Applications.Where(static app => app.InstalledOn.HasValue).All(static app => app.InstalledOn!.Value.Year >= 2000),
     "An invalid installation date was retained.");
 Assert(snapshot.Applications.Any(static app => app.RemovalPlan is not null), "No registered application-removal plans were retained.");
-Assert(snapshot.Applications.Where(static app => app.IsSystemComponent).All(static app => app.RemovalPlan is null),
-    "A protected Windows system component received a removal plan.");
+// Microsoft-system-signed packages are removable on explicit request (the
+// type-the-exact-name confirmation is the safety gate now, not a blanket
+// block); IsSystemComponent itself still governs visibility and update-check
+// exclusion, unaffected. Assert the current intended behavior rather than
+// the prior one, so a future regression back to the old blanket block is
+// still caught.
+Assert(snapshot.Applications.Where(static app => app.IsSystemComponent).Any(static app => app.RemovalPlan is not null),
+    "Microsoft system-signed packages no longer receive a removal plan; the explicit uninstall-unlock regressed.");
 Assert(ApplicationRemovalService.IsSuccessfulExitCode(0) && ApplicationRemovalService.IsSuccessfulExitCode(3010) &&
        !ApplicationRemovalService.IsSuccessfulExitCode(1), "Removal exit-code classification failed.");
 var exactDuplicates = snapshot.Applications
