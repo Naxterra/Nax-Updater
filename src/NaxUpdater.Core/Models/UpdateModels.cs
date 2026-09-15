@@ -19,7 +19,7 @@ public enum UpdateApplicability
     NotApplicable
 }
 
-public enum UpdateAvailabilityReason { None, AwaitingStorePublication, AwaitingStoreOffer, NoApplicableStoreUpdate, StoreQueued, StoreUpdating, StorePaused }
+public enum UpdateAvailabilityReason { None, AwaitingStorePublication, AwaitingStoreOffer, NoApplicableStoreUpdate, StoreQueued, StoreUpdating, StorePaused, AwaitingReleaseVerification }
 public sealed record UpdateCheckProgress(int Completed, int Total, string Phase, string? ApplicationName);
 
 public enum UpdateExecutionKind

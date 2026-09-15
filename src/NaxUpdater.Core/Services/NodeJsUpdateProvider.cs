@@ -84,7 +84,8 @@ public sealed class NodeJsUpdateProvider(HttpClient httpClient) : IUpdateProvide
                 "A newer Node.js release exists on the installed major line, but its producer-published MSI SHA-256 could not be verified; automatic installation is blocked.",
                 null,
                 architecture,
-                UpdateApplicability.NotApplicable);
+                UpdateApplicability.NotApplicable,
+                UpdateAvailabilityReason.AwaitingReleaseVerification);
         }
 
         var plan = new UpdateExecutionPlan(
@@ -228,7 +229,8 @@ public sealed class NodeJsUpdateProvider(HttpClient httpClient) : IUpdateProvide
         string message,
         UpdateExecutionPlan? plan,
         string architecture,
-        UpdateApplicability applicability = UpdateApplicability.Applicable) => new(
+        UpdateApplicability applicability = UpdateApplicability.Applicable,
+        UpdateAvailabilityReason availabilityReason = UpdateAvailabilityReason.None) => new(
         application.Identity,
         application.DisplayName,
         application.NormalizedVersion,
@@ -243,7 +245,8 @@ public sealed class NodeJsUpdateProvider(HttpClient httpClient) : IUpdateProvide
         releaseNotes,
         message,
         plan,
-        Applicability: applicability);
+        Applicability: applicability,
+        AvailabilityReason: availabilityReason);
 
     private UpdateCheckResult Error(InstalledApplication application, string message) => new(
         application.Identity,

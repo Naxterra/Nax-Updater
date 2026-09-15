@@ -59,6 +59,8 @@ public static partial class LocalizationService
             return Format("StorePublishedUpdateAvailableMessage", update.AvailableVersion, update.AnnouncedVersion ?? update.AvailableVersion);
         if (update.AvailabilityReason == UpdateAvailabilityReason.AwaitingStorePublication)
             return Format("StorePublicationPendingMessage", update.AvailableVersion, update.PublishedPackageVersion, update.InstalledVersion);
+        if (update.AvailabilityReason == UpdateAvailabilityReason.AwaitingReleaseVerification)
+            return Get("AwaitingReleaseVerificationMessage");
         if (update.Status is UpdateStatus.Error or UpdateStatus.NewerReleaseKnown)
             return update.Message ?? Get(update.Status == UpdateStatus.Error ? "StatusCheckFailed" : "ProviderReleaseKnownNotAutomatic");
         if (update.ProviderId == "native-updater") return Format("ProviderManagedUnchecked", ProviderName(update));

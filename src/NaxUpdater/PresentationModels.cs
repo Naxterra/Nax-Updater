@@ -174,6 +174,8 @@ public sealed class UpdateRow
             LocalizationService.Get("StatusStorePublicationPending"),
         UpdateStatus.NewerReleaseKnown when Source.AvailabilityReason == UpdateAvailabilityReason.AwaitingStoreOffer =>
             LocalizationService.Get("StatusStoreOfferPending"),
+        UpdateStatus.NewerReleaseKnown when Source.AvailabilityReason == UpdateAvailabilityReason.AwaitingReleaseVerification =>
+            LocalizationService.Get("StatusAwaitingReleaseVerification"),
         UpdateStatus.NewerReleaseKnown => LocalizationService.Get("StatusNewerReleaseKnown"),
         UpdateStatus.Current => LocalizationService.Get("StatusCurrent"),
         UpdateStatus.StoreQueued => LocalizationService.Get(Source.AvailabilityReason switch

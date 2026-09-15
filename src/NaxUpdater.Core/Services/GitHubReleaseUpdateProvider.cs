@@ -152,7 +152,8 @@ public sealed class GitHubReleaseUpdateProvider : IUpdateProvider
                     releasePage,
                     "A newer producer release is verified, but automatic installation is blocked until the release has a complete asset digest, download URL, and Authenticode signer policy.",
                     null,
-                    Applicability: UpdateApplicability.NotApplicable);
+                    Applicability: UpdateApplicability.NotApplicable,
+                    AvailabilityReason: UpdateAvailabilityReason.AwaitingReleaseVerification);
             }
 
             var arguments = application.Scope == InstallScope.CurrentUser && recipe.CurrentUserInstallerArguments is not null

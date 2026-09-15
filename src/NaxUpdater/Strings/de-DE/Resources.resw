@@ -127,6 +127,8 @@
   <data name="ApplicationPathsSummary"><value>Pfade ermittelt</value></data>
   <data name="ApplicationGuardsSummary"><value>Anbietersperren</value></data>
   <data name="StatusNewerReleaseKnown"><value>Neuere Version bekannt · derzeit nicht anwendbar</value></data>
+  <data name="StatusAwaitingReleaseVerification"><value>Neuere Version bekannt · Verifizierung ausstehend, in Kürze erneut scannen</value></data>
+  <data name="AwaitingReleaseVerificationMessage"><value>Der Hersteller hat diese Version veröffentlicht, aber noch nicht die Prüfsumme und Herausgebersignatur bereitgestellt – NaxUpdater installiert nichts, das nicht verifiziert werden kann. Dies löst sich in der Regel innerhalb weniger Minuten nach Veröffentlichung von selbst; erneut scannen, um es zu prüfen.</value></data>
   <data name="ProviderOpenAiReleaseKnown"><value>Das offizielle OpenAI-Manifest meldet eine neuere Version, aber Microsoft Store stellt für diese exakte Paketfamilie derzeit kein versionsgebundenes anwendbares Upgrade bereit. Es wird kein Update versucht.</value></data>
   <data name="RevalidatingUpdate"><value>{0} und das Updateangebot werden erneut geprüft…</value></data>
   <data name="ApplyingUpdate"><value>Das verifizierte Update für {0} wird angewendet…</value></data>
