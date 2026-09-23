@@ -29,9 +29,62 @@ public partial class App : Application
             Exit();
             return;
         }
+        // Acquired only after the launcher detach above: the detaching launcher
+        // exits without ever showing a window, so it must not hold the lock.
+        if (!TryAcquireSingleInstance())
+        {
+            ActivateExistingInstance();
+            Exit();
+            return;
+        }
         MainWindow = new MainWindow();
         MainWindow.Activate();
     }
+
+    private const string SingleInstanceName = @"Local\NaxUpdater.SingleInstance";
+    private static Mutex? _instanceLock;
+
+    private static bool TryAcquireSingleInstance()
+    {
+        try
+        {
+            _instanceLock = new Mutex(false, SingleInstanceName);
+            if (_instanceLock.WaitOne(TimeSpan.Zero)) return true;
+        }
+        catch (AbandonedMutexException)
+        {
+            return true; // The previous owner crashed; the lock now belongs to this process.
+        }
+        catch (UnauthorizedAccessException)
+        {
+            // Owned by an instance running at a higher integrity level (Run as administrator).
+        }
+        _instanceLock?.Dispose();
+        _instanceLock = null;
+        return false;
+    }
+
+    private static void ActivateExistingInstance()
+    {
+        using var current = System.Diagnostics.Process.GetCurrentProcess();
+        foreach (var process in System.Diagnostics.Process.GetProcessesByName(current.ProcessName))
+        {
+            using (process)
+            {
+                if (process.Id == current.Id || process.MainWindowHandle == IntPtr.Zero) continue;
+                if (IsIconic(process.MainWindowHandle)) ShowWindow(process.MainWindowHandle, 9); // SW_RESTORE
+                SetForegroundWindow(process.MainWindowHandle);
+                return;
+            }
+        }
+    }
+
+    [System.Runtime.InteropServices.DllImport("user32.dll")]
+    private static extern bool SetForegroundWindow(IntPtr window);
+    [System.Runtime.InteropServices.DllImport("user32.dll")]
+    private static extern bool ShowWindow(IntPtr window, int command);
+    [System.Runtime.InteropServices.DllImport("user32.dll")]
+    private static extern bool IsIconic(IntPtr window);
 
     public static void RestartWithLanguage(string language)
     {
@@ -47,6 +100,10 @@ public partial class App : Application
         {
             return;
         }
+        // Hand the single-instance lock over before the replacement starts.
+        _instanceLock?.ReleaseMutex();
+        _instanceLock?.Dispose();
+        _instanceLock = null;
         System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(executable) { UseShellExecute = true });
         MainWindow.Close();
     }
