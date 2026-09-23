@@ -7,6 +7,8 @@ public sealed class UpdateCheckService
     private readonly IReadOnlyList<IUpdateProvider> _providers;
     private readonly SemaphoreSlim _checkSlots = new(16, 16);
     private readonly SemaphoreSlim _storeCheckSlots = new(8, 8);
+    // Longer than NativeStoreUpdateClient's 10-second unresponsive cooldown.
+    private static readonly TimeSpan StoreRetryDelay = TimeSpan.FromSeconds(11);
     private readonly TimeSpan _providerTimeout = TimeSpan.FromSeconds(45);
     private readonly TimeSpan _sourceTimeout = TimeSpan.FromSeconds(20);
     private readonly TimeSpan _sourceCheckTimeout = TimeSpan.FromSeconds(30);
@@ -128,6 +130,20 @@ public sealed class UpdateCheckService
         }
 
         var results = await Task.WhenAll(applications.Select(CheckOneAsync));
+        // One stalled Microsoft Store request puts the shared Store service into a
+        // short cooldown in which every other Store family fails fast. Recheck those
+        // families once after the cooldown instead of reporting a whole batch of
+        // failures for a single transient stall.
+        var storeRetries = Enumerable.Range(0, applications.Length)
+            .Where(i => applications[i].ManagementMode == ManagementMode.Msix && results[i].Status == UpdateStatus.Error)
+            .ToArray();
+        if (storeRetries.Length > 0)
+        {
+            await Task.Delay(StoreRetryDelay, token);
+            completed = applications.Length - storeRetries.Length;
+            var retried = await Task.WhenAll(storeRetries.Select(i => CheckOneAsync(applications[i])));
+            for (var k = 0; k < storeRetries.Length; k++) results[storeRetries[k]] = retried[k];
+        }
         ReconcileCompanionChecks(results);
         return new UpdateCheckSnapshot(
             checkedAt,
