@@ -1340,11 +1340,13 @@ public sealed partial class MainPage : Page
 
     private void RefreshMassUpdateButton()
     {
+        // Same predicate as UpdateAllButton_Click (CanInstall), so queued Store
+        // rows that "Update all" will resume are counted, not shown as (0).
         var verifiedUpdates = _allUpdates.Count(static row =>
-            row.CanInstall && row.Source.Status == UpdateStatus.Available &&
+            row.CanInstall &&
             row.Source.ExecutionPlan?.Kind is not (UpdateExecutionKind.StorePackage or UpdateExecutionKind.NativeStorePackage or UpdateExecutionKind.NativeStoreQueue));
         var storeActions = _allUpdates.Count(static row =>
-            row.CanInstall && row.Source.Status == UpdateStatus.Available &&
+            row.CanInstall &&
             row.Source.ExecutionPlan?.Kind is UpdateExecutionKind.StorePackage or UpdateExecutionKind.NativeStorePackage or UpdateExecutionKind.NativeStoreQueue);
         UpdateAllButton.Content = storeActions > 0
             ? LocalizationService.Format("UpdateAllCountWithStore", verifiedUpdates, storeActions)

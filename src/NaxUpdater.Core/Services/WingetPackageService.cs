@@ -1,5 +1,6 @@
 using Microsoft.Management.Deployment;
 using NaxUpdater.Core.Models;
+using System.Security.Principal;
 using System.Text.Json;
 using Windows.System;
 
@@ -26,7 +27,7 @@ public sealed class PreparedCatalogUpdate
 
 // The package manager owns manifest authentication, download hashes, dependencies,
 // installer switches and elevation. Never substitute a source alias or scraped YAML.
-public sealed class WingetPackageService : IWingetPackageService
+public sealed partial class WingetPackageService : IWingetPackageService
 {
     public const string OfficialSourceId = "Microsoft.Winget.Source_8wekyb3d8bbwe";
     private readonly SemaphoreSlim _connectionGate = new(1, 1);
@@ -98,6 +99,12 @@ public sealed class WingetPackageService : IWingetPackageService
         return new PreparedCatalogUpdate(target, async (progress, cancellationToken) =>
         {
             ValidatePrepared(package, key, options, target);
+            // The COM API installs with NaxUpdater's own (asInvoker) token and never
+            // raises a UAC prompt, so a machine-scope installer just fails
+            // (APPINSTALLER_CLI_ERROR_MSI_INSTALL_FAILED). Run the same pinned
+            // package through an elevated winget.exe process instead.
+            if (target.Scope == InstallScope.Machine && !IsElevated())
+                return await RunElevatedCliUpgradeAsync(target, cancellationToken);
             var operation = manager.UpgradePackageAsync(package, options);
             try
             {
@@ -126,6 +133,69 @@ public sealed class WingetPackageService : IWingetPackageService
             }
         });
     }
+
+    private static bool IsElevated()
+    {
+        using var identity = WindowsIdentity.GetCurrent();
+        return new WindowsPrincipal(identity).IsInRole(WindowsBuiltInRole.Administrator);
+    }
+
+    private static async Task<UpdateExecutionResult> RunElevatedCliUpgradeAsync(WingetUpdateTarget target, CancellationToken token)
+    {
+        // Every value below ends up on an elevated cmd.exe command line.
+        if (!SafeToken().IsMatch(target.PackageId) || !SafeToken().IsMatch(target.Version) ||
+            !SafeToken().IsMatch(target.Architecture) || !SafeToken().IsMatch(target.InstallerType) ||
+            target.Locale.Length > 0 && !SafeToken().IsMatch(target.Locale) ||
+            target.InstallLocation is { } location && location.IndexOfAny(['"', '%', '^', '&', '|', '<', '>', '\r', '\n']) >= 0)
+            return new UpdateExecutionResult(-1, false, "The approved WinGet target contains characters that cannot be passed to an elevated installer safely.");
+        var alias = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Microsoft", "WindowsApps", "winget.exe");
+        var winget = File.Exists(alias) ? $"\"{alias}\"" : "winget.exe";
+        var arguments = new List<string>
+        {
+            "upgrade", "--id", target.PackageId, "--exact", "--version", target.Version, "--source", "winget",
+            "--scope", "machine", "--architecture", target.Architecture.ToLowerInvariant(),
+            "--installer-type", target.InstallerType.ToLowerInvariant(),
+            "--silent", "--accept-package-agreements", "--accept-source-agreements", "--disable-interactivity"
+        };
+        if (target.Locale.Length > 0) arguments.AddRange(["--locale", target.Locale]);
+        if (target.InstallLocation is not null) arguments.AddRange(["--location", $"\"{target.InstallLocation}\""]);
+        var logPath = Path.Combine(Path.GetTempPath(), $"naxupdater-winget-{Guid.NewGuid():N}.log");
+        try
+        {
+            // runas requires ShellExecute, which cannot redirect output; let cmd.exe
+            // write winget's output to a log so failures stay diagnosable.
+            var startInfo = new System.Diagnostics.ProcessStartInfo("cmd.exe",
+                $"/d /c \"{winget} {string.Join(' ', arguments)} > \"{logPath}\" 2>&1\"")
+            {
+                UseShellExecute = true,
+                Verb = "runas",
+                WindowStyle = System.Diagnostics.ProcessWindowStyle.Hidden
+            };
+            using var process = System.Diagnostics.Process.Start(startInfo)
+                ?? throw new InvalidOperationException("winget.exe could not be started.");
+            // Windows owns the elevated deployment once started; never abandon or kill it.
+            await process.WaitForExitAsync(CancellationToken.None);
+            var code = process.ExitCode;
+            if (code == 0) return new UpdateExecutionResult(0, true, null);
+            if (code == unchecked((int)0x8A150109)) return new UpdateExecutionResult(3010, true, null); // INSTALL_REBOOT_REQUIRED_TO_FINISH
+            if (code == unchecked((int)0x8A15010C)) return new UpdateExecutionResult(1602, false, "The installer was cancelled.");
+            var log = File.Exists(logPath) ? await File.ReadAllTextAsync(logPath, token) : "";
+            var lastLine = log.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                .LastOrDefault(static line => line.Any(char.IsLetter)) ?? "no output was captured";
+            return new UpdateExecutionResult(code, false, $"WinGet returned 0x{unchecked((uint)code):X8}: {lastLine}");
+        }
+        catch (System.ComponentModel.Win32Exception exception) when (exception.NativeErrorCode == 1223)
+        {
+            return new UpdateExecutionResult(1223, false, "The Windows elevation prompt was cancelled.");
+        }
+        finally
+        {
+            try { if (File.Exists(logPath)) File.Delete(logPath); } catch (IOException) { } catch (UnauthorizedAccessException) { }
+        }
+    }
+
+    [System.Text.RegularExpressions.GeneratedRegex(@"^[A-Za-z0-9][A-Za-z0-9._+\-]*$")]
+    private static partial System.Text.RegularExpressions.Regex SafeToken();
 
     private static void ValidatePrepared(CatalogPackage package, PackageVersionId key, InstallOptions options, WingetUpdateTarget target)
     {
