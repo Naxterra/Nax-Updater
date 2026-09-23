@@ -39,7 +39,7 @@ public sealed class NodeJsUpdateProvider(HttpClient httpClient) : IUpdateProvide
         try
         {
             using var request = new HttpRequestMessage(HttpMethod.Get, ReleaseIndexUri);
-            request.Headers.UserAgent.ParseAdd("NaxUpdater/0.17.3");
+            request.Headers.UserAgent.ParseAdd("NaxUpdater/0.17.4");
             using var response = await httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
             response.EnsureSuccessStatusCode();
             using var document = JsonDocument.Parse(await response.Content.ReadAsStreamAsync(cancellationToken));
@@ -158,7 +158,7 @@ public sealed class NodeJsUpdateProvider(HttpClient httpClient) : IUpdateProvide
         CancellationToken cancellationToken)
     {
         using var request = new HttpRequestMessage(HttpMethod.Get, $"https://nodejs.org/dist/v{version}/SHASUMS256.txt");
-        request.Headers.UserAgent.ParseAdd("NaxUpdater/0.17.3");
+        request.Headers.UserAgent.ParseAdd("NaxUpdater/0.17.4");
         try
         {
             using var response = await httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
