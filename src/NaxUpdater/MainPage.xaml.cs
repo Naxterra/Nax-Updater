@@ -1249,7 +1249,14 @@ public sealed partial class MainPage : Page
                 }
             }
 
-            UpdateBar.Title = transaction.IsSuccess
+            // Windows (e.g. the Store working through its own queue) can finish the
+            // same update between the scan and this action; revalidation then finds
+            // no offer because the app is already newer. That is a completed update.
+            var alreadyUpdated = transaction.Stage == UpdateTransactionStage.NoLongerApplicable &&
+                transaction.FreshAssessment is { Status: UpdateStatus.Current } fresh &&
+                VersionOrder.Compare(fresh.InstalledVersion, row.Source.InstalledVersion) > 0;
+            var succeeded = transaction.IsSuccess || alreadyUpdated;
+            UpdateBar.Title = succeeded
                 ? LocalizationService.Format("UpdateCompletedTitle", row.Name)
                 : transaction.RequiresRestart
                     ? LocalizationService.Format("UpdateRestartRequiredTitle", row.Name)
@@ -1260,12 +1267,12 @@ public sealed partial class MainPage : Page
                 ? LocalizationService.Format("TransactionCloseFailed", string.Join(", ", transaction.RemainingProcessNames))
                 : transaction.Stage == UpdateTransactionStage.PendingReboot
                     ? LocalizationService.Get("RestartRequired")
-                    : transaction.IsSuccess
-                        ? row.Source.ExecutionPlan.Kind == UpdateExecutionKind.NativeStoreQueue
+                    : succeeded
+                        ? row.Source.ExecutionPlan.Kind == UpdateExecutionKind.NativeStoreQueue || alreadyUpdated
                             ? LocalizationService.Format("StoreOperationCompleted", transaction.FreshAssessment?.InstalledVersion ?? "?")
                             : LocalizationService.Get("UpdateCompletedMessage")
                         : transaction.Error ?? LocalizationService.Get("UpdateTransactionFailed");
-            UpdateBar.Severity = transaction.IsSuccess
+            UpdateBar.Severity = succeeded
                 ? InfoBarSeverity.Success
                 : transaction.RequiresRestart
                     ? InfoBarSeverity.Warning
@@ -1274,7 +1281,7 @@ public sealed partial class MainPage : Page
                     : InfoBarSeverity.Error;
             UpdateBar.IsOpen = true;
             _restartPending = transaction.RequiresRestart;
-            return transaction.IsSuccess;
+            return succeeded;
         }
         finally
         {
