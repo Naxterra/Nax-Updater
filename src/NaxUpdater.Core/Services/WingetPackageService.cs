@@ -69,7 +69,8 @@ public sealed partial class WingetPackageService : IWingetPackageService
             var options = CreateOptions(key, scope, string.IsNullOrWhiteSpace(location) ? null : location);
             var architecture = InstalledApplicationMetadata.Architecture(application);
             if (architecture is not null) SetArchitecture(options, architecture);
-            var variant = info.GetApplicableInstaller(options);
+            var variant = SelectInstalledTypeCompatibleInstaller(info, options,
+                package.InstalledVersion.GetMetadata(PackageVersionMetadataField.InstallerType));
             if (variant is null) return new(null, "No compatible installer was returned by WinGet.");
             return new(new(
                 packageId, OfficialSourceId, version, package.InstalledVersion.Version,
@@ -132,6 +133,41 @@ public sealed partial class WingetPackageService : IWingetPackageService
                     exception.HResult == unchecked((int)0x800704C7) ? 1223 : -1, false, exception.Message);
             }
         });
+    }
+
+    // GetApplicableInstaller ignores how the package is currently installed, but
+    // WinGet's upgrade only accepts an installer from the installed type's
+    // compatibility set (winget-cli ManifestCommon.cpp, IsInstallerTypeCompatible).
+    // Without this, an NSIS-installed Notepad++ was pinned to its MSI and every
+    // upgrade failed with APPINSTALLER_CLI_ERROR_UPDATE_NOT_APPLICABLE.
+    internal static PackageInstallerInfo? SelectInstalledTypeCompatibleInstaller(
+        PackageVersionInfo info, InstallOptions options, string? installedType)
+    {
+        if (Enum.TryParse<PackageInstallerType>(installedType, true, out var installed) && installed != PackageInstallerType.Unknown)
+        {
+            foreach (var type in InstallerTypesCompatibleWith(installed))
+            {
+                options.InstallerType = type;
+                if (info.GetApplicableInstaller(options) is { } compatible) return compatible;
+            }
+        }
+        // Unknown installed type, or compatibility only via an installer's own
+        // ARP entries: let WinGet choose; its upgrade still enforces the rule.
+        options.InstallerType = PackageInstallerType.Unknown;
+        return info.GetApplicableInstaller(options);
+    }
+
+    internal static IEnumerable<PackageInstallerType> InstallerTypesCompatibleWith(PackageInstallerType installed)
+    {
+        PackageInstallerType[] set = installed switch
+        {
+            PackageInstallerType.Inno or PackageInstallerType.Nullsoft or PackageInstallerType.Exe or PackageInstallerType.Burn =>
+                [PackageInstallerType.Inno, PackageInstallerType.Nullsoft, PackageInstallerType.Exe, PackageInstallerType.Burn],
+            PackageInstallerType.Wix or PackageInstallerType.Msi => [PackageInstallerType.Wix, PackageInstallerType.Msi],
+            PackageInstallerType.Msix or PackageInstallerType.MSStore => [PackageInstallerType.Msix, PackageInstallerType.MSStore],
+            _ => []
+        };
+        return set.Where(type => type != installed).Prepend(installed);
     }
 
     private static bool IsElevated()
