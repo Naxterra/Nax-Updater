@@ -490,7 +490,7 @@ public static class UpdatePlanValidator
                 target.InstalledVersion != update.InstalledVersion || target.ProductId != plan.StoreProductId ||
                 target.PackageFamilyName != plan.StorePackageFamilyName ||
                 !update.ApplicationIdentity.Equals("msix:" + target.PackageFamilyName, StringComparison.OrdinalIgnoreCase) ||
-                plan.ProcessPolicy != UpdateProcessPolicy.PlatformManaged || plan.RunningProcessNames.Count != 0
+                plan.ProcessPolicy == UpdateProcessPolicy.PlatformManaged && plan.RunningProcessNames.Count != 0
                 => "The Store queue action is not bound to the installed package identity and baseline version.",
             UpdateExecutionKind.DownloadedExe or
             UpdateExecutionKind.DownloadedMsi or

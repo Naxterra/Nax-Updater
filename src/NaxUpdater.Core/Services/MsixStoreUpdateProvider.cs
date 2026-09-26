@@ -131,10 +131,7 @@ public sealed class MsixStoreUpdateProvider : IUpdateProvider
                 if (package is null)
                     return Result(application, null, UpdateStatus.Error, null, product.Identity.ProductId,
                         "Windows Store returned an update, but its exact newer package version could not be verified.");
-                var paths = File.Exists(application.PrimaryInstallPath) && Path.GetExtension(application.PrimaryInstallPath).Equals(".exe", StringComparison.OrdinalIgnoreCase)
-                    ? new[] { application.PrimaryInstallPath! } : [];
-                var bindings = packageFamily.Equals(OpenAiPackageFamily, StringComparison.OrdinalIgnoreCase)
-                    ? ChatGptProcessBindings(application) : (Names: (IReadOnlyList<string>)paths.Select(Path.GetFileNameWithoutExtension).Select(p => p!).ToArray(), Paths: (IReadOnlyList<string>)paths);
+                var bindings = PackageProcessBindings(application, packageFamily);
                 var nativePlan = new UpdateExecutionPlan(UpdateExecutionKind.NativeStorePackage, null, null, null, "Microsoft Store", null, [], false, [],
                     bindings.Names, StoreProductId: package.ProductId,
                     StorePackageFamilyName: packageFamily, StorePublisher: application.Publisher,
@@ -165,10 +162,13 @@ public sealed class MsixStoreUpdateProvider : IUpdateProvider
         };
         var canBind = Version.TryParse(application.NormalizedVersion, out _) && !string.IsNullOrWhiteSpace(queued.ProductId);
         var target = canBind ? new StoreQueueTarget(queued.ProductId, queued.PackageFamilyName, application.NormalizedVersion!) : null;
+        var bindings = PackageProcessBindings(application, queued.PackageFamilyName);
         var plan = target is null || queued.MayAffectOtherItems ? null : new UpdateExecutionPlan(
-            UpdateExecutionKind.NativeStoreQueue, null, null, null, "Microsoft Store", null, [], false, [], [],
+            UpdateExecutionKind.NativeStoreQueue, null, null, null, "Microsoft Store", null, [], false, [], bindings.Names,
             StoreProductId: queued.ProductId, StorePackageFamilyName: queued.PackageFamilyName,
-            ProcessPolicy: UpdateProcessPolicy.PlatformManaged, StoreQueueTarget: target);
+            RunningExecutablePaths: bindings.Paths,
+            ProcessPolicy: bindings.Names.Count > 0 ? UpdateProcessPolicy.CloseBeforeApply : UpdateProcessPolicy.PlatformManaged,
+            StoreQueueTarget: target);
         return Result(application, plan, UpdateStatus.StoreQueued, null, queued.ProductId,
             $"Microsoft Store queue: {queued.State} (0x{queued.ErrorCode:X8}). " +
             (plan is not null ? "NaxUpdater can resume this existing operation or track it if already running, then independently reread the installed package version."
@@ -346,6 +346,40 @@ public sealed class MsixStoreUpdateProvider : IUpdateProvider
 
     private static string? PackageArchitecture(InstalledApplication application) =>
         application.Evidence.FirstOrDefault(static item => item.Label == "MSIX package architecture")?.Value;
+
+    // Store deployments run with AllowForcedAppRestart off, so a package whose app
+    // is still open fails with ERROR_PACKAGES_IN_USE (0x80073D02). Bind the
+    // executables the package manifest declares so the transaction closes them first.
+    private static (IReadOnlyList<string> Names, IReadOnlyList<string> Paths) PackageProcessBindings(
+        InstalledApplication application, string packageFamily)
+    {
+        if (packageFamily.Equals(OpenAiPackageFamily, StringComparison.OrdinalIgnoreCase))
+            return ChatGptProcessBindings(application);
+        var root = application.PrimaryInstallPath;
+        if (string.IsNullOrWhiteSpace(root)) return ([], []);
+        if (File.Exists(root) && Path.GetExtension(root).Equals(".exe", StringComparison.OrdinalIgnoreCase))
+            return ([Path.GetFileNameWithoutExtension(root)], [Path.GetFullPath(root)]);
+        if (!Directory.Exists(root)) return ([], []);
+        var packageRoot = Path.GetFullPath(root).TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar;
+        var paths = new List<string>();
+        try
+        {
+            foreach (var executable in MsixManifestInspector.Inspect(Path.Combine(packageRoot, "AppxManifest.xml"), packageRoot).DeclaredExecutables)
+            {
+                if (Path.IsPathRooted(executable)) continue;
+                var fullPath = Path.GetFullPath(Path.Combine(packageRoot, executable.Replace('/', Path.DirectorySeparatorChar)));
+                if (fullPath.StartsWith(packageRoot, StringComparison.OrdinalIgnoreCase) && File.Exists(fullPath) &&
+                    Path.GetExtension(fullPath).Equals(".exe", StringComparison.OrdinalIgnoreCase))
+                    paths.Add(fullPath);
+            }
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or System.Xml.XmlException)
+        {
+            return ([], []);
+        }
+        var distinct = paths.Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
+        return (distinct.Select(static path => Path.GetFileNameWithoutExtension(path)).ToArray(), distinct);
+    }
 
     private static (IReadOnlyList<string> Names, IReadOnlyList<string> Paths) ChatGptProcessBindings(
         InstalledApplication application)
