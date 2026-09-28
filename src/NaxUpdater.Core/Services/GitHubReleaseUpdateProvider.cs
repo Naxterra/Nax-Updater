@@ -202,7 +202,45 @@ public sealed class GitHubReleaseUpdateProvider : IUpdateProvider
         }
     }
 
+    // Publishers sometimes ship a release candidate as GitHub's "latest" without
+    // setting its prerelease flag (Nextcloud's v35.0.0-rc1 even carried a 34.0.3
+    // MSI). A prerelease suffix in the tag is treated like the flag.
+    private static bool IsPrereleaseTag(string tag) =>
+        Regex.IsMatch(tag, @"-(?:alpha|beta|rc|pre|preview|dev|nightly)", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+
     private async Task<HttpResponseMessage> GetLatestReleaseResponseAsync(CancellationToken cancellationToken)
+    {
+        var response = await GetLatestReleaseCoreAsync(cancellationToken);
+        if (recipe.ReleaseTagPrefix is not null || !response.IsSuccessStatusCode) return response;
+        var json = await response.Content.ReadAsStringAsync(cancellationToken);
+        var requestUri = response.RequestMessage?.RequestUri;
+        response.Dispose();
+        HttpResponseMessage Json(string content) => new(HttpStatusCode.OK)
+        {
+            RequestMessage = requestUri is null ? null : new HttpRequestMessage(HttpMethod.Get, requestUri),
+            Content = new StringContent(content, Encoding.UTF8, "application/json")
+        };
+        string? latestTag;
+        try
+        {
+            using var latest = JsonDocument.Parse(json);
+            latestTag = latest.RootElement.TryGetProperty("tag_name", out var tag) ? tag.GetString() : null;
+        }
+        catch (JsonException) { return Json(json); }
+        if (latestTag is null || !IsPrereleaseTag(latestTag)) return Json(json);
+        var list = await GitHubApiClient.ReadAsync(httpClient, $"repos/{recipe.Repository}/releases?per_page=100", cancellationToken);
+        if (list is null) return Json(json);
+        using var releases = JsonDocument.Parse(list);
+        var stable = releases.RootElement.EnumerateArray().Where(r =>
+                r.TryGetProperty("tag_name", out var tag) && tag.GetString() is { } name && !IsPrereleaseTag(name) &&
+                (!r.TryGetProperty("draft", out var draft) || draft.ValueKind != JsonValueKind.True) &&
+                (!r.TryGetProperty("prerelease", out var prerelease) || prerelease.ValueKind != JsonValueKind.True))
+            .OrderByDescending(r => r.GetProperty("tag_name").GetString()!.TrimStart('v', 'V'), Comparer<string>.Create(VersionOrder.Compare))
+            .FirstOrDefault();
+        return stable.ValueKind == JsonValueKind.Object ? Json(stable.GetRawText()) : Json(json);
+    }
+
+    private async Task<HttpResponseMessage> GetLatestReleaseCoreAsync(CancellationToken cancellationToken)
     {
         if (recipe.ReleaseTagPrefix is { } prefix)
         {
@@ -211,6 +249,7 @@ public sealed class GitHubReleaseUpdateProvider : IUpdateProvider
             using var releases = JsonDocument.Parse(json);
             var matches = releases.RootElement.EnumerateArray().Where(r =>
                 r.TryGetProperty("tag_name", out var tag) && tag.GetString()?.StartsWith(prefix, StringComparison.Ordinal) == true &&
+                !IsPrereleaseTag(tag.GetString()![prefix.Length..]) &&
                 (!r.TryGetProperty("draft", out var draft) || draft.ValueKind != JsonValueKind.True) &&
                 (!r.TryGetProperty("prerelease", out var prerelease) || prerelease.ValueKind != JsonValueKind.True))
                 .OrderByDescending(r => r.GetProperty("tag_name").GetString()![prefix.Length..], Comparer<string>.Create(VersionOrder.Compare)).ToArray();
