@@ -13,6 +13,8 @@ public sealed partial class WingetFallbackUpdateProvider(
     private readonly IWingetPackageService _packages = packageService ?? new WingetPackageService();
     private readonly ConcurrentDictionary<string, CatalogIdentity> _identities = new(StringComparer.Ordinal);
     private string? _catalogRefreshError;
+    // Resolved on first use, i.e. after RefreshSourceAsync, once per scan.
+    private readonly Lazy<(string? Path, bool Unavailable)> _index = new(() => ResolveIndexSnapshot(catalogIndexPath));
 
     public string Id => "winget-fallback";
     public UpdateProviderDescriptor Descriptor { get; } = new(
@@ -21,7 +23,9 @@ public sealed partial class WingetFallbackUpdateProvider(
         "Fallback catalog used only when no installed or producer-owned source claims the application",
         [ManagementMode.Unmanaged, ManagementMode.Registry, ManagementMode.WindowsInstaller, ManagementMode.DirectVendor]);
 
-    public bool CanHandle(InstalledApplication application) => GetIdentity(application) is not null;
+    // An installed but unreadable catalog must surface as a check error, not
+    // silently remove WinGet from the whole scan.
+    public bool CanHandle(InstalledApplication application) => _index.Value.Unavailable || GetIdentity(application) is not null;
 
     async Task IUpdateProviderSourceRefresher.RefreshSourceAsync(CancellationToken cancellationToken)
     {
@@ -59,6 +63,10 @@ public sealed partial class WingetFallbackUpdateProvider(
 
     public async Task<UpdateCheckResult> CheckAsync(InstalledApplication application, CancellationToken cancellationToken)
     {
+        if (_index.Value.Unavailable)
+        {
+            return Error(application, "The WinGet catalog index is installed but could not be read (it may have been replacing itself). WinGet was not checked; retry the scan.");
+        }
         var identity = GetIdentity(application);
         if (identity is null)
         {
@@ -126,7 +134,7 @@ public sealed partial class WingetFallbackUpdateProvider(
         {
             return cached;
         }
-        var discovered = FindWingetIdentity(application, ProductCode(application), catalogIndexPath);
+        var discovered = FindWingetIdentity(application, ProductCode(application), _index.Value.Path);
         if (discovered is not null)
         {
             _identities.TryAdd(application.Identity, discovered);
@@ -139,9 +147,7 @@ public sealed partial class WingetFallbackUpdateProvider(
         string? productCode,
         string? catalogIndexPath)
     {
-        var indexPath = !string.IsNullOrWhiteSpace(catalogIndexPath) && File.Exists(catalogIndexPath)
-            ? catalogIndexPath
-            : FindWingetIndex();
+        var indexPath = catalogIndexPath;
         if (indexPath is null)
         {
             return null;
@@ -362,11 +368,46 @@ public sealed partial class WingetFallbackUpdateProvider(
     private static string NormalizeCatalogValue(string? value) =>
         string.IsNullOrWhiteSpace(value) ? string.Empty : NativePathParser.NormalizeName(value);
 
-    private static string? FindWingetIndex()
+    // Each scan's catalog refresh can install a new Microsoft.Winget.Source package,
+    // and Windows needs several seconds to swap it in and remove the old folder.
+    // Checks that started during a swap used to find no index, and WinGet then
+    // silently dropped out of the whole scan. Wait out the swap, then read a private
+    // copy so a swap later in the scan cannot pull the file away either.
+    private static (string? Path, bool Unavailable) ResolveIndexSnapshot(string? configuredPath)
+    {
+        if (!string.IsNullOrWhiteSpace(configuredPath))
+            return (File.Exists(configuredPath) ? configuredPath : null, false);
+        DeleteStaleSnapshots();
+        for (var attempt = 0; attempt < 20; attempt++)
+        {
+            if (attempt > 0) Thread.Sleep(500);
+            var sources = WingetIndexCandidates();
+            if (sources is null) return (null, false); // WinGet's catalog is not installed at all.
+            foreach (var source in sources)
+            {
+                var snapshot = Path.Combine(Path.GetTempPath(), $"{SnapshotPrefix}{Guid.NewGuid():N}.db");
+                try
+                {
+                    File.Copy(source, snapshot);
+                    // Copy keeps the source timestamp; stale-snapshot cleanup must see the copy's age.
+                    File.SetLastWriteTimeUtc(snapshot, DateTime.UtcNow);
+                    if (IsReadableIndex(snapshot)) return (snapshot, false);
+                }
+                catch (Exception exception) when (exception is IOException or UnauthorizedAccessException) { }
+                TryDelete(snapshot);
+            }
+        }
+        return (null, true);
+    }
+
+    private const string SnapshotPrefix = "naxupdater-winget-index-";
+
+    // Newest first; null when no Microsoft.Winget.Source package is registered.
+    private static List<string>? WingetIndexCandidates()
     {
         try
         {
-            var package = new PackageManager()
+            var packages = new PackageManager()
                 .FindPackagesForUser(string.Empty)
                 .Where(static item =>
                     item.Id.Name.Equals("Microsoft.Winget.Source", StringComparison.OrdinalIgnoreCase) &&
@@ -375,16 +416,61 @@ public sealed partial class WingetFallbackUpdateProvider(
                 .ThenByDescending(static item => item.Id.Version.Minor)
                 .ThenByDescending(static item => item.Id.Version.Build)
                 .ThenByDescending(static item => item.Id.Version.Revision)
-                .FirstOrDefault();
-            var path = package?.InstalledLocation is null
-                ? null
-                : Path.Combine(package.InstalledLocation.Path, "Public", "index.db");
-            return path is not null && File.Exists(path) ? path : null;
+                .ToArray();
+            if (packages.Length == 0) return null;
+            var paths = new List<string>();
+            foreach (var package in packages)
+            {
+                try
+                {
+                    var path = Path.Combine(package.InstalledLocation.Path, "Public", "index.db");
+                    if (File.Exists(path)) paths.Add(path);
+                }
+                catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or System.Runtime.InteropServices.COMException) { }
+            }
+            return paths;
         }
-        catch
+        catch (Exception exception) when (exception is UnauthorizedAccessException or System.Runtime.InteropServices.COMException)
         {
-            return null;
+            return [];
         }
+    }
+
+    private static bool IsReadableIndex(string path)
+    {
+        try
+        {
+            using var connection = new SqliteConnection(new SqliteConnectionStringBuilder
+            {
+                DataSource = path,
+                Mode = SqliteOpenMode.ReadOnly,
+                Pooling = false
+            }.ToString());
+            connection.Open();
+            using var command = connection.CreateCommand();
+            command.CommandText = "SELECT count(*) FROM sqlite_master";
+            return Convert.ToInt64(command.ExecuteScalar()) > 0;
+        }
+        catch (SqliteException)
+        {
+            return false;
+        }
+    }
+
+    private static void DeleteStaleSnapshots()
+    {
+        try
+        {
+            foreach (var file in Directory.EnumerateFiles(Path.GetTempPath(), SnapshotPrefix + "*.db"))
+                if (File.GetLastWriteTimeUtc(file) < DateTime.UtcNow.AddMinutes(-10)) TryDelete(file);
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException) { }
+    }
+
+    private static void TryDelete(string path)
+    {
+        try { File.Delete(path); }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException) { }
     }
 
     private static string? DetectArchitecture(string? executablePath)
