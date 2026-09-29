@@ -64,9 +64,13 @@ internal static class CoverageRegression
         assert(nativeClient.CheckedSkus.SequenceEqual(["0010", "0011"]), "Store SKU eligibility checks were incomplete.");
         assert(offer.ExecutionPlan?.StorePackageFamilyName == family && offer.AvailableVersion == "2.0.0.0",
             "Generic Store offer lost its exact package/version binding.");
+        // The Store broker answers native queries one at a time; like winget, a catalog
+        // that publishes nothing newer than the installed package settles the check
+        // without a native query (and so never offers a reinstall or downgrade).
+        var queriesBefore = nativeClient.CheckedSkus.Count;
         var sameVersion = await storeProvider.CheckAsync(storeApp with { NormalizedVersion = "2.0.0.0" }, CancellationToken.None);
-        assert(sameVersion.Status == UpdateStatus.Error && !sameVersion.IsInstallable,
-            "A native Store offer with an equal catalog target must expose the conflict, not claim Current or offer a downgrade.");
+        assert(sameVersion.Status == UpdateStatus.Current && !sameVersion.IsInstallable && nativeClient.CheckedSkus.Count == queriesBefore,
+            "A catalog without a newer package must settle the Store check without a native query, reinstall or downgrade.");
         nativeClient.Available = false;
         var current = await storeProvider.CheckAsync(storeApp, CancellationToken.None);
         assert(current.Status == UpdateStatus.Current && current.AvailableVersion is null,

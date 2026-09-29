@@ -110,6 +110,16 @@ public sealed class MsixStoreUpdateProvider : IUpdateProvider
             {
                 if (expectedProductId is not null && product.Identity.ProductId != expectedProductId)
                     return Result(application, null, UpdateStatus.Error, null, product.Identity.ProductId, "The Store product does not match the publisher's identity.");
+                // The Store broker answers native queries one at a time, so each one
+                // lengthens the whole scan. When the official catalog publishes no
+                // package newer than the installed one for this exact family and
+                // architecture (any SKU), the native check can only report "no
+                // update". Unknown or unparseable catalog versions still query natively;
+                // queued Store operations were already detected before this point.
+                if (product.LatestPublishedPackage is { } latest && Version.TryParse(application.NormalizedVersion, out _) &&
+                    VersionOrder.Compare(latest.Version, application.NormalizedVersion) <= 0)
+                    return Result(application, null, UpdateStatus.Current, null, product.Identity.ProductId,
+                        "The official Store catalog publishes no newer package for the exact installed package family and architecture.");
                 var offers = new List<(StoreProductIdentity Identity, NativeStoreOffer Offer)>();
                 // One native request per admitted Store family. Parallel SKU
                 // fan-out otherwise consumes all broker slots before later

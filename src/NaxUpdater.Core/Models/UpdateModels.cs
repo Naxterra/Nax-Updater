@@ -168,7 +168,7 @@ public sealed record StoreProductIdentity(string ProductId, string SkuId, string
     public static StoreProductIdentity From(PublishedStorePackage package) => new(package.ProductId, package.SkuId, package.PackageFamilyName);
 }
 public sealed record StoreProductMatch(StoreProductIdentity Identity, PublishedStorePackage? PublishedPackage,
-    IReadOnlyList<StoreProductIdentity>? AlternateIdentities = null);
+    IReadOnlyList<StoreProductIdentity>? AlternateIdentities = null, PublishedStorePackage? LatestPublishedPackage = null);
 public sealed record UpdateSourceCheck(string ProviderId, string ProviderDisplayName, UpdateStatus Status, string? AvailableVersion, string? Message,
     double? ElapsedMilliseconds = null);
 
