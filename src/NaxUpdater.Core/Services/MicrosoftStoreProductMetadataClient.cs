@@ -36,7 +36,8 @@ internal sealed class MicrosoftStoreProductMetadataClient(HttpClient httpClient)
                     .Select(e => e.GetProperty("Sku").GetProperty("SkuId").GetString())
                     .Where(s => s is not null && s != identity.SkuId).Distinct()
                     .Select(s => ParseIdentity(full.RootElement, id!, family, architecture, s)).Where(i => i is not null).Select(i => i!).ToArray();
-                matches.Add(new(identity, ParsePublishedPackage(full.RootElement, id!, family, architecture, installedVersion, identity.SkuId), alternatives));
+                matches.Add(new(identity, ParsePublishedPackage(full.RootElement, id!, family, architecture, installedVersion, identity.SkuId), alternatives,
+                    ParsePublishedPackage(full.RootElement, id!, family, architecture, installedVersion)));
             }
         }
         if (matches.Count > 1) throw new InvalidOperationException("Multiple Store products expose the same installed package family.");
