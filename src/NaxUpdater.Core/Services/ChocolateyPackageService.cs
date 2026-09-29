@@ -107,8 +107,60 @@ public sealed class ChocolateyPackageService : IChocolateyPackageService
         return new PreparedChocolateyUpdate(target, (_, cancellationToken) => RunElevatedUpgradeAsync(target, cancellationToken));
     }
 
+    private const string CommunityFeed = "https://community.chocolatey.org/api/v2/";
+    private static readonly HttpClient FeedClient = new() { Timeout = TimeSpan.FromSeconds(15) };
+
+    // choco.exe startup made every search cost ~2-4 s and made Chocolatey the
+    // longest part of a scan. `search --exact --by-id-only` is one OData query
+    // against the configured feed, so when the public community feed is the only
+    // enabled source, ask it directly. Any other source setup (private,
+    // authenticated, extra feeds) keeps using choco.exe. Applying always does.
+    private static bool UsesOnlyCommunityFeed()
+    {
+        try
+        {
+            var exe = ResolveExecutablePath();
+            var root = exe is null ? null : Path.GetDirectoryName(Path.GetDirectoryName(exe));
+            var config = root is null ? null : Path.Combine(root, "config", "chocolatey.config");
+            if (config is null || !File.Exists(config)) return false;
+            using var reader = System.Xml.XmlReader.Create(config, new System.Xml.XmlReaderSettings
+                { DtdProcessing = System.Xml.DtdProcessing.Prohibit, XmlResolver = null });
+            var enabled = System.Xml.Linq.XDocument.Load(reader).Descendants("source")
+                .Where(static source => !string.Equals((string?)source.Attribute("disabled"), "true", StringComparison.OrdinalIgnoreCase))
+                .ToArray();
+            return enabled.Length == 1 &&
+                   string.Equals(((string?)enabled[0].Attribute("value"))?.TrimEnd('/') + "/", CommunityFeed, StringComparison.OrdinalIgnoreCase);
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or System.Xml.XmlException)
+        {
+            return false;
+        }
+    }
+
+    private static async Task<List<ChocolateyUpdateTarget>> SearchCommunityFeedAsync(string name, CancellationToken token)
+    {
+        // The feed's Id comparison is case-sensitive; choco's --exact is not.
+        var filter = Uri.EscapeDataString($"tolower(Id) eq '{name.ToLowerInvariant().Replace("'", "''")}' and IsLatestVersion");
+        using var response = await FeedClient.GetAsync($"{CommunityFeed}Packages()?$filter={filter}", token);
+        response.EnsureSuccessStatusCode();
+        using var reader = System.Xml.XmlReader.Create(await response.Content.ReadAsStreamAsync(token), new System.Xml.XmlReaderSettings
+            { DtdProcessing = System.Xml.DtdProcessing.Prohibit, XmlResolver = null, Async = true });
+        var feed = await System.Xml.Linq.XDocument.LoadAsync(reader, System.Xml.Linq.LoadOptions.None, token);
+        System.Xml.Linq.XNamespace atom = "http://www.w3.org/2005/Atom";
+        System.Xml.Linq.XNamespace metadata = "http://schemas.microsoft.com/ado/2007/08/dataservices/metadata";
+        System.Xml.Linq.XNamespace data = "http://schemas.microsoft.com/ado/2007/08/dataservices";
+        return feed.Root?.Elements(atom + "entry")
+            .Select(entry => (Id: entry.Element(atom + "title")?.Value.Trim(),
+                Version: entry.Element(metadata + "properties")?.Element(data + "Version")?.Value.Trim()))
+            .Where(item => item.Id is { Length: > 0 } && item.Version is { Length: > 0 } &&
+                item.Id.Equals(name, StringComparison.OrdinalIgnoreCase))
+            .Select(item => new ChocolateyUpdateTarget(item.Id!, item.Version!))
+            .ToList() ?? [];
+    }
+
     private static async Task<List<ChocolateyUpdateTarget>> SearchExactAsync(string name, CancellationToken token)
     {
+        if (UsesOnlyCommunityFeed()) return await SearchCommunityFeedAsync(name, token);
         var results = new List<ChocolateyUpdateTarget>();
         var output = await RunAsync(["search", name, "--exact", "--by-id-only", "-r", "--limit-output"], token);
         foreach (var line in output.Split('\n', StringSplitOptions.RemoveEmptyEntries))
