@@ -22,6 +22,10 @@ public interface INativeStoreUpdateClient
     Task<INativeStoreUpdateItem?> GetQueueItemAsync(string family, CancellationToken token) => Task.FromResult<INativeStoreUpdateItem?>(null);
     Task<INativeStoreUpdateItem?> FindPausedUpdateAsync(StoreProductIdentity package, CancellationToken token);
     Task<INativeStoreUpdateItem?> StartUpdateAsync(PublishedStorePackage package, CancellationToken token);
+    // Re-requests an existing queued update with the approved apply options.
+    // Null means the client cannot, and the plain queue-item restart is used.
+    Task<INativeStoreUpdateItem?> StartQueuedUpdateAsync(StoreProductIdentity package, CancellationToken token) =>
+        Task.FromResult<INativeStoreUpdateItem?>(null);
 }
 
 public interface INativeStoreUpdateService
@@ -98,7 +102,17 @@ public sealed class NativeStoreUpdateService : INativeStoreUpdateService
             {
                 if (current.MayAffectOtherItems)
                     return new(-1, false, "Windows reports that restarting this item would affect other packages; the operation was not started.");
-                current.Restart(); // Only after the user's Update/Update All action.
+                // Only after the user's Update/Update All action. A plain Restart()
+                // keeps the item's original no-forced-shutdown options, so a package
+                // service (e.g. ChatGPT's CodexSandboxService) keeps it failing with
+                // ERROR_PACKAGES_IN_USE. Re-request it with the approved apply options.
+                var forced = await _client.StartQueuedUpdateAsync(identity, cancellation);
+                if (forced is not null)
+                {
+                    ValidateIdentity(forced, identity);
+                    current = forced;
+                }
+                else current.Restart();
             }
             var deadline = DateTimeOffset.UtcNow + _installTimeout;
             while (DateTimeOffset.UtcNow < deadline)
@@ -199,10 +213,14 @@ public sealed class NativeStoreUpdateService : INativeStoreUpdateService
             throw new InvalidOperationException("Windows Store returned a different product or package family.");
     }
 
+    // Detection never installs or shuts anything down. An approved apply runs after
+    // NaxUpdater closed the app's processes, and allows Windows to stop what it
+    // cannot close itself: packaged services (ChatGPT's CodexSandboxService runs as
+    // LocalSystem) otherwise block the deployment with ERROR_PACKAGES_IN_USE.
     internal static AppUpdateOptions QueryOptions(bool startApprovedUpdate = false) => new()
     {
         AutomaticallyDownloadAndInstallUpdateIfFound = startApprovedUpdate,
-        AllowForcedAppRestart = false
+        AllowForcedAppRestart = startApprovedUpdate
     };
 }
 
@@ -291,6 +309,9 @@ internal sealed class NativeStoreUpdateClient : INativeStoreUpdateClient
 
     public async Task<INativeStoreUpdateItem?> StartUpdateAsync(PublishedStorePackage package, CancellationToken token)
         => await QueryAsync(StoreProductIdentity.From(package), true, token);
+
+    public async Task<INativeStoreUpdateItem?> StartQueuedUpdateAsync(StoreProductIdentity package, CancellationToken token)
+        => await QueryAsync(package, true, token);
 
     private bool IsSearchUnresponsive()
     {
