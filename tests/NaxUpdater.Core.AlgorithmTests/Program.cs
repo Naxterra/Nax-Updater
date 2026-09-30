@@ -396,6 +396,8 @@ try
             "Checking for updates started a Store installation.");
         Assert(NativeStoreUpdateService.QueryOptions(true).AutomaticallyDownloadAndInstallUpdateIfFound,
             "Explicit apply cannot start the approved Store update.");
+        Assert(!NativeStoreUpdateService.QueryOptions().AllowForcedAppRestart && NativeStoreUpdateService.QueryOptions(true).AllowForcedAppRestart,
+            "Only an approved Store apply may let Windows stop the package's apps and services.");
         // Do not close any real package process while exercising the simulated apply boundary.
         var approved = selected with { ExecutionPlan = selected.ExecutionPlan! with { RunningProcessNames = [], RunningExecutablePaths = [] } };
         var nativeExecution = new UpdateExecutionService(nativeStoreService: nativeService);
