@@ -31,6 +31,7 @@ public sealed class UpdateCheckService
         {
             new FirefoxUpdateProvider(httpClient, firefoxMetadataDetector ?? new FirefoxMetadataDetector()),
             new ZeroInstallUpdateProvider(new ProcessQueryRunner()),
+            new PythonInstallManagerUpdateProvider(new ProcessQueryRunner()),
             new ElectronBuilderUpdateProvider(httpClient),
             new GogGalaxyUpdateProvider(),
             new IvpnUpdateProvider(httpClient),

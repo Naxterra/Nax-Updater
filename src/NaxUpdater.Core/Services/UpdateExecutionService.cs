@@ -268,6 +268,11 @@ public sealed class UpdateExecutionService
                         throw new InvalidDataException(signature.Error ?? "The elevated native updater signature is invalid.");
                     }
                 }
+                else if (!plan.RequireAuthenticode && plan.StorePackageFamilyName is { Length: > 0 } family &&
+                         !StorePackagedExecutable.IsInsideStoreSignedPackage(nativeExecutable, family))
+                {
+                    throw new InvalidDataException("The updater is not part of the expected Store-signed package.");
+                }
                 var nativeHash = await PreparedContentHashAsync(nativeExecutable, null, cancellationToken);
                 return new PreparedUpdateExecution(
                     null,
