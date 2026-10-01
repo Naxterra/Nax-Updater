@@ -448,6 +448,22 @@ try
         Assert(!unverified.IsSuccess && unchangedClient.Completed,
             "Store completion alone was accepted without observing the installed target version.");
     }
+    {
+        // A runtime installed by the Python install manager is owned by it: Chocolatey's
+        // name-matched "python" package updates the separate python.org installer instead.
+        var pyManaged = App("Python 3.14.7", "Python Software Foundation", "3.14.7", @"C:\py\python.exe", InstallScope.CurrentUser) with
+        {
+            Evidence = [new(EvidenceKind.Registry, "Uninstall registry", "CurrentUser Registry64 · pymanager-pythoncore-3.14-64", true)]
+        };
+        Assert(PythonInstallManagerUpdateProvider.InstallId(pyManaged) == "pythoncore-3.14-64",
+            "A Python install manager runtime was not recognized from its uninstall entry.");
+        var pyClassified = ExternalManagementClassifier.Classify(pyManaged);
+        Assert(pyClassified.BlockedProviders.Contains("chocolatey-fallback") && pyClassified.BlockedProviders.Contains("winget-fallback"),
+            "Name-matched catalogs were allowed to claim a Python install manager runtime.");
+        Assert(PythonInstallManagerUpdateProvider.InstallId(App("Python 3.14.8 (64-bit)", "Python Software Foundation", "3.14.8",
+            @"C:\py\python.exe", InstallScope.Machine)) is null,
+            "A python.org installer entry was treated as a Python install manager runtime.");
+    }
     await StoreFulfillmentRegression.RunAsync(Assert);
     await StoreQueueOrchestrationRegression.RunAsync(Assert);
     RecoveryRegression.Run(Assert);

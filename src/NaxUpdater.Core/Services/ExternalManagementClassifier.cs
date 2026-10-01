@@ -59,6 +59,15 @@ internal static class ExternalManagementClassifier
             return new("Steam", new Uri("https://store.steampowered.com/about/"));
         }
 
+        if (application.Evidence.Any(static evidence =>
+                evidence.Label == "Uninstall registry" &&
+                RegistryKey(evidence.Value).StartsWith(PythonInstallManagerUpdateProvider.UninstallKeyPrefix, StringComparison.OrdinalIgnoreCase)))
+        {
+            // Name-matched catalogs (Chocolatey's "python") update the separate
+            // python.org installer, never this runtime; its own manager must.
+            return new("Python install manager", new Uri("https://docs.python.org/3/using/windows.html"));
+        }
+
         var fileName = Path.GetFileName(application.PrimaryInstallPath);
         if (!string.IsNullOrWhiteSpace(fileName) && fileName.StartsWith("goggame-", StringComparison.OrdinalIgnoreCase))
         {
