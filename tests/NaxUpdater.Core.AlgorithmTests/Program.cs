@@ -470,6 +470,7 @@ try
     await StoreSchedulingRegression.RunAsync(Assert);
     await CoverageRegression.RunAsync(Assert);
     await ChocolateyNextcloudRegression.RunAsync(Assert, fixture);
+    await DriverTimeoutRegression.RunAsync(Assert);
     await ProcessLifetimeRegression.RunAsync(Assert, fixture);
     Console.WriteLine($"Algorithm regression tests passed: {checks} assertions. No real installers executed.");
 }

@@ -458,13 +458,27 @@ public sealed partial class ManufacturerDriverService(HttpClient httpClient)
         "WD Elements uses Microsoft's supported USB-storage/disk driver on Windows 11. WD documents an SES component that installs automatically when required and explicitly labels the downloadable SES package as legacy for Windows 10 and later. The official page also links WD utilities; no unnecessary legacy storage driver is offered as an update.",
         null);
 
+    // Every driver check shares one scan, so one slow manufacturer site must fail
+    // only its own driver instead of holding all of them past the scan's
+    // per-source limit (the app's HttpClient waits up to 30 seconds).
+    internal TimeSpan RequestTimeout { get; init; } = TimeSpan.FromSeconds(10);
+
     private async Task<string> GetStringAsync(Uri uri, CancellationToken cancellationToken)
     {
-        using var request = new HttpRequestMessage(HttpMethod.Get, uri);
-        request.Headers.UserAgent.ParseAdd("NaxUpdater/0.17.11");
-        using var response = await httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
-        response.EnsureSuccessStatusCode();
-        return await response.Content.ReadAsStringAsync(cancellationToken);
+        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        timeout.CancelAfter(RequestTimeout);
+        try
+        {
+            using var request = new HttpRequestMessage(HttpMethod.Get, uri);
+            request.Headers.UserAgent.ParseAdd("NaxUpdater/0.17.12");
+            using var response = await httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, timeout.Token);
+            response.EnsureSuccessStatusCode();
+            return await response.Content.ReadAsStringAsync(timeout.Token);
+        }
+        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+        {
+            throw new TimeoutException($"{uri.Host} did not respond within {RequestTimeout.TotalSeconds:0} seconds.");
+        }
     }
 
     private static IReadOnlyList<InstalledHardwareDriver> ReadInstalledDrivers(ICollection<string> issues)
