@@ -66,7 +66,8 @@ public sealed class ApplicationInventoryService
             .OrderBy(static policy => policy.DisplayName, StringComparer.CurrentCultureIgnoreCase)
             .ToArray();
 
-        var mergedApplications = MergeMsiUpgradeFamilies(MergeExactDuplicates(applications));
+        var mergedApplications = ChocolateyOwnership.Apply(
+            MergeMsiUpgradeFamilies(MergeExactDuplicates(applications)), ChocolateyPackageService.InstallRoot());
         return new InventorySnapshot(
             DateTimeOffset.Now,
             mergedApplications

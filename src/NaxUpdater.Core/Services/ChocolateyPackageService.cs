@@ -17,6 +17,7 @@ public interface IChocolateyPackageService
 {
     bool IsAvailable { get; }
     Task<ChocolateyPackageOffer> FindLatestAsync(IEnumerable<string> nameCandidates, string? installedVersion, CancellationToken token);
+    Task<string?> FindPackageVersionAsync(string packageId, CancellationToken token);
     Task<PreparedChocolateyUpdate> PrepareAsync(UpdateCheckResult update, CancellationToken token);
 }
 
@@ -44,6 +45,16 @@ public sealed class ChocolateyPackageService : IChocolateyPackageService
     private static readonly SemaphoreSlim QuerySlots = new(8, 8);
 
     public bool IsAvailable => ResolveExecutablePath() is not null;
+
+    // choco.exe lives in <install root>\bin.
+    internal static string? InstallRoot() =>
+        ResolveExecutablePath() is { } exe ? Path.GetDirectoryName(Path.GetDirectoryName(exe)) : null;
+
+    public async Task<string?> FindPackageVersionAsync(string packageId, CancellationToken token) =>
+        IsAvailable
+            ? (await SearchExactAsync(packageId, token)).FirstOrDefault(match =>
+                match.PackageId.Equals(packageId, StringComparison.OrdinalIgnoreCase))?.Version
+            : null;
 
     public async Task<ChocolateyPackageOffer> FindLatestAsync(
         IEnumerable<string> nameCandidates, string? installedVersion, CancellationToken token)
