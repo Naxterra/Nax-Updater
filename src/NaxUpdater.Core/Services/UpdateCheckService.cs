@@ -32,6 +32,8 @@ public sealed class UpdateCheckService
             new FirefoxUpdateProvider(httpClient, firefoxMetadataDetector ?? new FirefoxMetadataDetector()),
             new ZeroInstallUpdateProvider(new ProcessQueryRunner()),
             new PythonInstallManagerUpdateProvider(new ProcessQueryRunner()),
+            new ChocolateyInstalledUpdateProvider(),
+            new NextcloudUpdateProvider(httpClient),
             new ElectronBuilderUpdateProvider(httpClient),
             new GogGalaxyUpdateProvider(),
             new IvpnUpdateProvider(httpClient),
@@ -530,7 +532,7 @@ public sealed class UpdateCheckService
         return preferred switch
         {
             "Zero Install native feed" => "zero-install",
-            "Official Nextcloud GitHub release and signed MSI" => "github:nextcloud-releases/desktop",
+            "Official Nextcloud GitHub release and signed MSI" => NextcloudUpdateProvider.ProviderId,
             "Blizzard native updater" => "native-updater",
             "Brave native update channel" => "native-updater",
             _ => preferred

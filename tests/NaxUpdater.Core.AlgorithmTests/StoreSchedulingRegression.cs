@@ -33,6 +33,13 @@ internal static class StoreSchedulingRegression
             assert(blockedReads==1,"An unresponsive queue caused repeated broker calls for each app.");
         }
         finally{gate.Set();}
+        var stalledSearch=new NativeStoreUpdateClient(()=>[]);
+        typeof(NativeStoreUpdateClient).GetField("_searchUnresponsiveSetAt",System.Reflection.BindingFlags.NonPublic|System.Reflection.BindingFlags.Instance)!
+            .SetValue(stalledSearch,System.Diagnostics.Stopwatch.GetTimestamp());
+        assert(await stalledSearch.ReadQueueAsync("Fixture_family",CancellationToken.None) is null,
+            "A stalled update search turned a completed, empty queue read into a failure before the catalog could decide.");
+        try{await stalledSearch.FindPausedUpdateAsync(new("9FIXTURE","0010","Fixture_family"),CancellationToken.None);assert(false,"A stalled update search was queried again during its cooldown.");}
+        catch(TimeoutException){assert(true,"Native search still fails fast during its cooldown.");}
         using var canceled=new CancellationTokenSource(); canceled.Cancel();
         try{await client.ReadQueueAsync("Fixture_family",canceled.Token);assert(false,"Canceled queue read continued.");}
         catch(OperationCanceledException){assert(reads==2,"Cancellation started another queue request.");}

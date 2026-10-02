@@ -204,7 +204,8 @@ public static partial class LocalizationService
             return value switch
             {
                 "zero-install" or "Zero Install native feed" => Get("PreferredZeroInstall"),
-                "github:nextcloud-releases/desktop" or "Official Nextcloud GitHub release and signed MSI" => Get("PreferredNextcloud"),
+                "nextcloud-client-updater" or "github:nextcloud-releases/desktop" or "Official Nextcloud GitHub release and signed MSI" => Get("PreferredNextcloud"),
+                "chocolatey-installed" => Get("PreferredChocolatey"),
                 "native-updater" => Get("ProviderNative"),
                 "Blizzard native updater" => Get("PreferredBlizzard"),
                 "No automatic provider" => Get("PreferredNone"),

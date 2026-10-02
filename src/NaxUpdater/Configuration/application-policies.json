@@ -16,10 +16,10 @@
       "publisherContains": "Nextcloud",
       "blockedProviders": [ "winget-fallback" ],
       "managementMode": "DirectVendor",
-      "preferredProvider": "github:nextcloud-releases/desktop",
+      "preferredProvider": "nextcloud-client-updater",
       "versionNormalization": "FirstThreeNumericComponents",
       "appliesWhenAbsent": false,
-      "reason": "Use the executable for installed state and normalize the MSI build suffix to the public release version."
+      "reason": "Nextcloud's own update server, on the channel set in the client, reports versions in the MSI's numbering (35.0.0-rc3 installs as 34.0.93); normalize the MSI build suffix to match."
     },
     {
       "id": "Blizzard.BattleNet",

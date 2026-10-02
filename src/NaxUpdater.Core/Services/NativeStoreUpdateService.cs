@@ -247,12 +247,12 @@ internal sealed class NativeStoreUpdateClient : INativeStoreUpdateClient
     }
     public async Task<NativeStoreQueueEntry?> ReadQueueAsync(string family, CancellationToken token)
     {
+        // A completed queue read is a valid answer even while update searches are
+        // stalled: the queue and the search are separate broker calls. Callers then
+        // decide from the public catalog or a native search, which keeps its own
+        // stall guard, so a stalled search never condemns catalog-current families.
         var item = FindQueueItem(await QueueSnapshotAsync(false, token), family);
-        if (item is null)
-        {
-            if (IsSearchUnresponsive()) throw new TimeoutException("The shared Microsoft Store update service timed out earlier in this scan. This app was not declared current; retry the scan after the service recovers.");
-            return null;
-        }
+        if (item is null) return null;
         var status = item.Status();
         return new(item.ProductId, item.PackageFamilyName, status.State, status.ErrorCode, item.MayAffectOtherItems);
     }
