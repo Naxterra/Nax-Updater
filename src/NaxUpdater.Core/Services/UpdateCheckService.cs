@@ -251,7 +251,13 @@ public sealed class UpdateCheckService
         // Conversely, never bypass a higher-authority verification failure with
         // a lower-authority installer. Explicit provider policies stay exclusive.
         var firstDefinitive = Array.FindIndex(checks, c => c.Status is not (UpdateStatus.ManagedExternally or UpdateStatus.Unsupported));
-        var available = Array.FindIndex(checks, c => c.IsInstallable);
+        // Fallback catalogs match by name and cannot see release lines: Chocolatey's
+        // "nodejs" offered 26.x over a Node.js 22 LTS that the producer's own index
+        // confirmed current. A producer or installed-updater Current outranks them.
+        var producerCurrent = checkResults.Any(c => c.Result.Status == UpdateStatus.Current &&
+            c.Provider.Descriptor.Authority > UpdateProviderAuthority.PlatformStore);
+        var available = Array.FindIndex(checkResults, c => c.Result.IsInstallable &&
+            !(producerCurrent && c.Provider.Descriptor.Authority <= UpdateProviderAuthority.FallbackCatalog));
         var selectedIndex = available >= 0 && !checks.Take(available).Any(c => c.Status == UpdateStatus.Error)
             ? available : firstDefinitive >= 0 ? firstDefinitive : 0;
         // A platform-owned deployment blocks duplicate execution through any
