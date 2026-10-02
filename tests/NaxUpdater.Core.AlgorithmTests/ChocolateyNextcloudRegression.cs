@@ -77,6 +77,19 @@ internal static class ChocolateyNextcloudRegression
         assert(ahead.Status == UpdateStatus.Current && ahead.ExecutionPlan is null,
             "Chocolatey offered to reinstall an older package over a newer installed version.");
 
+        // A name-matched fallback catalog cannot override a producer's Current: the
+        // producer preserves the installed release line (Node.js 22 LTS), the catalog does not.
+        var lts = App("Node.js", "Node.js Foundation", "22.23.3", InstallScope.Machine, "LocalMachine Registry64 · {LTS}");
+        var producer = new Fixed("producer-line", UpdateProviderAuthority.ProducerRelease, UpdateStatus.Current, "22.23.3");
+        var catalog = new Fixed("catalog-name", UpdateProviderAuthority.FallbackCatalog, UpdateStatus.Available, "26.10.0");
+        var lineResult = (await new UpdateCheckService([producer, catalog]).CheckAsync(new(DateTimeOffset.UtcNow, [lts], [], []))).Results.Single();
+        assert(lineResult.ProviderId == "producer-line" && lineResult.Status == UpdateStatus.Current &&
+               lineResult.SourceChecks?.Any(c => c.ProviderId == "catalog-name" && c.Status == UpdateStatus.Available) == true,
+            "A fallback catalog's name match overrode the producer's release-line Current, or its offer was hidden.");
+        var noProducer = (await new UpdateCheckService([new Fixed("catalog-name", UpdateProviderAuthority.FallbackCatalog, UpdateStatus.Available, "26.10.0")])
+            .CheckAsync(new(DateTimeOffset.UtcNow, [lts], [], []))).Results.Single();
+        assert(noProducer.Status == UpdateStatus.Available, "A fallback catalog offer was suppressed without a producer verdict.");
+
         // Nextcloud: the channel comes from the client's own settings and the version
         // from Nextcloud's update server, in the numbering the MSI registers.
         assert(NextcloudUpdateProvider.ParseChannel(["[General]", "autoUpdateCheck=true", "updateChannel=beta"]) == "beta" &&
@@ -123,6 +136,17 @@ internal static class ChocolateyNextcloudRegression
     }
 
     private static HttpResponseMessage Text(string body) => new(HttpStatusCode.OK) { Content = new StringContent(body, Encoding.UTF8) };
+
+    private sealed class Fixed(string id, UpdateProviderAuthority authority, UpdateStatus status, string version) : IUpdateProvider
+    {
+        public string Id => id;
+        public UpdateProviderDescriptor Descriptor { get; } = new(authority, 50, "fixture");
+        public bool CanHandle(InstalledApplication application) => true;
+        public Task<UpdateCheckResult> CheckAsync(InstalledApplication application, CancellationToken token) => Task.FromResult(new UpdateCheckResult(
+            application.Identity, application.DisplayName, application.NormalizedVersion, version, status, Id, Id, "neutral", "fixture", "x64", "stable", null, "fixture",
+            status == UpdateStatus.Available ? new UpdateExecutionPlan(UpdateExecutionKind.ChocolateyPackage, null, null, null, null, null, [], true, [], [],
+                ChocolateyTarget: new ChocolateyUpdateTarget("nodejs", version)) : null));
+    }
 
     private sealed class FakeChocolatey : IChocolateyPackageService
     {
