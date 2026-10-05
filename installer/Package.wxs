@@ -26,12 +26,12 @@
 
     <Feature Id="MainFeature" Title="!(loc.MainFeatureTitle)" Description="!(loc.MainFeatureDescription)" Level="1" AllowAbsent="no" AllowAdvertise="no" InstallDefault="local" Display="expand">
       <Component Id="MainExecutable" Directory="APPLICATIONFOLDER" Guid="{3B09C804-67DF-4DB1-9D09-D180A89A37D6}">
-        <File Id="NaxUpdaterExe" Source="!(bindpath.Publish)\NaxUpdater.exe" KeyPath="yes" />
+        <File Id="NaxUpdaterExe" Source="!(bindpath.Publish)\Nax-Updater.exe" KeyPath="yes" />
       </Component>
 
       <Feature Id="StartMenuShortcutFeature" Title="!(loc.StartMenuFeatureTitle)" Description="!(loc.StartMenuFeatureDescription)" Level="1" AllowAbsent="yes" AllowAdvertise="no" InstallDefault="local" TypicalDefault="install">
         <Component Id="NaxUpdaterStartMenuShortcutComponent" Directory="ProgramMenuDir" Guid="{C330B1A6-3429-4031-81E3-7E65DCDEDEF0}">
-          <Shortcut Id="NaxUpdaterStartMenuShortcut" Name="Nax-Updater" Description="!(loc.ShortcutDescription)" Target="[APPLICATIONFOLDER]NaxUpdater.exe" WorkingDirectory="APPLICATIONFOLDER" Icon="NaxUpdaterProductIcon.ico" />
+          <Shortcut Id="NaxUpdaterStartMenuShortcut" Name="Nax-Updater" Description="!(loc.ShortcutDescription)" Target="[APPLICATIONFOLDER]Nax-Updater.exe" WorkingDirectory="APPLICATIONFOLDER" Icon="NaxUpdaterProductIcon.ico" />
           <RemoveFolder Id="RemoveNaxUpdaterProgramMenu" Directory="ProgramMenuDir" On="uninstall" />
           <RegistryValue Root="HKCU" Key="Software\Naxterra\NaxUpdater\Installer" Name="StartMenuShortcut" Type="integer" Value="1" KeyPath="yes" />
         </Component>
@@ -39,14 +39,14 @@
 
       <Feature Id="DesktopShortcutFeature" Title="!(loc.DesktopFeatureTitle)" Description="!(loc.DesktopFeatureDescription)" Level="1" AllowAbsent="yes" AllowAdvertise="no" InstallDefault="local" TypicalDefault="install">
         <Component Id="NaxUpdaterDesktopShortcutComponent" Directory="DesktopFolder" Guid="{7E7828AF-03B6-49A1-8140-CFC5C2208E95}">
-          <Shortcut Id="NaxUpdaterDesktopShortcut" Name="Nax-Updater" Description="!(loc.ShortcutDescription)" Target="[APPLICATIONFOLDER]NaxUpdater.exe" WorkingDirectory="APPLICATIONFOLDER" Icon="NaxUpdaterProductIcon.ico" />
+          <Shortcut Id="NaxUpdaterDesktopShortcut" Name="Nax-Updater" Description="!(loc.ShortcutDescription)" Target="[APPLICATIONFOLDER]Nax-Updater.exe" WorkingDirectory="APPLICATIONFOLDER" Icon="NaxUpdaterProductIcon.ico" />
           <RegistryValue Root="HKCU" Key="Software\Naxterra\NaxUpdater\Installer" Name="DesktopShortcut" Type="integer" Value="1" KeyPath="yes" />
         </Component>
       </Feature>
 
       <Component Id="ApplicationRegistration" Directory="APPLICATIONFOLDER" Guid="{F6060F0B-064B-4ABB-8484-8E5C15F3751D}">
-        <RegistryValue Root="HKLM" Key="Software\Microsoft\Windows\CurrentVersion\App Paths\NaxUpdater.exe" Value="[APPLICATIONFOLDER]NaxUpdater.exe" Type="string" KeyPath="yes" />
-        <RegistryValue Root="HKLM" Key="Software\Microsoft\Windows\CurrentVersion\App Paths\NaxUpdater.exe" Name="Path" Value="[APPLICATIONFOLDER]" Type="string" />
+        <RegistryValue Root="HKLM" Key="Software\Microsoft\Windows\CurrentVersion\App Paths\Nax-Updater.exe" Value="[APPLICATIONFOLDER]Nax-Updater.exe" Type="string" KeyPath="yes" />
+        <RegistryValue Root="HKLM" Key="Software\Microsoft\Windows\CurrentVersion\App Paths\Nax-Updater.exe" Name="Path" Value="[APPLICATIONFOLDER]" Type="string" />
       </Component>
 
       <Component Id="SqliteNativeRuntime" Directory="APPLICATIONFOLDER" Guid="{1CC9632D-F194-4A41-81E9-3CCDD1E2EFDB}">
@@ -54,7 +54,7 @@
       </Component>
 
       <Files Directory="APPLICATIONFOLDER" Include="!(bindpath.Publish)\**">
-        <Exclude Files="!(bindpath.Publish)\NaxUpdater.exe" />
+        <Exclude Files="!(bindpath.Publish)\Nax-Updater.exe" />
         <Exclude Files="!(bindpath.Publish)\e_sqlite3.dll" />
         <Exclude Files="!(bindpath.Publish)\**\*.pdb" />
       </Files>

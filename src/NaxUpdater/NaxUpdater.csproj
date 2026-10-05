@@ -5,7 +5,7 @@
     <TargetPlatformMinVersion>10.0.22000.0</TargetPlatformMinVersion>
     <SupportedOSPlatformVersion>10.0.22000.0</SupportedOSPlatformVersion>
     <RootNamespace>NaxUpdater</RootNamespace>
-    <AssemblyName>NaxUpdater</AssemblyName>
+    <AssemblyName>Nax-Updater</AssemblyName>
     <Product>Nax-Updater</Product>
     <Version>0.17.13</Version>
     <ApplicationManifest>app.manifest</ApplicationManifest>
