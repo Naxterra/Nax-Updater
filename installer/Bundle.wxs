@@ -3,7 +3,7 @@
     xmlns="http://wixtoolset.org/schemas/v4/wxs"
     xmlns:bal="http://wixtoolset.org/schemas/v4/wxs/bal">
   <Bundle
-      Name="NaxUpdater"
+      Name="Nax-Updater"
       Manufacturer="Naxterra"
       Version="$(NaxUpdaterVersion)"
       UpgradeCode="{23B20884-E865-4567-8158-EFDE8E0DBF65}"

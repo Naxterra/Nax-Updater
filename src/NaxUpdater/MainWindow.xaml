@@ -3,7 +3,7 @@
     x:Class="NaxUpdater.MainWindow"
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-    Title="NaxUpdater">
+    Title="Nax-Updater">
     <Window.SystemBackdrop>
         <MicaBackdrop />
     </Window.SystemBackdrop>
@@ -16,7 +16,7 @@
         <TitleBar
             x:Name="AppTitleBar"
             x:Uid="AppTitleBar"
-            Title="NaxUpdater"
+            Title="Nax-Updater"
             Subtitle="Verified, language-aware application updates">
             <TitleBar.IconSource>
                 <ImageIconSource ImageSource="Assets/AppIcon.ico" />

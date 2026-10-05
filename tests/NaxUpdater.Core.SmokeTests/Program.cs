@@ -1738,7 +1738,7 @@ using (var naxUpdaterFixtureClient = new HttpClient(new StubHttpMessageHandler(_
 {
     var naxUpdaterFixtureApplication = CreateApplication(
         "naxupdater-producer-test",
-        "NaxUpdater",
+        "Nax-Updater",
         "Naxterra",
         "0.16.2",
         Path.Combine(Environment.SystemDirectory, "cmd.exe"),
@@ -1764,7 +1764,7 @@ if (diagnosticMode is "1" or "all")
     string[] diagnosticNames =
     [
         "IVPN Client", "Windscribe", "Inno Setup 7.1.0", "PotPlayer-64 bit",
-        "CurseForge 1.318.0-38354", "Portmaster", "NaxUpdater", "Node.js",
+        "CurseForge 1.318.0-38354", "Portmaster", "Nax-Updater", "Node.js",
         "Bitdefender Endpoint Security Tools", "NVIDIA Grafiktreiber", "NVIDIA HD-Audiotreiber",
         "KYOCERA Status Monitor", "Kyocera TWAIN Driver", "TP-Link Archer TBE400UH Driver",
         "Python 3.14.7", "Python Launcher", "Microsoft .NET SDK 11.0.100",
@@ -1834,7 +1834,7 @@ if (installedGit is not null)
         "The production provider chain did not route Git directly to the producer-owned Git for Windows release.");
 }
 var installedNaxUpdater = snapshot.Applications.FirstOrDefault(app =>
-    app.DisplayName.Equals("NaxUpdater", StringComparison.OrdinalIgnoreCase));
+    app.DisplayName.Equals("Nax-Updater", StringComparison.OrdinalIgnoreCase));
 if (installedNaxUpdater is not null)
 {
     var naxUpdaterAssessment = productionUpdateSnapshot.Results.Single(result =>
