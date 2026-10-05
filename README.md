@@ -1,8 +1,8 @@
-# NaxUpdater
+# Nax-Updater
 
-![NaxUpdater icon](src/NaxUpdater/Assets/AppIcon-128.png)
+![Nax-Updater icon](src/NaxUpdater/Assets/AppIcon-128.png)
 
-NaxUpdater is a native Windows 11 application for discovering and updating installed software from independent Windows and vendor evidence instead of trusting a single package-manager catalog.
+Nax-Updater is a native Windows 11 application for discovering and updating installed software from independent Windows and vendor evidence instead of trusting a single package-manager catalog.
 
 ## Downloads
 
@@ -41,7 +41,7 @@ The current implementation includes:
 - no language column, language detail section, or language-based filtering in the update view; installer language preservation remains enforced, and successful no-update checks use the normal "Current" status;
 - WSL stable-release checks directly against Microsoft's GitHub repository, with the installed Microsoft-signed `wsl.exe --update --web-download` route and independent post-update version verification; generic Store ownership no longer hides an available WSL release;
 - shows "Current" after a successful Store check returns no applicable offer; catalog-only ChatGPT versions remain diagnostic evidence and are excluded from the available-version column and update counts; actual check errors remain errors;
-- an independent updater lifetime: when launched inside another application's Windows job, NaxUpdater requests a desktop-launched replacement and exits only after the replacement confirms it is outside that job;
+- an independent updater lifetime: when launched inside another application's Windows job, Nax-Updater requests a desktop-launched replacement and exits only after the replacement confirms it is outside that job;
 - process shutdown that protects the updater and its ancestors, refuses destructive work from a still-coupled host, and force-closes only executable instances bound to the approved plan, never arbitrary descendant process trees;
 - real disposable-process regression tests for desktop launch, host protection and preservation of unrelated descendants during forced shutdown;
 - selects the newest applicable published Store package independently of a later publisher announcement: a published intermediate ChatGPT build remains installable while the next build is still rolling out;
@@ -57,7 +57,7 @@ The current implementation includes:
 - separate counts for completed version checks, externally managed entries, unsupported applications, failed checks, and installable updates;
 - recovers Git/GitHub release checks from anonymous GitHub API rate limits through the installed authenticated GitHub CLI while retaining the exact official asset digest and signer policy;
 - restores automatic execution for exact producer-hashed, Authenticode-bound EXE installers such as Firefox and NVIDIA, including their normal Windows elevation prompt;
-- keeps installed version evidence owned by NaxUpdater inventory instead of rejecting WinGet fallback assessments whose comparison helper uses a normalized catalog version;
+- keeps installed version evidence owned by Nax-Updater inventory instead of rejecting WinGet fallback assessments whose comparison helper uses a normalized catalog version;
 - an explicit provider-authority model: installed update protocols, producer releases, Microsoft Store, and catalog fallbacks are selected by declared authority and compatible installation type rather than registration order;
 - hard enforcement of preferred and blocked provider policies, with equal-authority conflicts and missing preferred providers failing closed instead of silently falling back;
 - separate release and applicability states, so a newer vendor release can be shown without exposing an install button until an exact executable route and target version are confirmed;
@@ -127,7 +127,7 @@ The current implementation includes:
 - twelve-way bounded Store catalog checking, reducing the complete local application scan and update check from roughly 27 seconds to about 7–8 seconds on the validated workstation without omitting packages.
 - version/architecture-aware MSIX integration correlation, attaching WinRAR's shell-extension package to the real Win32 installation instead of displaying a duplicate source-less package row;
 - equivalent compact and dotted date-release versions such as PotPlayer `260819` and `26.08.19.0` are treated as the same release;
-- a Chocolatey community-feed fallback beneath WinGet, using the installed `choco.exe` for both detection and application so package execution stays within Chocolatey's own trust boundary rather than NaxUpdater re-implementing it;
+- a Chocolatey community-feed fallback beneath WinGet, using the installed `choco.exe` for both detection and application so package execution stays within Chocolatey's own trust boundary rather than Nax-Updater re-implementing it;
 - a same-tier skip that only elides an explicitly opted-in lower-specificity fallback (currently Chocolatey) once a higher-specificity sibling resolves cleanly, so a genuine error from any other compatible source can never be hidden behind a clean result;
 - version-stripped name and publisher correlation, disambiguated by major version, for installers whose registry key or install path is inherently version-specific (such as .NET Desktop Runtime's staged bootstrapper cache), so a successful update is recognized instead of reported as unresolved;
 - Steam and Snagit excluded from generic fallback version comparison after their own installed-version surfaces proved mutually inconsistent or format-mismatched against catalog data;
@@ -139,8 +139,8 @@ The current implementation includes:
 The native **Drivers / Treiber** view does not use Windows Update. It correlates present PnP hardware with signed-driver data and retained installed INF registrations, then groups interface records into physical-device or driver-package rows.
 
 - NVIDIA GeForce RTX 50-series desktop drivers are checked directly against NVIDIA's official WHQL Game Ready catalog.
-- A newer NVIDIA driver receives an install button only after NaxUpdater obtains NVIDIA's official installer URL and published SHA-256 sidecar; the downloaded package must also carry the `NVIDIA Corporation` Authenticode publisher.
-- The manufacturer installer remains visible so component choices stay under user control. NaxUpdater handles download verification, elevation, exit codes, restart reporting, and the post-install rescan.
+- A newer NVIDIA driver receives an install button only after Nax-Updater obtains NVIDIA's official installer URL and published SHA-256 sidecar; the downloaded package must also carry the `NVIDIA Corporation` Authenticode publisher.
+- The manufacturer installer remains visible so component choices stay under user control. Nax-Updater handles download verification, elevation, exit codes, restart reporting, and the post-install rescan.
 - Realtek RTL8125 Ethernet is compared by its applicable driver branch rather than the catalog publication date, so installed `10.80.50.407` is correctly current for package branch `10.80.50`; Realtek's CAPTCHA-protected download remains an exact source action only for a genuinely newer branch.
 - Intel I219-V is compared with the exact Windows 11 `e1d.inf` payload rather than the unrelated umbrella package number. A genuine advance receives a SHA-256-verified ZIP plan that revalidates the hardware ID, INF version, and Microsoft WHCP catalog before elevated `pnputil` installation.
 - TP-Link hardware ID `USB\VID_3625&PID_010A` is retained when disconnected, mapped to Archer TBE400UH, and compared with its exact TP-Link hardware-version page.
@@ -180,9 +180,9 @@ The shared search field remains active in both the installed-applications and up
 - Running-application warnings use the non-modal status bar. Supported MSI and installed-metadata installers run silently after the explicit row-button click; Windows UAC remains available when elevation is required.
 - Details panes are width-capped so ultrawide windows devote their extra space to the application list instead of an empty details column.
 
-MSIX app-list resources and package-directory identities are used to replace opaque package GUIDs with meaningful names. Dates are labelled **Installed / updated** because Windows and MSI can replace the original installation date during servicing; when no reported date exists, NaxUpdater can show the installation folder's modification date as an explicitly identified fallback.
+MSIX app-list resources and package-directory identities are used to replace opaque package GUIDs with meaningful names. Dates are labelled **Installed / updated** because Windows and MSI can replace the original installation date during servicing; when no reported date exists, Nax-Updater can show the installation folder's modification date as an explicitly identified fallback.
 
-NaxUpdater never falls back to an English Firefox installer when the detected locale is unavailable. An update is blocked instead.
+Nax-Updater never falls back to an English Firefox installer when the detected locale is unavailable. An update is blocked instead.
 
 ## Installation safety
 
@@ -191,13 +191,13 @@ NaxUpdater never falls back to an English Firefox installer when the detected lo
 - Downloaded installers require HTTPS, an allow-listed final host, a published SHA-256/SHA-512 release digest, and an expected Authenticode publisher unless an explicitly modelled hash-only payload has an independently verified nested catalog.
 - Direct producer recipes verify installed architecture and scope; supported alternate architectures select their matching assets. Unsupported variants remain visible with an explanation.
 - Native WinGet fulfillment retains the official catalog package/version and validates the selected architecture, installer type, and locale before submission. Windows Package Manager owns download integrity, dependencies, installer switches and Windows elevation.
-- Starting an update authorizes NaxUpdater to close only path-bound processes from the fresh execution plan and force-terminate their same-session trees when necessary; inaccessible processes block the transaction instead of passing stale PIDs through an elevated `taskkill` command.
-- NaxUpdater does not run bulk WinGet, Chocolatey, or Scoop commands and never uninstalls without exact user confirmation.
+- Starting an update authorizes Nax-Updater to close only path-bound processes from the fresh execution plan and force-terminate their same-session trees when necessary; inaccessible processes block the transaction instead of passing stale PIDs through an elevated `taskkill` command.
+- Nax-Updater does not run bulk WinGet, Chocolatey, or Scoop commands and never uninstalls without exact user confirmation.
 
 ## Application removal
 
 - Removable applications expose **Uninstall / remove** in the details pane.
-- NaxUpdater uses only the registered Windows uninstaller, an MSI product code, Zero Install, or the native MSIX deployment API.
+- Nax-Updater uses only the registered Windows uninstaller, an MSI product code, Zero Install, or the native MSIX deployment API.
 - Raw installation folders are never deleted.
 - Removal requires two confirmations; the second requires typing the exact application name.
 - Protected Windows system components and entries without a verifiable removal method remain disabled.
@@ -210,7 +210,7 @@ From this directory:
 dotnet build NaxUpdater.slnx
 dotnet run --project tests/NaxUpdater.Core.SmokeTests/NaxUpdater.Core.SmokeTests.csproj
 dotnet publish src/NaxUpdater/NaxUpdater.csproj -c Release -r win-x64 --self-contained true -o artifacts/NaxUpdater-win-x64
-./scripts/package-release.ps1 -Version 0.17.12
+./scripts/package-release.ps1 -Version 0.17.13
 ```
 
 The desktop project uses .NET 11, WinUI 3, and the Windows App SDK. It is not an Electron or WebView application.

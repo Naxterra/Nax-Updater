@@ -139,7 +139,7 @@ public sealed partial class MainPage : Page
                 interruptedOperation,
                 recoveredStage,
                 DateTimeOffset.UtcNow,
-                reachedTarget ? null : interruptedOperation.Error ?? "NaxUpdater restarted before the target version could be confirmed.");
+                reachedTarget ? null : interruptedOperation.Error ?? "Nax-Updater restarted before the target version could be confirmed.");
             // A failed verification is not a reboot requirement. A fresh update
             // transaction revalidates its own target; unrelated apps remain usable.
             UpdateBar.Title = reachedTarget
@@ -1407,7 +1407,7 @@ public sealed partial class MainPage : Page
                 },
                 new TextBlock
                 {
-                    Text = "NaxUpdater",
+                    Text = "Nax-Updater",
                     FontSize = 20,
                     FontWeight = Microsoft.UI.Text.FontWeights.SemiBold
                 },

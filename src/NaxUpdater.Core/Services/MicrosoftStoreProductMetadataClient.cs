@@ -197,7 +197,7 @@ internal sealed class MicrosoftStoreProductMetadataClient(HttpClient httpClient)
             CatalogBaseUri,
             $"{Uri.EscapeDataString(productId)}?market={Uri.EscapeDataString(market)}&languages={Uri.EscapeDataString(language)}");
         using var request = new HttpRequestMessage(HttpMethod.Get, uri);
-        request.Headers.UserAgent.ParseAdd("NaxUpdater/0.17.12");
+        request.Headers.UserAgent.ParseAdd("NaxUpdater/0.17.13");
         using var response = await httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
         response.EnsureSuccessStatusCode();
         await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);

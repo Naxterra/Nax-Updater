@@ -61,7 +61,7 @@
     },
     {
       "id": "Naxterra.NaxUpdater",
-      "displayName": "NaxUpdater",
+      "displayName": "Nax-Updater",
       "publisherContains": "Naxterra",
       "repository": "Naxterra/Nax-Updater",
       "assetNamePattern": "^NaxUpdater-(?<version>[0-9]+(?:\\.[0-9]+)+)-Setup-x64\\.exe$",
