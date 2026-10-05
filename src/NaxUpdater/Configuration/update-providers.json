@@ -70,7 +70,7 @@
       "expectedSigner": "",
       "installerKind": "DownloadedExe",
       "installerArguments": [ "/quiet", "/norestart" ],
-      "runningProcessNames": [ "NaxUpdater" ],
+      "runningProcessNames": [ "Nax-Updater" ],
       "requiresElevation": true
     },
     {
