@@ -52,13 +52,39 @@ public sealed class ChocolateyInstalledUpdateProvider(IChocolateyPackageService?
                     ? $"The installed version is newer than Chocolatey's {packageId} {latest}; Chocolatey's record catches up when its package does."
                     : $"Chocolatey's {packageId} {latest} is installed and recorded.", null);
 
+        // Another installed package may pin this one (nodejs -> nodejs.install [x]);
+        // then only that package can carry the update.
+        var route = await ChocolateyDependencyPlanner.PlanAsync(packageId, latest, _packages.InstalledPackages(),
+            (id, version) => _packages.FindPackageDetailsAsync(id, version, cancellationToken));
+        ChocolateyUpdateTarget target;
+        var available = latest;
+        switch (route)
+        {
+            case ChocolateyUpgradeRoute.Blocked blocked:
+                return Result(application, latest, UpdateStatus.NewerReleaseKnown, page, blocked.Reason, null) with
+                    { Applicability = UpdateApplicability.NotApplicable };
+            case ChocolateyUpgradeRoute.ThroughDependent through:
+                if (VersionOrder.Compare(through.TargetVersion, installed) <= 0)
+                    return Result(application, latest, UpdateStatus.NewerReleaseKnown, page,
+                        $"Chocolatey published {packageId} {latest}, but the installed packages pin it; the newest {through.RootPackageId} {through.RootVersion} still requires {packageId} {through.TargetVersion}.", null) with
+                        { Applicability = UpdateApplicability.NotApplicable };
+                target = new ChocolateyUpdateTarget(through.RootPackageId, through.RootVersion);
+                available = through.TargetVersion;
+                message = $"Chocolatey installed this application as {packageId}, which the installed {through.RootPackageId} package pins; " +
+                          $"updating {through.RootPackageId} to {through.RootVersion} brings {packageId} {through.TargetVersion}.";
+                break;
+            default:
+                target = new ChocolateyUpdateTarget(packageId, latest);
+                break;
+        }
+
         var executable = InstalledApplicationMetadata.Executable(application);
         var plan = new UpdateExecutionPlan(
             UpdateExecutionKind.ChocolateyPackage, null, null, null, null, null, [], true, [],
             executable is null ? [] : [Path.GetFileNameWithoutExtension(executable)],
             RunningExecutablePaths: executable is null ? [] : [executable],
-            ChocolateyTarget: new ChocolateyUpdateTarget(packageId, latest));
-        return Result(application, latest, UpdateStatus.Available, page, message, plan);
+            ChocolateyTarget: target);
+        return Result(application, available, UpdateStatus.Available, page, message, plan);
     }
 
     private UpdateCheckResult Result(InstalledApplication application, string? available, UpdateStatus status,

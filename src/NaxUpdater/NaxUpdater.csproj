@@ -7,7 +7,7 @@
     <RootNamespace>NaxUpdater</RootNamespace>
     <AssemblyName>Nax-Updater</AssemblyName>
     <Product>Nax-Updater</Product>
-    <Version>0.17.13</Version>
+    <Version>0.17.14</Version>
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <ApplicationIcon>Assets\AppIcon.ico</ApplicationIcon>
     <Platforms>x64;ARM64</Platforms>

@@ -128,6 +128,8 @@ The current implementation includes:
 - version/architecture-aware MSIX integration correlation, attaching WinRAR's shell-extension package to the real Win32 installation instead of displaying a duplicate source-less package row;
 - equivalent compact and dotted date-release versions such as PotPlayer `260819` and `26.08.19.0` are treated as the same release;
 - a Chocolatey community-feed fallback beneath WinGet, using the installed `choco.exe` for both detection and application so package execution stays within Chocolatey's own trust boundary rather than Nax-Updater re-implementing it;
+- Chocolatey dependency pins: when an installed wrapper package pins its payload exactly (`nodejs` → `nodejs.install [x]`, `python` → `python3` → `python314`), the payload's update is applied by upgrading the top installed package, whose newest version decides the reachable target; until that package is published the newer payload is shown as a known release, not as an update. After `choco` exits successfully, its own package record must show the target version, because a pin conflict can make it reinstall the old version and still exit 0;
+- install locations passed to the elevated WinGet command are quoted for Windows argument parsing, so a folder ending in `\` (`C:\Program Files\LibreOffice\`) reaches WinGet intact instead of producing an invalid msiexec property;
 - a same-tier skip that only elides an explicitly opted-in lower-specificity fallback (currently Chocolatey) once a higher-specificity sibling resolves cleanly, so a genuine error from any other compatible source can never be hidden behind a clean result;
 - version-stripped name and publisher correlation, disambiguated by major version, for installers whose registry key or install path is inherently version-specific (such as .NET Desktop Runtime's staged bootstrapper cache), so a successful update is recognized instead of reported as unresolved;
 - Steam and Snagit excluded from generic fallback version comparison after their own installed-version surfaces proved mutually inconsistent or format-mismatched against catalog data;
@@ -210,7 +212,7 @@ From this directory:
 dotnet build NaxUpdater.slnx
 dotnet run --project tests/NaxUpdater.Core.SmokeTests/NaxUpdater.Core.SmokeTests.csproj
 dotnet publish src/NaxUpdater/NaxUpdater.csproj -c Release -r win-x64 --self-contained true -o artifacts/NaxUpdater-win-x64
-./scripts/package-release.ps1 -Version 0.17.13
+./scripts/package-release.ps1 -Version 0.17.14
 ```
 
 The desktop project uses .NET 11, WinUI 3, and the Windows App SDK. It is not an Electron or WebView application.

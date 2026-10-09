@@ -19,6 +19,15 @@ public interface IChocolateyPackageService
     Task<ChocolateyPackageOffer> FindLatestAsync(IEnumerable<string> nameCandidates, string? installedVersion, CancellationToken token);
     Task<string?> FindPackageVersionAsync(string packageId, CancellationToken token);
     Task<PreparedChocolateyUpdate> PrepareAsync(UpdateCheckResult update, CancellationToken token);
+
+    // Installed packages with their dependencies (lib\<id>\<id>.nuspec).
+    IReadOnlyDictionary<string, ChocolateyPackageDetails> InstalledPackages() =>
+        new Dictionary<string, ChocolateyPackageDetails>(StringComparer.OrdinalIgnoreCase);
+
+    // A package version (the newest when version is null) with its dependencies.
+    async Task<ChocolateyPackageDetails?> FindPackageDetailsAsync(string packageId, string? version, CancellationToken token) =>
+        version is not null ? new(packageId, version, [])
+        : await FindPackageVersionAsync(packageId, token) is { } latest ? new(packageId, latest, []) : null;
 }
 
 // Chocolatey packages apply themselves through an embedded PowerShell install
@@ -55,6 +64,25 @@ public sealed class ChocolateyPackageService : IChocolateyPackageService
             ? (await SearchExactAsync(packageId, token)).FirstOrDefault(match =>
                 match.PackageId.Equals(packageId, StringComparison.OrdinalIgnoreCase))?.Version
             : null;
+
+    public IReadOnlyDictionary<string, ChocolateyPackageDetails> InstalledPackages() =>
+        ChocolateyDependencyPlanner.ReadInstalled(InstallRoot());
+
+    public async Task<ChocolateyPackageDetails?> FindPackageDetailsAsync(string packageId, string? version, CancellationToken token)
+    {
+        if (!IsAvailable) return null;
+        if (UsesOnlyCommunityFeed())
+        {
+            var url = version is null
+                ? $"{CommunityFeed}Packages()?$filter={Uri.EscapeDataString($"tolower(Id) eq '{packageId.ToLowerInvariant().Replace("'", "''")}' and IsLatestVersion")}"
+                : $"{CommunityFeed}Packages(Id='{Uri.EscapeDataString(packageId.Replace("'", "''"))}',Version='{Uri.EscapeDataString(version.Replace("'", "''"))}')";
+            return (await QueryCommunityFeedAsync(url, token))
+                .FirstOrDefault(entry => entry.Id.Equals(packageId, StringComparison.OrdinalIgnoreCase));
+        }
+        // choco.exe search output carries no dependencies.
+        if (version is not null) return new(packageId, version, null);
+        return await FindPackageVersionAsync(packageId, token) is { } latest ? new(packageId, latest, null) : null;
+    }
 
     public async Task<ChocolateyPackageOffer> FindLatestAsync(
         IEnumerable<string> nameCandidates, string? installedVersion, CancellationToken token)
@@ -152,21 +180,35 @@ public sealed class ChocolateyPackageService : IChocolateyPackageService
     {
         // The feed's Id comparison is case-sensitive; choco's --exact is not.
         var filter = Uri.EscapeDataString($"tolower(Id) eq '{name.ToLowerInvariant().Replace("'", "''")}' and IsLatestVersion");
-        using var response = await FeedClient.GetAsync($"{CommunityFeed}Packages()?$filter={filter}", token);
+        return (await QueryCommunityFeedAsync($"{CommunityFeed}Packages()?$filter={filter}", token))
+            .Where(item => item.Id.Equals(name, StringComparison.OrdinalIgnoreCase))
+            .Select(static item => new ChocolateyUpdateTarget(item.Id, item.Version))
+            .ToList();
+    }
+
+    // A feed query answers with an Atom feed of entries; a Packages(Id,Version) lookup with one entry.
+    private static async Task<List<ChocolateyPackageDetails>> QueryCommunityFeedAsync(string url, CancellationToken token)
+    {
+        using var response = await FeedClient.GetAsync(url, token);
+        if (response.StatusCode == System.Net.HttpStatusCode.NotFound) return [];
         response.EnsureSuccessStatusCode();
         using var reader = System.Xml.XmlReader.Create(await response.Content.ReadAsStreamAsync(token), new System.Xml.XmlReaderSettings
             { DtdProcessing = System.Xml.DtdProcessing.Prohibit, XmlResolver = null, Async = true });
-        var feed = await System.Xml.Linq.XDocument.LoadAsync(reader, System.Xml.Linq.LoadOptions.None, token);
+        var document = await System.Xml.Linq.XDocument.LoadAsync(reader, System.Xml.Linq.LoadOptions.None, token);
         System.Xml.Linq.XNamespace atom = "http://www.w3.org/2005/Atom";
         System.Xml.Linq.XNamespace metadata = "http://schemas.microsoft.com/ado/2007/08/dataservices/metadata";
         System.Xml.Linq.XNamespace data = "http://schemas.microsoft.com/ado/2007/08/dataservices";
-        return feed.Root?.Elements(atom + "entry")
+        var entries = document.Root is null ? []
+            : document.Root.Name == atom + "entry" ? [document.Root] : document.Root.Elements(atom + "entry").ToList();
+        return entries
             .Select(entry => (Id: entry.Element(atom + "title")?.Value.Trim(),
-                Version: entry.Element(metadata + "properties")?.Element(data + "Version")?.Value.Trim()))
-            .Where(item => item.Id is { Length: > 0 } && item.Version is { Length: > 0 } &&
-                item.Id.Equals(name, StringComparison.OrdinalIgnoreCase))
-            .Select(item => new ChocolateyUpdateTarget(item.Id!, item.Version!))
-            .ToList() ?? [];
+                Properties: entry.Element(metadata + "properties")))
+            .Select(item => (item.Id, Version: item.Properties?.Element(data + "Version")?.Value.Trim(),
+                Dependencies: item.Properties?.Element(data + "Dependencies")?.Value))
+            .Where(static item => item.Id is { Length: > 0 } && item.Version is { Length: > 0 })
+            .Select(static item => new ChocolateyPackageDetails(item.Id!, item.Version!,
+                ChocolateyDependencyPlanner.ParseFeedDependencies(item.Dependencies)))
+            .ToList();
     }
 
     private static async Task<List<ChocolateyUpdateTarget>> SearchExactAsync(string name, CancellationToken token)
@@ -228,8 +270,16 @@ public sealed class ChocolateyPackageService : IChocolateyPackageService
             var log = File.Exists(logPath) ? await File.ReadAllTextAsync(logPath, token) : "";
             // Chocolatey exit codes: 0 = success, 1641/3010 = success, reboot needed.
             var success = process.ExitCode is 0 or 1641 or 3010;
-            return new UpdateExecutionResult(process.ExitCode, success,
-                success ? null : $"Chocolatey upgrade failed (exit code {process.ExitCode}): {LastMeaningfulLine(log)}");
+            if (!success)
+                return new UpdateExecutionResult(process.ExitCode, false,
+                    $"Chocolatey upgrade failed (exit code {process.ExitCode}): {LastMeaningfulLine(log)}");
+            // choco can exit 0 after resolving to another version (a dependency
+            // pin made it reinstall the old one), so its own record must agree.
+            var recorded = ChocolateyDependencyPlanner.ReadInstalled(InstallRoot()).TryGetValue(target.PackageId, out var package) ? package.Version : null;
+            if (recorded is not null && VersionOrder.Compare(recorded, target.Version) != 0)
+                return new UpdateExecutionResult(process.ExitCode, false,
+                    $"Chocolatey reported success, but {target.PackageId} is still {recorded} instead of {target.Version}: {LastMeaningfulLine(log)}");
+            return new UpdateExecutionResult(process.ExitCode, true, null);
         }
         catch (Win32Exception exception) when (exception.NativeErrorCode == 1223)
         {

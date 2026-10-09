@@ -46,7 +46,7 @@ public sealed partial class NextcloudUpdateProvider(HttpClient httpClient, Func<
                         $"&platform=win32&oem=Nextcloud&buildArch=x86_64&currentArch=x86_64&msi=true&channel={Uri.EscapeDataString(channel)}" +
                         $"&osRelease=windows&osVersion={os.Major}.{os.Minor}.{os.Build}&kernelVersion={os.Major}.{os.Minor}.{os.Build}";
             using var request = new HttpRequestMessage(HttpMethod.Get, query);
-            request.Headers.UserAgent.ParseAdd("NaxUpdater/0.17.13");
+            request.Headers.UserAgent.ParseAdd("NaxUpdater/0.17.14");
             using var response = await httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
             response.EnsureSuccessStatusCode();
             using var reader = XmlReader.Create(await response.Content.ReadAsStreamAsync(cancellationToken),

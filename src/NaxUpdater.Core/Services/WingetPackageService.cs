@@ -194,7 +194,7 @@ public sealed partial class WingetPackageService : IWingetPackageService
             "--silent", "--accept-package-agreements", "--accept-source-agreements", "--disable-interactivity"
         };
         if (target.Locale.Length > 0) arguments.AddRange(["--locale", target.Locale]);
-        if (target.InstallLocation is not null) arguments.AddRange(["--location", $"\"{target.InstallLocation}\""]);
+        if (target.InstallLocation is not null) arguments.AddRange(["--location", QuoteArgument(target.InstallLocation)]);
         var logPath = Path.Combine(Path.GetTempPath(), $"naxupdater-winget-{Guid.NewGuid():N}.log");
         try
         {
@@ -228,6 +228,16 @@ public sealed partial class WingetPackageService : IWingetPackageService
         {
             try { if (File.Exists(logPath)) File.Delete(logPath); } catch (IOException) { } catch (UnauthorizedAccessException) { }
         }
+    }
+
+    // Quotes a value that contains no '"'. Windows argument parsing reads
+    // backslashes before the closing quote as escapes, so an install folder
+    // ending in '\' ("C:\Program Files\LibreOffice\") swallowed the quote and
+    // WinGet passed msiexec a broken INSTALLLOCATION; doubled, they stay literal.
+    internal static string QuoteArgument(string value)
+    {
+        var trailing = value.Length - value.TrimEnd('\\').Length;
+        return "\"" + value + new string('\\', trailing) + "\"";
     }
 
     [System.Text.RegularExpressions.GeneratedRegex(@"^[A-Za-z0-9][A-Za-z0-9._+\-]*$")]
