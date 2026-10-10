@@ -36,50 +36,66 @@ public sealed partial class WingetPackageService : IWingetPackageService
     public async Task<WingetPackageOffer> AssessAsync(
         InstalledApplication application, string packageId, string version, CancellationToken token)
     {
+        PackageCatalog? used = null;
         try
         {
-            var (_, catalog) = await ConnectAsync(token);
-            var registeredIds = RegisteredIds(application).ToArray();
-            var package = await FindAsync(catalog, packageId, registeredIds, token);
-            if (package?.InstalledVersion is null)
-                return new(null, "WinGet could not correlate this package with an installed application.");
-            var installedIds = Copy(package.InstalledVersion.ProductCodes);
-            if (!registeredIds.Intersect(installedIds, StringComparer.OrdinalIgnoreCase).Any())
-                return new(null, "The installed product code does not match the package selected by WinGet.");
-            // WinGet's own bookkeeping can fail to resolve an installed version at all
-            // (surfaced by its CLI as "Unknown") while still reporting IsUpdateAvailable.
-            // That combination cannot be trusted to mean an update is genuinely needed:
-            // it has been observed repeatedly re-offering an already-current package.
-            // NaxUpdater already knows the real installed version independently
-            // (application.NormalizedVersion, from its own registry/executable scan);
-            // require WinGet's own tracked version to actually be resolvable before
-            // deferring to its upgrade-availability signal.
-            var trackedVersion = package.InstalledVersion.Version;
-            if (string.IsNullOrWhiteSpace(trackedVersion) || trackedVersion.Equals("Unknown", StringComparison.OrdinalIgnoreCase))
-                return new(null, "WinGet does not track a resolvable installed version for this package, so its update-availability signal cannot be trusted.");
-            if (!package.IsUpdateAvailable)
-                return new(null, "WinGet reports a newer release but no applicable upgrade for this installation.");
-            var key = VersionKey(package, version);
-            if (key is null) return new(null, "The requested version is absent from the official WinGet source.");
-            var info = package.GetPackageVersionInfo(key);
-            if (!info.PackageCatalog.Info.Id.Equals(OfficialSourceId, StringComparison.OrdinalIgnoreCase))
-                return new(null, "The package version did not come from the official WinGet source.");
-            var scope = application.Scope;
-            var location = package.InstalledVersion.GetMetadata(PackageVersionMetadataField.InstalledLocation);
-            var options = CreateOptions(key, scope, string.IsNullOrWhiteSpace(location) ? null : location);
-            var architecture = InstalledApplicationMetadata.Architecture(application);
-            if (architecture is not null) SetArchitecture(options, architecture);
-            var variant = SelectInstalledTypeCompatibleInstaller(info, options,
-                package.InstalledVersion.GetMetadata(PackageVersionMetadataField.InstallerType));
-            if (variant is null) return new(null, "No compatible installer was returned by WinGet.");
-            return new(new(
-                packageId, OfficialSourceId, version, package.InstalledVersion.Version,
-                installedIds.Order(StringComparer.OrdinalIgnoreCase).ToArray(),
-                variant.Architecture.ToString(), variant.InstallerType.ToString(),
-                variant.Locale ?? string.Empty, scope, string.IsNullOrWhiteSpace(location) ? null : location), null);
+            return await AssessCoreAsync(application, packageId, version, catalog => used = catalog, null, token);
         }
         catch (OperationCanceledException) when (token.IsCancellationRequested) { throw; }
+        catch (Exception exception) when (used is not null && WingetFallbackUpdateProvider.IsServerGone(exception))
+        {
+            // WinGet's COM server exits after installing a fresh catalog package;
+            // every later call on the old connection fails. Reconnect once.
+            try { return await AssessCoreAsync(application, packageId, version, _ => { }, used, token); }
+            catch (OperationCanceledException) when (token.IsCancellationRequested) { throw; }
+            catch (Exception retry) { return new(null, retry.Message); }
+        }
         catch (Exception exception) { return new(null, exception.Message); }
+    }
+
+    private async Task<WingetPackageOffer> AssessCoreAsync(InstalledApplication application, string packageId, string version,
+        Action<PackageCatalog> connected, PackageCatalog? stale, CancellationToken token)
+    {
+        var (_, catalog) = await ConnectAsync(token, stale: stale);
+        connected(catalog);
+        var registeredIds = RegisteredIds(application).ToArray();
+        var package = await FindAsync(catalog, packageId, registeredIds, token);
+        if (package?.InstalledVersion is null)
+            return new(null, "WinGet could not correlate this package with an installed application.");
+        var installedIds = Copy(package.InstalledVersion.ProductCodes);
+        if (!registeredIds.Intersect(installedIds, StringComparer.OrdinalIgnoreCase).Any())
+            return new(null, "The installed product code does not match the package selected by WinGet.");
+        // WinGet's own bookkeeping can fail to resolve an installed version at all
+        // (surfaced by its CLI as "Unknown") while still reporting IsUpdateAvailable.
+        // That combination cannot be trusted to mean an update is genuinely needed:
+        // it has been observed repeatedly re-offering an already-current package.
+        // NaxUpdater already knows the real installed version independently
+        // (application.NormalizedVersion, from its own registry/executable scan);
+        // require WinGet's own tracked version to actually be resolvable before
+        // deferring to its upgrade-availability signal.
+        var trackedVersion = package.InstalledVersion.Version;
+        if (string.IsNullOrWhiteSpace(trackedVersion) || trackedVersion.Equals("Unknown", StringComparison.OrdinalIgnoreCase))
+            return new(null, "WinGet does not track a resolvable installed version for this package, so its update-availability signal cannot be trusted.");
+        if (!package.IsUpdateAvailable)
+            return new(null, "WinGet reports a newer release but no applicable upgrade for this installation.");
+        var key = VersionKey(package, version);
+        if (key is null) return new(null, "The requested version is absent from the official WinGet source.");
+        var info = package.GetPackageVersionInfo(key);
+        if (!info.PackageCatalog.Info.Id.Equals(OfficialSourceId, StringComparison.OrdinalIgnoreCase))
+            return new(null, "The package version did not come from the official WinGet source.");
+        var scope = application.Scope;
+        var location = package.InstalledVersion.GetMetadata(PackageVersionMetadataField.InstalledLocation);
+        var options = CreateOptions(key, scope, string.IsNullOrWhiteSpace(location) ? null : location);
+        var architecture = InstalledApplicationMetadata.Architecture(application);
+        if (architecture is not null) SetArchitecture(options, architecture);
+        var variant = SelectInstalledTypeCompatibleInstaller(info, options,
+            package.InstalledVersion.GetMetadata(PackageVersionMetadataField.InstallerType));
+        if (variant is null) return new(null, "No compatible installer was returned by WinGet.");
+        return new(new(
+            packageId, OfficialSourceId, version, package.InstalledVersion.Version,
+            installedIds.Order(StringComparer.OrdinalIgnoreCase).ToArray(),
+            variant.Architecture.ToString(), variant.InstallerType.ToString(),
+            variant.Locale ?? string.Empty, scope, string.IsNullOrWhiteSpace(location) ? null : location), null);
     }
 
     public async Task<PreparedCatalogUpdate> PrepareAsync(UpdateCheckResult update, CancellationToken token)
@@ -295,12 +311,14 @@ public sealed partial class WingetPackageService : IWingetPackageService
         });
     }
 
-    private async Task<(PackageManager Manager, PackageCatalog Catalog)> ConnectAsync(CancellationToken token, bool reopen = false)
+    // stale: a catalog whose server is gone; reopened only if it is still the cached one.
+    private async Task<(PackageManager Manager, PackageCatalog Catalog)> ConnectAsync(CancellationToken token, bool reopen = false,
+        PackageCatalog? stale = null)
     {
         await _connectionGate.WaitAsync(token);
         try
         {
-            if (!reopen && _connection is not null) return _connection.Value;
+            if (!reopen && _connection is { } cached && (stale is null || !ReferenceEquals(cached.Catalog, stale))) return cached;
             var manager = new PackageManager();
             var source = manager.GetPredefinedPackageCatalog(PredefinedPackageCatalog.OpenWindowsCatalog);
             if (source.Info.Id != OfficialSourceId || source.Info.Type != "Microsoft.PreIndexed.Package" ||
