@@ -27,6 +27,14 @@ public sealed partial class ElectronBuilderUpdateProvider(HttpClient httpClient)
         }
 
         using var response = await httpClient.GetAsync(configuration.MetadataUri, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
+        // A feed that no longer exists (a deleted or private GitHub repository) is
+        // not a failed check: the application's own updater gets the same answer,
+        // so no update can be found through it until the publisher restores it.
+        if (response.StatusCode is System.Net.HttpStatusCode.NotFound or System.Net.HttpStatusCode.Gone)
+            return Error(application,
+                $"The update feed this application checks itself ({configuration.MetadataUri}) returns HTTP {(int)response.StatusCode}, " +
+                "so the application cannot find updates through it either. No update can be verified until the publisher restores it.",
+                releasePage: configuration.ReleasePage) with { Status = UpdateStatus.Unsupported };
         response.EnsureSuccessStatusCode();
         var bytes = await response.Content.ReadAsByteArrayAsync(cancellationToken);
         var metadata = ParseLatestMetadata(Encoding.UTF8.GetString(bytes));

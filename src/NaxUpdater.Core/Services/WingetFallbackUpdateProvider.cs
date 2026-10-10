@@ -35,31 +35,47 @@ public sealed partial class WingetFallbackUpdateProvider(
             return;
         }
 
-        try
+        // Installing a fresh catalog package makes WinGet's COM server shut itself
+        // down ("Server shutting down after exit event signaled"), sometimes before
+        // the refresh result reaches the caller. That surfaces as an RPC failure
+        // although the catalog was updated; a new server answers the retry.
+        for (var attempt = 0; ; attempt++)
         {
-            var manager = new Microsoft.Management.Deployment.PackageManager();
-            var reference = manager.GetPredefinedPackageCatalog(
-                Microsoft.Management.Deployment.PredefinedPackageCatalog.OpenWindowsCatalog);
-            reference.AcceptSourceAgreements = true;
-            var refresh = await reference.RefreshPackageCatalogAsync().AsTask(cancellationToken);
-            if (refresh.Status != Microsoft.Management.Deployment.RefreshPackageCatalogStatus.Ok)
+            try
             {
-                _catalogRefreshError = $"{refresh.Status} {refresh.ExtendedErrorCode?.Message}".Trim();
+                var manager = new Microsoft.Management.Deployment.PackageManager();
+                var reference = manager.GetPredefinedPackageCatalog(
+                    Microsoft.Management.Deployment.PredefinedPackageCatalog.OpenWindowsCatalog);
+                reference.AcceptSourceAgreements = true;
+                var refresh = await reference.RefreshPackageCatalogAsync().AsTask(cancellationToken);
+                if (refresh.Status != Microsoft.Management.Deployment.RefreshPackageCatalogStatus.Ok)
+                {
+                    _catalogRefreshError = $"{refresh.Status} {refresh.ExtendedErrorCode?.Message}".Trim();
+                    return;
+                }
+
+                _catalogRefreshError = null;
+                _identities.Clear();
                 return;
             }
-
-            _catalogRefreshError = null;
-            _identities.Clear();
-        }
-        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
-        {
-            throw;
-        }
-        catch (Exception exception)
-        {
-            _catalogRefreshError = exception.Message;
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch (Exception exception) when (attempt == 0 && IsServerGone(exception))
+            {
+            }
+            catch (Exception exception)
+            {
+                _catalogRefreshError = exception.Message;
+                return;
+            }
         }
     }
+
+    // RPC_S_SERVER_UNAVAILABLE and RPC_S_CALL_FAILED: the out-of-process server exited.
+    internal static bool IsServerGone(Exception exception) =>
+        exception.HResult is unchecked((int)0x800706BA) or unchecked((int)0x800706BE);
 
     public async Task<UpdateCheckResult> CheckAsync(InstalledApplication application, CancellationToken cancellationToken)
     {

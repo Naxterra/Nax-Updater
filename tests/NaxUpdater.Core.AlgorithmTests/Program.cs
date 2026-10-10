@@ -472,6 +472,14 @@ try
     await ChocolateyNextcloudRegression.RunAsync(Assert, fixture);
     await ChocolateyDependencyRegression.RunAsync(Assert, fixture);
     await DriverTimeoutRegression.RunAsync(Assert);
+    await VanishedFeedRegression.RunAsync(Assert, fixture);
+    // WinGet's COM server exits after installing a fresh catalog package; only its
+    // "server gone" RPC errors are retried on a new server.
+    Assert(WingetFallbackUpdateProvider.IsServerGone(new System.Runtime.InteropServices.COMException("gone", unchecked((int)0x800706BE))) &&
+           WingetFallbackUpdateProvider.IsServerGone(new System.Runtime.InteropServices.COMException("gone", unchecked((int)0x800706BA))) &&
+           !WingetFallbackUpdateProvider.IsServerGone(new System.Runtime.InteropServices.COMException("denied", unchecked((int)0x80070005))) &&
+           !WingetFallbackUpdateProvider.IsServerGone(new InvalidOperationException()),
+        "WinGet server-exit errors were not told apart from real refresh failures.");
     await ProcessLifetimeRegression.RunAsync(Assert, fixture);
     Console.WriteLine($"Algorithm regression tests passed: {checks} assertions. No real installers executed.");
 }
