@@ -167,20 +167,26 @@ public sealed class UpdateRow
     public string Available => Source.AvailableVersion ?? "—";
     public string Language => LocalizationService.LanguageName(Source.Language);
     public string Provider => LocalizationService.ProviderName(Source);
-    public string Status => Source.Status switch
+    public string Status => StatusText(Source.Status, Source.AvailabilityReason, Source.RolloutThresholdPercent);
+
+    // Shared by the update list and the per-source results in the details panel.
+    public static string StatusText(UpdateStatus status, UpdateAvailabilityReason reason, int? rolloutThresholdPercent) => status switch
     {
         UpdateStatus.Available => LocalizationService.Get("StatusUpdateAvailable"),
-        UpdateStatus.NewerReleaseKnown when Source.AvailabilityReason == UpdateAvailabilityReason.AwaitingStorePublication =>
+        UpdateStatus.NewerReleaseKnown when reason == UpdateAvailabilityReason.AwaitingStorePublication =>
             LocalizationService.Get("StatusStorePublicationPending"),
-        UpdateStatus.NewerReleaseKnown when Source.AvailabilityReason == UpdateAvailabilityReason.AwaitingStoreOffer =>
+        UpdateStatus.NewerReleaseKnown when reason == UpdateAvailabilityReason.AwaitingStoreOffer =>
             LocalizationService.Get("StatusStoreOfferPending"),
-        UpdateStatus.NewerReleaseKnown when Source.AvailabilityReason == UpdateAvailabilityReason.AwaitingReleaseVerification =>
+        UpdateStatus.NewerReleaseKnown when reason == UpdateAvailabilityReason.AwaitingReleaseVerification =>
             LocalizationService.Get("StatusAwaitingReleaseVerification"),
-        UpdateStatus.NewerReleaseKnown when Source.AvailabilityReason == UpdateAvailabilityReason.StagedRollout =>
-            LocalizationService.Get("StatusStagedRollout"),
+        UpdateStatus.NewerReleaseKnown when reason == UpdateAvailabilityReason.StagedRollout => rolloutThresholdPercent is { } threshold
+            ? LocalizationService.Format("StatusStagedRolloutFrom", threshold)
+            : LocalizationService.Get("StatusStagedRolloutPending"),
+        UpdateStatus.NewerReleaseKnown when reason == UpdateAvailabilityReason.DriverUpdateInDriversView =>
+            LocalizationService.Get("StatusDriverUpdateInDriversView"),
         UpdateStatus.NewerReleaseKnown => LocalizationService.Get("StatusNewerReleaseKnown"),
         UpdateStatus.Current => LocalizationService.Get("StatusCurrent"),
-        UpdateStatus.StoreQueued => LocalizationService.Get(Source.AvailabilityReason switch
+        UpdateStatus.StoreQueued => LocalizationService.Get(reason switch
         {
             UpdateAvailabilityReason.StoreUpdating => "StatusStoreUpdating",
             UpdateAvailabilityReason.StorePaused => "StatusStorePaused",
@@ -189,7 +195,7 @@ public sealed class UpdateRow
         UpdateStatus.ManagedExternally => LocalizationService.Get("StatusNotChecked"),
         UpdateStatus.Unsupported => LocalizationService.Get("StatusUnsupported"),
         UpdateStatus.Error => LocalizationService.Get("StatusCheckFailed"),
-        _ => Source.Status.ToString()
+        _ => status.ToString()
     };
     public string VersionChange => Source.AvailableVersion is null
         ? LocalizationService.Format("InstalledFormat", Installed)

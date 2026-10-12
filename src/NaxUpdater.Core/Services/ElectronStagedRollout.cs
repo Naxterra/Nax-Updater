@@ -52,6 +52,8 @@ public static class ElectronStagedRollout
     // The smallest rollout percentage that includes this installation.
     public static int ThresholdPercent(double position) => Math.Min(100, (int)Math.Floor(position * 100) + 1);
 
+    public static int? ThresholdPercent(double? position) => position is { } value ? ThresholdPercent(value) : null;
+
     public static string HeldMessage(string version, int percent, double? position) => position is { } value
         ? string.Create(CultureInfo.InvariantCulture,
             $"The publisher is rolling {version} out gradually ({percent} % of installations). This installation's rollout position is {value * 100:0.0} %, so the application's own updater does not offer it yet either; it is offered once the rollout reaches {ThresholdPercent(value)} %.")

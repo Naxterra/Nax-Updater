@@ -277,7 +277,7 @@ public sealed class UpdateCheckService
         {
             SourceChecks = checkResults.Select(c =>
             new UpdateSourceCheck(c.Result.ProviderId, c.Result.ProviderDisplayName, c.Result.Status, c.Result.AvailableVersion, c.Result.Message,
-                durations.GetValueOrDefault(c.Provider.Id))).ToArray()
+                durations.GetValueOrDefault(c.Provider.Id), c.Result.AvailabilityReason, c.Result.RolloutThresholdPercent)).ToArray()
         };
     }
 
