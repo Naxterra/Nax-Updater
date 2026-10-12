@@ -49,8 +49,8 @@ internal static class ChocolateyNextcloudRegression
             "A package's main application and its companion entry were not told apart.");
         assert(ChocolateyOwnership.Package(assigned[3]) is null,
             "A side-by-side Python release line was claimed by another line's Chocolatey package.");
-        assert(assigned[0].Evidence.Any(e => e.Label == "Preferred update provider" && e.Value == ChocolateyInstalledUpdateProvider.ProviderId),
-            "A Chocolatey-installed application could still be updated outside Chocolatey.");
+        assert(!assigned[0].Evidence.Any(e => e.Label == "Preferred update provider") && assigned[0].BlockedProviders.Contains("chocolatey-fallback"),
+            "Chocolatey ownership made Chocolatey exclusive, or its name search still ran beside the exact package.");
         var explicitPolicy = policyOwned with { Evidence = [.. policyOwned.Evidence, new(EvidenceKind.Policy, "Preferred update provider", "zero-install", true)] };
         assert(ChocolateyOwnership.Package(ChocolateyOwnership.Assign([explicitPolicy], packages)[0]) is null,
             "Chocolatey ownership overrode an explicit application policy.");
@@ -89,6 +89,27 @@ internal static class ChocolateyNextcloudRegression
         var noProducer = (await new UpdateCheckService([new Fixed("catalog-name", UpdateProviderAuthority.FallbackCatalog, UpdateStatus.Available, "26.10.0")])
             .CheckAsync(new(DateTimeOffset.UtcNow, [lts], [], []))).Results.Single();
         assert(noProducer.Status == UpdateStatus.Available, "A fallback catalog offer was suppressed without a producer verdict.");
+
+        // Source priority: official site > Store/GitHub > WinGet > Chocolatey, also for
+        // applications Chocolatey installed (Node.js 26.11.1 was on nodejs.org while
+        // Chocolatey's nodejs wrapper still pinned nodejs.install 26.11.0).
+        var priorityFeed = new FakeChocolatey { Latest = "26.11.1" };
+        var official = (await new UpdateCheckService([new Fixed("official-site", UpdateProviderAuthority.ProducerRelease, UpdateStatus.Available, "26.11.1"),
+                new ChocolateyInstalledUpdateProvider(priorityFeed)])
+            .CheckAsync(new(DateTimeOffset.UtcNow, [assigned[0]], [], []))).Results.Single();
+        assert(official.ProviderId == "official-site" && official.IsInstallable,
+            "Chocolatey outranked the producer's own site for an application it installed.");
+        priorityFeed.Latest = "26.10.0";
+        var wingetFirst = (await new UpdateCheckService([new Fixed("winget-fallback", UpdateProviderAuthority.FallbackCatalog, UpdateStatus.Current, "26.10.0"),
+                new ChocolateyInstalledUpdateProvider(priorityFeed)])
+            .CheckAsync(new(DateTimeOffset.UtcNow, [assigned[0]], [], []))).Results.Single();
+        assert(wingetFirst.ProviderId == "winget-fallback" && wingetFirst.Status == UpdateStatus.Current &&
+               wingetFirst.SourceChecks?.Any(c => c.ProviderId == ChocolateyInstalledUpdateProvider.ProviderId && c.Status == UpdateStatus.Available) == true,
+            "A Chocolatey reinstall overrode WinGet's Current, or it was hidden from the source checks.");
+        var chocolateyOnly = (await new UpdateCheckService([new ChocolateyInstalledUpdateProvider(priorityFeed)])
+            .CheckAsync(new(DateTimeOffset.UtcNow, [assigned[0]], [], []))).Results.Single();
+        assert(chocolateyOnly.ProviderId == ChocolateyInstalledUpdateProvider.ProviderId && chocolateyOnly.IsInstallable,
+            "Chocolatey was not used when no higher source covers the application.");
 
         // Nextcloud: the channel comes from the client's own settings and the version
         // from Nextcloud's update server, in the numbering the MSI registers.

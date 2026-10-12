@@ -5,11 +5,13 @@ using NaxUpdater.Core.Models;
 
 namespace NaxUpdater.Core.Services;
 
-// Applications that Chocolatey installed are updated only through Chocolatey.
-// Updating them through any other source leaves Chocolatey's package record
-// behind, and `choco upgrade all` then reinstalls a version that is already
-// installed. When the record is already behind, this offers exactly that
-// reinstall, which is what Chocolatey itself would do next.
+// Chocolatey is the last source in Kaan's order (official site or update
+// protocol, then Store and GitHub, then WinGet, then Chocolatey). For an
+// application Chocolatey installed, this replaces the name-matched Chocolatey
+// fallback with its exact package and dependency pins, and it applies only when
+// no higher source settles the application. An update from a higher source leaves
+// Chocolatey's record behind; when nothing higher covers the application, the
+// reinstall `choco upgrade` would perform is offered to bring the record back.
 public sealed class ChocolateyInstalledUpdateProvider(IChocolateyPackageService? packages = null) : IUpdateProvider
 {
     internal const string ProviderId = "chocolatey-installed";
@@ -17,8 +19,8 @@ public sealed class ChocolateyInstalledUpdateProvider(IChocolateyPackageService?
 
     public string Id => ProviderId;
     public UpdateProviderDescriptor Descriptor { get; } = new(
-        UpdateProviderAuthority.InstalledUpdateProtocol,
-        100,
+        UpdateProviderAuthority.FallbackCatalog,
+        30,
         "Chocolatey package that installed the application, identified by Chocolatey's own registry snapshot",
         [ManagementMode.Unmanaged, ManagementMode.Registry, ManagementMode.WindowsInstaller, ManagementMode.DirectVendor]);
 
@@ -169,8 +171,10 @@ internal static partial class ChocolateyOwnership
             var evidence = application.Evidence.ToList();
             evidence.Add(new(EvidenceKind.Policy, PackageEvidenceLabel, $"{owner.Package.PackageId} {owner.Package.Version}", true));
             evidence.Add(new(EvidenceKind.Policy, RoleEvidenceLabel, owner.Primary ? "primary" : "companion", true));
-            evidence.Add(new(EvidenceKind.Policy, PreferredProviderLabel, ChocolateyInstalledUpdateProvider.ProviderId, true));
-            return application with { Evidence = evidence };
+            // The exact package replaces Chocolatey's name search for this application.
+            var blocked = application.BlockedProviders.Append("chocolatey-fallback")
+                .Distinct(StringComparer.OrdinalIgnoreCase).Order(StringComparer.OrdinalIgnoreCase).ToArray();
+            return application with { Evidence = evidence, BlockedProviders = blocked };
         }).ToArray();
     }
 
