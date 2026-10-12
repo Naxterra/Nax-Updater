@@ -45,15 +45,16 @@ public sealed class OfficialSiteUpdateProvider(HttpClient httpClient, OfficialSi
 
         var installedMajor = installed.Split('.', '-')[0];
         var candidates = Regex.Matches(document, recipe.VersionPattern, RegexOptions.CultureInvariant, PatternTimeout)
-            .Where(static m => m.Groups["version"].Success)
-            .Where(m => !recipe.StayOnInstalledMajor || m.Groups["version"].Value.Split('.', '-')[0] == installedMajor)
+            .Select(m => (Match: m, Version: VersionOf(m)))
+            .Where(static c => c.Version is { Length: > 0 } v && char.IsDigit(v[0]))
+            .Where(c => !recipe.StayOnInstalledMajor || c.Version!.Split('.', '-')[0] == installedMajor)
             .ToArray();
-        var latest = candidates.OrderByDescending(m => m.Groups["version"].Value, Comparer<string>.Create(VersionOrder.Compare)).FirstOrDefault();
-        if (latest is null) return Error(application, "The publisher's version source lists no matching release.");
-        var version = latest.Groups["version"].Value;
+        if (candidates.Length == 0) return Error(application, "The publisher's version source lists no matching release.");
+        var (latest, version) = candidates.OrderByDescending(c => c.Version, Comparer<string>.Create(VersionOrder.Compare)).First();
         Capture(latest, values);
-        values["version"] = version;
-        values["version_"] = version.Replace('.', '_');
+        values["version"] = version!;
+        values["version_"] = version!.Replace('.', '_');
+        values["major"] = version.Split('.', '-')[0];
         var notes = recipe.ReleaseNotesUrl is null ? recipe.VersionUrl : Expand(recipe.ReleaseNotesUrl, values, escape: false);
 
         if (VersionOrder.Compare(version, installed) <= 0)
@@ -66,12 +67,29 @@ public sealed class OfficialSiteUpdateProvider(HttpClient httpClient, OfficialSi
                 $"The publisher is rolling {version} out gradually ({percent} % of installations); it is offered once the rollout is complete.", null,
                 UpdateApplicability.NotApplicable);
 
+        if (recipe.DownloadPageUrl is not null && recipe.DownloadPattern is not null)
+        {
+            try
+            {
+                var page = await ReadAsync(Expand(recipe.DownloadPageUrl, values, escape: false), cancellationToken);
+                var link = Regex.Match(page, Expand(recipe.DownloadPattern, values, escape: true), RegexOptions.CultureInvariant, PatternTimeout);
+                if (!link.Success) return Error(application, "The publisher's download page no longer lists the installer link.", version);
+                Capture(link, values);
+            }
+            catch (Exception exception) when (exception is HttpRequestException or TaskCanceledException && !cancellationToken.IsCancellationRequested)
+            {
+                return Error(application, $"The publisher's download page could not be read: {exception.Message}", version);
+            }
+        }
+
         if (!Uri.TryCreate(Expand(recipe.DownloadUrl, values, escape: false), UriKind.Absolute, out var download) ||
             download.Scheme != Uri.UriSchemeHttps || !recipe.AllowedHosts.Contains(download.Host, StringComparer.OrdinalIgnoreCase))
             return Error(application, "The publisher's download link is not an allowed HTTPS address.", version);
 
+        if (recipe.SignatureOnly && (recipe.Unsigned || string.IsNullOrWhiteSpace(recipe.ExpectedSigner)))
+            return Error(application, "A signature-only recipe must name the publisher's exact signer.", version);
         string? hash = latest.Groups["hash"].Success ? latest.Groups["hash"].Value : null;
-        if (hash is null && recipe.HashPattern is not null)
+        if (!recipe.SignatureOnly && hash is null && recipe.HashPattern is not null)
         {
             try
             {
@@ -81,9 +99,9 @@ public sealed class OfficialSiteUpdateProvider(HttpClient httpClient, OfficialSi
             }
             catch (Exception exception) when (exception is HttpRequestException or TaskCanceledException && !cancellationToken.IsCancellationRequested) { }
         }
-        hash = NormalizeHash(hash);
+        hash = recipe.SignatureOnly ? null : NormalizeHash(hash);
         var sha512 = recipe.HashAlgorithm.Equals("sha512", StringComparison.OrdinalIgnoreCase);
-        if (hash is null || hash.Length != (sha512 ? 128 : 64))
+        if (!recipe.SignatureOnly && (hash is null || hash.Length != (sha512 ? 128 : 64)))
             return Result(application, version, UpdateStatus.NewerReleaseKnown, notes,
                 $"The publisher lists {version}, but its published installer hash could not be read; installation is blocked until it can.", null,
                 UpdateApplicability.NotApplicable, UpdateAvailabilityReason.AwaitingReleaseVerification);
@@ -100,17 +118,32 @@ public sealed class OfficialSiteUpdateProvider(HttpClient httpClient, OfficialSi
             return Result(application, version, UpdateStatus.NewerReleaseKnown, notes,
                 "No installer configuration preserves this installation's per-user scope.", null, UpdateApplicability.NotApplicable);
 
-        var fileName = Path.GetFileName(Uri.UnescapeDataString(download.AbsolutePath));
+        var fileName = recipe.FileName is null
+            ? Path.GetFileName(Uri.UnescapeDataString(download.AbsolutePath))
+            : Path.GetFileName(Expand(recipe.FileName, values, escape: false));
         var plan = new UpdateExecutionPlan(
             recipe.InstallerKind, download, fileName, sha512 ? null : hash, recipe.Unsigned ? null : recipe.ExpectedSigner, null,
             (currentUser ? recipe.CurrentUserInstallerArguments ?? recipe.InstallerArguments : recipe.InstallerArguments).ToArray(),
             (!currentUser || recipe.AlwaysElevate) && recipe.RequiresElevation, recipe.AllowedHosts.ToArray(), recipe.RunningProcessNames.ToArray(),
-            Sha512: sha512 ? hash : null, RequireAuthenticode: !recipe.Unsigned, AllowHashVerifiedRedirects: recipe.AllowMirrorRedirects);
+            Sha512: sha512 ? hash : null, RequireAuthenticode: !recipe.Unsigned, AllowHashVerifiedRedirects: recipe.AllowMirrorRedirects,
+            NestedInstallerRelativePath: recipe.NestedInstaller is null ? null : Expand(recipe.NestedInstaller, values, escape: false),
+            SignatureOnly: recipe.SignatureOnly);
         return Result(application, version, UpdateStatus.Available, notes,
-            recipe.Unsigned
+            recipe.SignatureOnly
+                ? $"The publisher's site offers {version}. It publishes no installer hash, so the exact {recipe.ExpectedSigner} signature is the verified proof (signature-only)."
+            : recipe.Unsigned
                 ? $"The publisher's site offers {version}; its published {recipe.HashAlgorithm.ToUpperInvariant()} is verified before installation (the publisher ships unsigned installers)."
                 : $"The publisher's site offers {version}; its published {recipe.HashAlgorithm.ToUpperInvariant()} and the {recipe.ExpectedSigner} signature are verified before installation.",
             plan);
+    }
+
+    private string? VersionOf(Match match)
+    {
+        if (recipe.VersionFormat is null) return match.Groups["version"].Success ? match.Groups["version"].Value : null;
+        var groups = new Dictionary<string, string>(StringComparer.Ordinal);
+        Capture(match, groups);
+        var version = Expand(recipe.VersionFormat, groups, escape: false);
+        return version.Contains('{') ? null : version;
     }
 
     private async Task<string> ReadAsync(string url, CancellationToken cancellationToken)

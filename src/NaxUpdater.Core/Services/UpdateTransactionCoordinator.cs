@@ -499,7 +499,9 @@ public static class UpdatePlanValidator
                 when plan.DownloadUri is null ||
                      plan.DownloadUri.Scheme != Uri.UriSchemeHttps ||
                      string.IsNullOrWhiteSpace(plan.FileName) ||
-                     string.IsNullOrWhiteSpace(plan.Sha256) && string.IsNullOrWhiteSpace(plan.Sha512) ||
+                     string.IsNullOrWhiteSpace(plan.Sha256) && string.IsNullOrWhiteSpace(plan.Sha512) &&
+                     !(plan.SignatureOnly && plan.RequireAuthenticode && plan.Kind != UpdateExecutionKind.DownloadedZipDriver &&
+                       (!string.IsNullOrWhiteSpace(plan.ExpectedSigner) || plan.ExpectedSigners is { Count: > 0 })) ||
                      plan.AllowedDownloadHosts.Count == 0
                 => "The downloadable update plan is missing its HTTPS artifact identity or release hash.",
             UpdateExecutionKind.DownloadedExe or

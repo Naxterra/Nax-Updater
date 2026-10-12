@@ -204,8 +204,10 @@ public sealed class UpdateRow
             ? LocalizationService.Get("SecurityNativeProvider")
         : Source.ExecutionPlan.Kind == UpdateExecutionKind.ChocolateyPackage
             ? LocalizationService.Get("SecurityChocolateyProvider")
+            : Source.ExecutionPlan.SignatureOnly
+                ? LocalizationService.Format("SecuritySignatureOnly", Source.ExecutionPlan.ExpectedSigner)
             : !Source.ExecutionPlan.RequireAuthenticode
-                ? LocalizationService.Get("SecurityHashOnly")
+                ? LocalizationService.Format("SecurityHashOnly", Source.ExecutionPlan.Sha512 is null ? "SHA-256" : "SHA-512")
                 : LocalizationService.Format(
                     "SecurityHashSigner",
                     Source.ExecutionPlan.Sha512 is null ? "SHA-256" : "SHA-512",

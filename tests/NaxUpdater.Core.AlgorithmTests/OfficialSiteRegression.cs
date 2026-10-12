@@ -78,6 +78,72 @@ internal static class OfficialSiteRegression
         var unverified = await new OfficialSiteUpdateProvider(http, recipe).CheckAsync(App("App (x64 de)", "4.0.3"), CancellationToken.None);
         assert(unverified.Status == UpdateStatus.NewerReleaseKnown && unverified.ExecutionPlan is null,
             "A release without its published hash was made installable.");
+
+        // Signature only (approved for publishers without a published hash): a version
+        // built from page parts, the link from a second page, and a named file.
+        pages["https://news.example/"] = "What's new in version 6.43 Build 16 ... What's new in version 6.43 Build 15";
+        pages["https://news.example/download"] = "<a href=\"AutoDL?BundleId=777_abc\" title=\"Windows (64-bit)\">";
+        var signatureOnly = new OfficialSiteRecipe
+        {
+            Id = "Vendor.Sig", DisplayNamePattern = "^Sig App$", VersionUrl = "https://news.example/",
+            VersionPattern = @"What.s new in version (?<maj>[0-9]+)\.(?<min>[0-9]+) Build (?<build>[0-9]+)", VersionFormat = "{maj}.{min}.{build}",
+            DownloadPageUrl = "https://news.example/download", DownloadPattern = "AutoDL\\?BundleId=(?<bundle>[0-9]+_[0-9a-f]+)\" title=\"Windows \\(64-bit\\)\"",
+            DownloadUrl = "https://dl.example/AutoDL?BundleId={bundle}", FileName = "setup-{maj}{min}b{build}.exe",
+            ExpectedSigner = "Vendor Inc", SignatureOnly = true, AllowedHosts = ["dl.example"],
+            InstallerKind = UpdateExecutionKind.DownloadedExe, InstallerArguments = ["/S"], RequiresElevation = true
+        };
+        var signed = await new OfficialSiteUpdateProvider(http, signatureOnly).CheckAsync(App("Sig App", "6, 43, 15, 2"), CancellationToken.None);
+        assert(signed.Status == UpdateStatus.Available && signed.AvailableVersion == "6.43.16" &&
+               signed.ExecutionPlan is { SignatureOnly: true, Sha256: null, Sha512: null, ExpectedSigner: "Vendor Inc", RequireAuthenticode: true, FileName: "setup-643b16.exe" } &&
+               signed.ExecutionPlan.DownloadUri!.AbsoluteUri == "https://dl.example/AutoDL?BundleId=777_abc",
+            "A signature-only release lost its built version, second-page link, file name or signer pin.");
+        var bound = signed with { ExecutionPlan = signed.ExecutionPlan with { CheckGenerationId = Guid.NewGuid(), CreatedAt = DateTimeOffset.UtcNow,
+            ExpiresAt = DateTimeOffset.UtcNow.AddMinutes(15), InstalledVersionPrecondition = signed.InstalledVersion }, CorrelationKey = "fixture" };
+        assert(UpdatePlanValidator.Validate(bound, DateTimeOffset.UtcNow) is null,
+            "A signature-only plan with an exact signer was rejected.");
+        assert(UpdatePlanValidator.Validate(bound with { ExecutionPlan = bound.ExecutionPlan! with { RequireAuthenticode = false } }, DateTimeOffset.UtcNow) is not null &&
+               UpdatePlanValidator.Validate(bound with { ExecutionPlan = bound.ExecutionPlan! with { SignatureOnly = false } }, DateTimeOffset.UtcNow) is not null,
+            "A plan without both a hash and a required signer was accepted.");
+        var noSigner = await new OfficialSiteUpdateProvider(http, new OfficialSiteRecipe
+        {
+            Id = "Vendor.NoSigner", DisplayNamePattern = "^Sig App$", VersionUrl = signatureOnly.VersionUrl, VersionPattern = signatureOnly.VersionPattern,
+            VersionFormat = signatureOnly.VersionFormat, DownloadUrl = "https://dl.example/x.exe", SignatureOnly = true, AllowedHosts = ["dl.example"],
+            InstallerKind = UpdateExecutionKind.DownloadedExe
+        }).CheckAsync(App("Sig App", "6.43.15"), CancellationToken.None);
+        assert(noSigner.Status == UpdateStatus.Error && noSigner.ExecutionPlan is null, "A signature-only recipe without a signer was accepted.");
+
+        // The downloader accepts a signature-only file only with the exact publisher.
+        var payload = Encoding.UTF8.GetBytes("signature-only fixture");
+        using var downloads = new HttpClient(new Bytes(payload));
+        var cache = Path.Combine(Path.GetTempPath(), "naxupdater-signature-only-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            var accepted = await new UpdatePackageDownloader(downloads, new Signer("Vendor Inc")).DownloadAndVerifyAsync(bound, cache);
+            assert(File.ReadAllBytes(accepted.Path).SequenceEqual(payload) && accepted.Signer == "Vendor Inc", "A correctly signed signature-only installer was rejected.");
+            accepted.Dispose();
+            Directory.Delete(cache, true);
+            try
+            {
+                await new UpdatePackageDownloader(downloads, new Signer("Someone Else")).DownloadAndVerifyAsync(bound, cache);
+                assert(false, "A signature-only installer from another publisher was accepted.");
+            }
+            catch (InvalidDataException) { assert(true, "Wrong publisher rejected."); }
+        }
+        finally { if (Directory.Exists(cache)) Directory.Delete(cache, true); }
+    }
+
+    private sealed class Bytes(byte[] payload) : HttpMessageHandler
+    {
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken token) =>
+            Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK) { RequestMessage = request, Content = new ByteArrayContent(payload) });
+    }
+
+    private sealed class Signer(string actual) : IAuthenticodeVerifier
+    {
+        public AuthenticodeVerificationResult Verify(string filePath, string expectedSigner) =>
+            actual.Equals(expectedSigner, StringComparison.OrdinalIgnoreCase)
+                ? new(true, actual, null)
+                : new(false, null, $"Expected signer '{expectedSigner}', found '{actual}'.");
     }
 
     private sealed class Respond(Dictionary<string, string> pages) : HttpMessageHandler
