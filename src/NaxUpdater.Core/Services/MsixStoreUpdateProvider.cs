@@ -16,15 +16,26 @@ public sealed class MsixStoreUpdateProvider : IUpdateProvider
     private readonly IStorePackageDeploymentService _store;
     private readonly HttpClient _httpClient;
     private readonly INativeStoreUpdateService? _nativeStore;
+    private readonly StoreSearchCache? _searchCache;
 
     public MsixStoreUpdateProvider(
         HttpClient? httpClient = null,
         IStorePackageDeploymentService? store = null,
         INativeStoreUpdateService? nativeStore = null)
+        : this(httpClient, store, nativeStore, store is null && nativeStore is null ? StoreSearchCache.Default : null)
+    {
+    }
+
+    internal MsixStoreUpdateProvider(
+        HttpClient? httpClient,
+        IStorePackageDeploymentService? store,
+        INativeStoreUpdateService? nativeStore,
+        StoreSearchCache? searchCache)
     {
         _httpClient = httpClient ?? SharedHttpClient;
         _store = store ?? new StorePackageDeploymentService(_httpClient);
         _nativeStore = nativeStore ?? (store is null ? new NativeStoreUpdateService(_httpClient) : null);
+        _searchCache = searchCache;
     }
 
     public string Id => "msix-store";
@@ -120,6 +131,12 @@ public sealed class MsixStoreUpdateProvider : IUpdateProvider
                     VersionOrder.Compare(latest.Version, application.NormalizedVersion) <= 0)
                     return Result(application, null, UpdateStatus.Current, null, product.Identity.ProductId,
                         "The official Store catalog publishes no newer package for the exact installed package family and architecture.");
+                var catalogVersion = product.LatestPublishedPackage?.Version;
+                var cacheKey = string.IsNullOrWhiteSpace(application.NormalizedVersion) ? null
+                    : StoreSearchCache.Key(packageFamily, application.NormalizedVersion, catalogVersion);
+                if (cacheKey is not null && _searchCache?.FindNoUpdate(cacheKey) is { } searchedAt)
+                    return Result(application, null, UpdateStatus.Current, null, product.Identity.ProductId,
+                        $"The native Microsoft Store check at {searchedAt.ToLocalTime():g} found no applicable update; the installed version and the Store catalog are unchanged since.");
                 var offers = new List<(StoreProductIdentity Identity, NativeStoreOffer Offer)>();
                 // One native request per admitted Store family. Parallel SKU
                 // fan-out otherwise consumes all broker slots before later
@@ -131,8 +148,12 @@ public sealed class MsixStoreUpdateProvider : IUpdateProvider
                 var found = offers.FirstOrDefault(o => o.Offer.IsAvailable);
                 if (found.Identity is null && offers.Any(o => o.Offer.CheckFailed)) return Result(application, null, UpdateStatus.Error, null, product.Identity.ProductId,
                     string.Join("; ", offers.Where(o => o.Offer.CheckFailed).Select(o => o.Offer.Error)));
-                if (found.Identity is null) return Result(application, null, UpdateStatus.Current, null, product.Identity.ProductId,
-                    "Native Microsoft Store check completed for the exact package family; no applicable update.");
+                if (found.Identity is null)
+                {
+                    if (cacheKey is not null) _searchCache?.RecordNoUpdate(cacheKey);
+                    return Result(application, null, UpdateStatus.Current, null, product.Identity.ProductId,
+                        "Native Microsoft Store check completed for the exact package family; no applicable update.");
+                }
                 var package = await new MicrosoftStoreProductMetadataClient(_httpClient).GetPublishedPackageAsync(found.Identity.ProductId,
                         packageFamily, PackageArchitecture(application), application.NormalizedVersion, cancellationToken, found.Identity.SkuId);
                 if (package is not null && VersionOrder.Compare(package.Version, application.NormalizedVersion) <= 0)

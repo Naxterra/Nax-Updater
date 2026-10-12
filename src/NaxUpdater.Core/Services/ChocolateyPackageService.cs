@@ -147,7 +147,12 @@ public sealed class ChocolateyPackageService : IChocolateyPackageService
     }
 
     private const string CommunityFeed = "https://community.chocolatey.org/api/v2/";
-    private static readonly HttpClient FeedClient = new() { Timeout = TimeSpan.FromSeconds(15) };
+    // A stalled feed connection timed out whole scans' worth of lookups at 15 s.
+    // Each attempt gets 8 s; the retry goes through a second handler, whose own
+    // connection pool makes it open a fresh connection instead of reusing the stalled one.
+    private static readonly HttpClient FeedClient = new() { Timeout = Timeout.InfiniteTimeSpan };
+    private static readonly HttpClient FeedRetryClient = new() { Timeout = Timeout.InfiniteTimeSpan };
+    private static readonly TimeSpan FeedAttemptTimeout = TimeSpan.FromSeconds(8);
 
     // choco.exe startup made every search cost ~2-4 s and made Chocolatey the
     // longest part of a scan. `search --exact --by-id-only` is one OData query
@@ -187,9 +192,33 @@ public sealed class ChocolateyPackageService : IChocolateyPackageService
     }
 
     // A feed query answers with an Atom feed of entries; a Packages(Id,Version) lookup with one entry.
-    private static async Task<List<ChocolateyPackageDetails>> QueryCommunityFeedAsync(string url, CancellationToken token)
+    private static Task<List<ChocolateyPackageDetails>> QueryCommunityFeedAsync(string url, CancellationToken token) =>
+        QueryCommunityFeedAsync(FeedClient, FeedRetryClient, url, FeedAttemptTimeout, token);
+
+    internal static async Task<List<ChocolateyPackageDetails>> QueryCommunityFeedAsync(
+        HttpClient client, HttpClient retryClient, string url, TimeSpan attemptTimeout, CancellationToken token)
     {
-        using var response = await FeedClient.GetAsync(url, token);
+        try { return await QueryCommunityFeedOnceAsync(client, url, attemptTimeout, token); }
+        catch (TimeoutException)
+        {
+            try { return await QueryCommunityFeedOnceAsync(retryClient, url, attemptTimeout, token); }
+            catch (TimeoutException) { throw new TimeoutException(
+                $"The Chocolatey community feed did not answer within {attemptTimeout.TotalSeconds:0} seconds, twice, on separate connections."); }
+        }
+    }
+
+    private static async Task<List<ChocolateyPackageDetails>> QueryCommunityFeedOnceAsync(
+        HttpClient client, string url, TimeSpan attemptTimeout, CancellationToken token)
+    {
+        using var attempt = CancellationTokenSource.CreateLinkedTokenSource(token);
+        attempt.CancelAfter(attemptTimeout);
+        try { return await ParseCommunityFeedAsync(client, url, attempt.Token); }
+        catch (OperationCanceledException) when (!token.IsCancellationRequested) { throw new TimeoutException(); }
+    }
+
+    private static async Task<List<ChocolateyPackageDetails>> ParseCommunityFeedAsync(HttpClient client, string url, CancellationToken token)
+    {
+        using var response = await client.GetAsync(url, token);
         if (response.StatusCode == System.Net.HttpStatusCode.NotFound) return [];
         response.EnsureSuccessStatusCode();
         using var reader = System.Xml.XmlReader.Create(await response.Content.ReadAsStreamAsync(token), new System.Xml.XmlReaderSettings
