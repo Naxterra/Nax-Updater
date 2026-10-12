@@ -2,7 +2,7 @@
 param(
     [Parameter()]
     [ValidatePattern('^\d+\.\d+\.\d+$')]
-    [string]$Version = '0.17.16'
+    [string]$Version = '0.17.17'
 )
 
 $ErrorActionPreference = 'Stop'
