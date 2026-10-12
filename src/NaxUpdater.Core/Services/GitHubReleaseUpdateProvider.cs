@@ -24,7 +24,7 @@ public sealed class GitHubReleaseUpdateProvider : IUpdateProvider
 
     public string Id => $"github:{recipe.Repository}";
     public UpdateProviderDescriptor Descriptor { get; } = new(
-        UpdateProviderAuthority.ProducerRelease,
+        UpdateProviderAuthority.RepositoryRelease,
         90,
         "Explicit producer repository recipe with name and publisher correlation",
         [ManagementMode.Unmanaged, ManagementMode.Registry, ManagementMode.WindowsInstaller, ManagementMode.DirectVendor]);

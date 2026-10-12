@@ -36,11 +36,16 @@ public enum UpdateExecutionKind
     ChocolateyPackage
 }
 
+// Source priority, highest first: the producer's own update protocol or site,
+// then the Microsoft Store and GitHub releases, then WinGet, then Chocolatey
+// (FallbackCatalog; WinGet ranks above Chocolatey by specificity). The Store only
+// serves MSIX packages and release recipes never do, so the two never compete.
 public enum UpdateProviderAuthority
 {
     Unverified = 0,
     FallbackCatalog = 100,
     PlatformStore = 200,
+    RepositoryRelease = 250,
     ProducerRelease = 300,
     InstalledUpdateProtocol = 400,
     ExplicitApplicationPolicy = 500

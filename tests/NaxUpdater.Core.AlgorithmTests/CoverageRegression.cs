@@ -15,15 +15,20 @@ internal static class CoverageRegression
         var low = new Probe("store", UpdateProviderAuthority.PlatformStore, UpdateStatus.Available);
         var combined = (await new UpdateCheckService([low, high]).CheckAsync(new(DateTimeOffset.UtcNow, [app], [], []))).Results.Single();
         assert(high.Calls == 1 && low.Calls == 1, "Native ownership or provider priority skipped a compatible source.");
-        assert(combined.IsInstallable && combined.SourceChecks?.Count == 2, "A valid offer was lost or source results were not retained.");
+        // Source priority: a higher source's Current settles the application; the
+        // lower offer stays visible in the source checks but is not installable.
+        assert(combined.ProviderId == "producer" && combined.Status == UpdateStatus.Current && !combined.IsInstallable &&
+               combined.SourceChecks?.Count == 2 && combined.SourceChecks.Any(c => c.ProviderId == "store" && c.Status == UpdateStatus.Available),
+            "A lower-priority offer overrode a higher-priority Current, or source results were not retained.");
         high.Status = UpdateStatus.Error;
         var guarded = (await new UpdateCheckService([high, low]).CheckAsync(new(DateTimeOffset.UtcNow, [app], [], []))).Results.Single();
         assert(guarded.Status == UpdateStatus.Error && !guarded.IsInstallable, "A lower-priority installer bypassed a higher-priority verification failure.");
         high.Status = UpdateStatus.Current;
         low.Status = UpdateStatus.Error;
         var conflict = await new UpdateCheckService([high, low]).CheckAsync(new(DateTimeOffset.UtcNow, [app], [], []));
-        assert(conflict.Results.Single().Status == UpdateStatus.Error && conflict.FailedCheckCount == 1,
-            "A producer Current result hid a Store verification failure.");
+        assert(conflict.Results.Single().Status == UpdateStatus.Current && conflict.FailedCheckCount == 0 &&
+               conflict.Results.Single().SourceChecks?.Any(c => c.Status == UpdateStatus.Error) == true,
+            "A lower-priority failure overrode a higher-priority Current, or it was not kept in the source checks.");
         high.Status = UpdateStatus.Available;
         low.Status = UpdateStatus.StoreQueued;
         var queued = await new UpdateCheckService([high, low]).CheckAsync(new(DateTimeOffset.UtcNow, [app], [], []));

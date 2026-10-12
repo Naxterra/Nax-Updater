@@ -251,19 +251,22 @@ public sealed class UpdateCheckService
         // Conversely, never bypass a higher-authority verification failure with
         // a lower-authority installer. Explicit provider policies stay exclusive.
         var firstDefinitive = Array.FindIndex(checks, c => c.Status is not (UpdateStatus.ManagedExternally or UpdateStatus.Unsupported));
-        // Fallback catalogs match by name and cannot see release lines: Chocolatey's
-        // "nodejs" offered 26.x over a Node.js 22 LTS that the producer's own index
-        // confirmed current. A producer or installed-updater Current outranks them.
-        var producerCurrent = checkResults.Any(c => c.Result.Status == UpdateStatus.Current &&
-            c.Provider.Descriptor.Authority > UpdateProviderAuthority.PlatformStore);
-        var available = Array.FindIndex(checkResults, c => c.Result.IsInstallable &&
-            !(producerCurrent && c.Provider.Descriptor.Authority <= UpdateProviderAuthority.FallbackCatalog));
+        // Checks are in source priority order (official site or update protocol,
+        // then Store and GitHub, then WinGet, then Chocolatey), so the first Current
+        // settles the application: a lower source can neither offer an installer
+        // nor turn it into an error. Chocolatey's "nodejs" offered 26.x over a
+        // Node.js 22 LTS that nodejs.org confirmed current on its own line, and
+        // Chocolatey's pinned wrapper held back a release nodejs.org already shipped.
+        // Lower results stay visible in the source checks.
+        var firstCurrent = Array.FindIndex(checks, c => c.Status == UpdateStatus.Current);
+        var ranked = firstCurrent >= 0 ? firstCurrent + 1 : checks.Length;
+        var available = Array.FindIndex(checks, 0, ranked, c => c.IsInstallable);
         var selectedIndex = available >= 0 && !checks.Take(available).Any(c => c.Status == UpdateStatus.Error)
             ? available : firstDefinitive >= 0 ? firstDefinitive : 0;
         // A platform-owned deployment blocks duplicate execution through any
         // other provider. A Current result must not hide another source's error.
         var queued = Array.FindIndex(checks, c => c.Status == UpdateStatus.StoreQueued);
-        var error = Array.FindIndex(checks, c => c.Status == UpdateStatus.Error);
+        var error = Array.FindIndex(checks, 0, ranked, c => c.Status == UpdateStatus.Error);
         if (queued >= 0) selectedIndex = queued;
         else if (!checks[selectedIndex].IsInstallable && error >= 0) selectedIndex = error;
         return checks[selectedIndex] with
