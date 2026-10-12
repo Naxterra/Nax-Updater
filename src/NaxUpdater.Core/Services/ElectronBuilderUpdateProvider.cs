@@ -66,7 +66,8 @@ public sealed partial class ElectronBuilderUpdateProvider(HttpClient httpClient,
                 Architecture = architecture,
                 Channel = configuration.Channel,
                 Applicability = UpdateApplicability.NotApplicable,
-                AvailabilityReason = UpdateAvailabilityReason.StagedRollout
+                AvailabilityReason = UpdateAvailabilityReason.StagedRollout,
+                RolloutThresholdPercent = ElectronStagedRollout.ThresholdPercent(position)
             };
         }
         var downloadUri = ResolveDownloadUri(configuration, artifact.Url);

@@ -1113,7 +1113,7 @@ public sealed partial class MainPage : Page
         UpdateProviderText.Text = $"{row.Provider} · {row.Status}";
         UpdateVersionText.Text = row.VersionChange;
         UpdateSourcesText.Text = string.Join(Environment.NewLine, (row.Source.SourceChecks ?? []).Select(source =>
-            $"{source.ProviderDisplayName}: {LocalizationService.Get(source.Status switch { UpdateStatus.Current => "StatusCurrent", UpdateStatus.Available => "StatusUpdateAvailable", UpdateStatus.Error => "StatusCheckFailed", UpdateStatus.StoreQueued => "StatusStoreQueued", UpdateStatus.NewerReleaseKnown => "StatusNewerReleaseKnown", _ => "StatusNotChecked" })}"));
+            $"{source.ProviderDisplayName}: {(source.Status is UpdateStatus.ManagedExternally or UpdateStatus.Unsupported ? LocalizationService.Get("StatusNotChecked") : UpdateRow.StatusText(source.Status, source.AvailabilityReason, source.RolloutThresholdPercent))}"));
         UpdatePlatformText.Text = row.PlatformDetail;
         UpdateSecurityText.Text = row.SecurityDetail;
         UpdateReleaseText.Text = row.ReleaseNotes;

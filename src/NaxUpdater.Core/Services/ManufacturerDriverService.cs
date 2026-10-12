@@ -181,8 +181,8 @@ public sealed partial class ManufacturerDriverService(HttpClient httpClient)
         CancellationToken cancellationToken)
     {
         var regionalHome = NvidiaDriverHomeForCulture(CultureInfo.CurrentUICulture.Name);
-        var seriesId = NvidiaSeriesId(driver.DeviceName);
-        if (seriesId is null)
+        var seriesName = NvidiaSeriesName(driver.DeviceName);
+        if (seriesName is null)
         {
             return NoVerifiedCatalog(driver, "NVIDIA", regionalHome,
                 "The NVIDIA device is present, but its product series is not mapped to NVIDIA's official driver search.");
@@ -190,6 +190,16 @@ public sealed partial class ManufacturerDriverService(HttpClient httpClient)
 
         try
         {
+            // NVIDIA's search is keyed by its product-series ID, read by name from
+            // NVIDIA's own series list. A hardcoded "120" was the RTX 30 series and
+            // compared an RTX 5080 with the RTX 30 driver list.
+            var series = await GetStringAsync(NvidiaSeriesList, cancellationToken);
+            var seriesMatch = Regex.Match(series, $@"<Name>{Regex.Escape(seriesName)}</Name>\s*<Value>(?<id>[0-9]+)</Value>", RegexOptions.CultureInvariant);
+            if (!seriesMatch.Success)
+            {
+                throw new InvalidDataException($"NVIDIA's series list no longer contains {seriesName}.");
+            }
+            var seriesId = seriesMatch.Groups["id"].Value;
             var searchUri = new Uri($"https://www.nvidia.com/Download/processFind.aspx?dtcid=1&lang=en-us&lid=1&osid=57&psid={seriesId}&whql=1");
             var html = await GetStringAsync(searchUri, cancellationToken);
             var match = NvidiaResultRegex().Match(html);
@@ -927,7 +937,14 @@ public sealed partial class ManufacturerDriverService(HttpClient httpClient)
         return VersionOrder.Compare(catalogVersion, installedCore) > 0;
     }
 
-    private static string? NvidiaSeriesId(string deviceName) => NvidiaRtx50Regex().IsMatch(deviceName) ? "120" : null;
+    private static readonly Uri NvidiaSeriesList = new("https://www.nvidia.com/Download/API/lookupValueSearch.aspx?TypeID=2");
+
+    // Desktop GeForce RTX cards map to NVIDIA's "GeForce RTX <generation> Series".
+    // Notebook GPUs use other driver packages and stay without a verified catalog.
+    internal static string? NvidiaSeriesName(string deviceName) =>
+        NvidiaRtxRegex().Match(deviceName) is { Success: true } match && !deviceName.Contains("Laptop", StringComparison.OrdinalIgnoreCase)
+            ? $"GeForce RTX {match.Groups["generation"].Value} Series"
+            : null;
 
     private static bool IsNvidiaDisplayDriver(InstalledHardwareDriver driver) =>
         driver.Provider.Contains("NVIDIA", StringComparison.OrdinalIgnoreCase) &&
@@ -1001,8 +1018,8 @@ public sealed partial class ManufacturerDriverService(HttpClient httpClient)
     [GeneratedRegex(@"^\d{4}$", RegexOptions.CultureInvariant)]
     private static partial Regex NumericKeyRegex();
 
-    [GeneratedRegex(@"GeForce\s+RTX\s+50\d{2}", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
-    private static partial Regex NvidiaRtx50Regex();
+    [GeneratedRegex(@"GeForce\s+RTX\s+(?<generation>[2-5]0)\d{2}\b", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
+    private static partial Regex NvidiaRtxRegex();
 
     [GeneratedRegex(@"driverResults\.aspx/(?<id>\d+)/en-us[^>]*>.*?</a>.*?</td>\s*<td[^>]*>(?<version>\d+\.\d+)</td>", RegexOptions.IgnoreCase | RegexOptions.Singleline | RegexOptions.CultureInvariant)]
     private static partial Regex NvidiaResultRegex();

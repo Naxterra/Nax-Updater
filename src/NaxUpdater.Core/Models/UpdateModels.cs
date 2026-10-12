@@ -19,7 +19,7 @@ public enum UpdateApplicability
     NotApplicable
 }
 
-public enum UpdateAvailabilityReason { None, AwaitingStorePublication, AwaitingStoreOffer, NoApplicableStoreUpdate, StoreQueued, StoreUpdating, StorePaused, AwaitingReleaseVerification, StagedRollout }
+public enum UpdateAvailabilityReason { None, AwaitingStorePublication, AwaitingStoreOffer, NoApplicableStoreUpdate, StoreQueued, StoreUpdating, StorePaused, AwaitingReleaseVerification, StagedRollout, DriverUpdateInDriversView }
 public sealed record UpdateCheckProgress(int Completed, int Total, string Phase, string? ApplicationName);
 
 public enum UpdateExecutionKind
@@ -179,7 +179,7 @@ public sealed record StoreProductIdentity(string ProductId, string SkuId, string
 public sealed record StoreProductMatch(StoreProductIdentity Identity, PublishedStorePackage? PublishedPackage,
     IReadOnlyList<StoreProductIdentity>? AlternateIdentities = null, PublishedStorePackage? LatestPublishedPackage = null);
 public sealed record UpdateSourceCheck(string ProviderId, string ProviderDisplayName, UpdateStatus Status, string? AvailableVersion, string? Message,
-    double? ElapsedMilliseconds = null);
+    double? ElapsedMilliseconds = null, UpdateAvailabilityReason AvailabilityReason = UpdateAvailabilityReason.None, int? RolloutThresholdPercent = null);
 
 public sealed record WingetUpdateTarget(
     string PackageId,
@@ -216,7 +216,9 @@ public sealed record UpdateCheckResult(
     UpdateAvailabilityReason AvailabilityReason = UpdateAvailabilityReason.None,
     string? PublishedPackageVersion = null,
     string? AnnouncedVersion = null,
-    IReadOnlyList<UpdateSourceCheck>? SourceChecks = null)
+    IReadOnlyList<UpdateSourceCheck>? SourceChecks = null,
+    // Staged rollouts: the smallest rollout percentage that includes this installation.
+    int? RolloutThresholdPercent = null)
 {
     public bool IsInstallable => ExecutionPlan is not null &&
                                  (Status == UpdateStatus.Available && !string.IsNullOrWhiteSpace(AvailableVersion) ||

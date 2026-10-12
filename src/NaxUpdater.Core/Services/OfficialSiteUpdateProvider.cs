@@ -69,7 +69,10 @@ public sealed class OfficialSiteUpdateProvider(HttpClient httpClient, OfficialSi
             (position is null || !ElectronStagedRollout.Includes(percent, position.Value)))
             return Result(application, version, UpdateStatus.NewerReleaseKnown, notes,
                 ElectronStagedRollout.HeldMessage(version, percent, position), null,
-                UpdateApplicability.NotApplicable, UpdateAvailabilityReason.StagedRollout);
+                UpdateApplicability.NotApplicable, UpdateAvailabilityReason.StagedRollout) with
+            {
+                RolloutThresholdPercent = ElectronStagedRollout.ThresholdPercent(position)
+            };
 
         if (recipe.DownloadPageUrl is not null && recipe.DownloadPattern is not null)
         {
