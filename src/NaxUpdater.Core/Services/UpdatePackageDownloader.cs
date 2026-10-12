@@ -153,7 +153,7 @@ public sealed class UpdatePackageDownloader(
                     progress,
                     cancellationToken);
             }
-            if (!actualHash.Equals(hashPolicy.ExpectedHash, StringComparison.OrdinalIgnoreCase))
+            if (hashPolicy.ExpectedHash is not null && !actualHash.Equals(hashPolicy.ExpectedHash, StringComparison.OrdinalIgnoreCase))
             {
                 throw new InvalidDataException($"{hashPolicy.DisplayName} mismatch. Expected {hashPolicy.ExpectedHash}, received {actualHash}.");
             }
@@ -362,7 +362,7 @@ public sealed class UpdatePackageDownloader(
             ? await SHA512.HashDataAsync(stream, cancellationToken)
             : await SHA256.HashDataAsync(stream, cancellationToken);
         var actualHash = Convert.ToHexString(hash);
-        if (!actualHash.Equals(hashPolicy.ExpectedHash, StringComparison.OrdinalIgnoreCase))
+        if (hashPolicy.ExpectedHash is not null && !actualHash.Equals(hashPolicy.ExpectedHash, StringComparison.OrdinalIgnoreCase))
         {
             return new FileVerification(false, null, $"The cached installer {hashPolicy.DisplayName} does not match the release.");
         }
@@ -374,6 +374,12 @@ public sealed class UpdatePackageDownloader(
         if (!plan.RequireAuthenticode)
         {
             return new FileVerification(true, "Unsigned installer; release hash verified", null);
+        }
+        // A signature-only archive is not signed itself; the nested MSI's exact
+        // publisher signature is verified after extraction, before it runs.
+        if (plan.SignatureOnly && plan.Kind == UpdateExecutionKind.DownloadedZipMsi)
+        {
+            return new FileVerification(true, "Archive; the nested MSI publisher is verified before installation", null);
         }
         var errors = new List<string>();
         foreach (var expectedSigner in ExpectedSigners(plan))
@@ -417,6 +423,10 @@ public sealed class UpdatePackageDownloader(
         {
             return new HashPolicy(HashAlgorithmName.SHA256, plan.Sha256, "SHA-256");
         }
+        if (plan.SignatureOnly && plan.RequireAuthenticode && string.IsNullOrWhiteSpace(plan.Sha256) && string.IsNullOrWhiteSpace(plan.Sha512))
+        {
+            return new HashPolicy(HashAlgorithmName.SHA256, null, "SHA-256");
+        }
         throw new InvalidOperationException("The update plan does not contain a valid SHA-256 or SHA-512 hash.");
     }
 
@@ -428,7 +438,7 @@ public sealed class UpdatePackageDownloader(
     }
 
     private sealed record FileVerification(bool IsValid, string? Signer, string? Error);
-    private sealed record HashPolicy(HashAlgorithmName Algorithm, string ExpectedHash, string DisplayName);
+    private sealed record HashPolicy(HashAlgorithmName Algorithm, string? ExpectedHash, string DisplayName);
 }
 
 public sealed record VerifiedInstaller(string Path, string Signer, FileStream? ContentLock = null) : IDisposable

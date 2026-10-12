@@ -44,6 +44,7 @@ public static partial class LocalizationService
         {
             return Format("ProviderGitHub", update.ProviderId[7..]);
         }
+        if (update.ProviderId.StartsWith("official:", StringComparison.Ordinal)) return Get("ProviderOfficialSite");
         return update.ProviderDisplayName;
     }
 
@@ -90,7 +91,15 @@ public static partial class LocalizationService
         if (update.ProviderId == "rarlab-winrar") return update.Status == UpdateStatus.Available
             ? Get("ProviderWinRarAvailable")
             : Get("ProviderWinRarCurrent");
-        if (update.ProviderId.StartsWith("github:", StringComparison.Ordinal)) return Get("ProviderGitHubNote");
+        if (update.ProviderId.StartsWith("github:", StringComparison.Ordinal))
+            return update.ExecutionPlan is { RequireAuthenticode: false } ? Get("ProviderGitHubUnsignedNote") : Get("ProviderGitHubNote");
+        if (update.ProviderId.StartsWith("official:", StringComparison.Ordinal)) return update.ExecutionPlan switch
+        {
+            { SignatureOnly: true } plan => Format("ProviderOfficialSiteSignatureOnly", plan.ExpectedSigner),
+            { RequireAuthenticode: false } plan => Format("ProviderOfficialSiteHashOnly", plan.Sha512 is null ? "SHA-256" : "SHA-512"),
+            { } plan => Format("ProviderOfficialSiteVerified", plan.Sha512 is null ? "SHA-256" : "SHA-512", plan.ExpectedSigner),
+            null => Get("ProviderOfficialSiteCurrent")
+        };
         if (update.ProviderId == "zero-install")
         {
             var digest = DigestRegex().Match(update.Message ?? string.Empty);

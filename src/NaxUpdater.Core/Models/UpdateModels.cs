@@ -159,7 +159,10 @@ public sealed record UpdateExecutionPlan(
     PublishedStorePackage? NativeStoreTarget = null,
     StoreQueueTarget? StoreQueueTarget = null,
     ChocolateyUpdateTarget? ChocolateyTarget = null,
-    bool AuthenticatedGitHubAsset = false);
+    bool AuthenticatedGitHubAsset = false,
+    // Approved by Kaan for official sites that publish no installer hash: the
+    // exact publisher signature (on the nested MSI for an archive) is the proof.
+    bool SignatureOnly = false);
 
 public sealed record StoreQueueTarget(string ProductId, string PackageFamilyName, string InstalledVersion);
 

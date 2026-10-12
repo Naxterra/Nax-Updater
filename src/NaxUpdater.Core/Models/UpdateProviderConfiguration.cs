@@ -45,6 +45,19 @@ public sealed class OfficialSiteRecipe
     public bool RequiresElevation { get; init; }
     // Installers that register per user but install into Program Files (Kodi).
     public bool AlwaysElevate { get; init; }
+    // Builds the version from captured groups when the page splits it
+    // ("6.43 Build 15", "[260819]"); the result is compared and offered.
+    public string? VersionFormat { get; init; }
+    // A second page that carries the download link (Java's per-release BundleId).
+    public string? DownloadPageUrl { get; init; }
+    public string? DownloadPattern { get; init; }
+    // The saved installer name when the link has none (".../AutoDL?BundleId=...").
+    public string? FileName { get; init; }
+    // The MSI inside a downloaded ZIP (DownloadedZipMsi).
+    public string? NestedInstaller { get; init; }
+    // The publisher publishes no installer hash; Kaan approved the exact
+    // publisher signature as the only proof for these recipes.
+    public bool SignatureOnly { get; init; }
 }
 
 public sealed class GitHubUpdateRecipe
