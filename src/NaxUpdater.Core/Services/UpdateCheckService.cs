@@ -45,6 +45,7 @@ public sealed class UpdateCheckService
             new WinRarUpdateProvider(httpClient)
         };
         providers.AddRange(catalog.GitHub.Select(recipe => new GitHubReleaseUpdateProvider(httpClient, recipe)));
+        providers.AddRange(catalog.Official.Select(recipe => new OfficialSiteUpdateProvider(httpClient, recipe)));
         providers.Add(new MsixStoreUpdateProvider(httpClient));
         // Registration order is not authoritative. Explicit descriptors below arbitrate
         // installed protocols, producer sources, Store, and fallback catalogs.

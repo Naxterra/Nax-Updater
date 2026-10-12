@@ -31,6 +31,24 @@ The inventory engine:
 
 ## Update providers
 
+### Source order
+
+Every application is checked against all compatible sources, in this order of priority:
+
+1. the publisher's official site or the application's own update feed;
+2. the Microsoft Store (MSIX packages) or the publisher's GitHub releases;
+3. WinGet;
+4. Chocolatey.
+
+The first source that reports the installed version as current settles the application. A lower source can neither offer an installer nor mark the application as failed; its result stays visible in the source checks.
+
+### Local source library
+
+`Configuration/update-providers.json` is a local library of where each known application is published, so a scan reads the publisher's own source directly instead of searching catalogs:
+
+- `github`: GitHub release recipes (repository, installer asset pattern, signer, silent arguments). `unsigned` relies on the mandatory release-asset SHA-256 for publishers that ship unsigned installers, `followInstalledPrerelease` keeps an installed pre-release on its channel, and `privateRepository` downloads assets through the GitHub API with the signed-in GitHub CLI account (the token is sent only to `api.github.com`).
+- `official`: official-site recipes. Each names the page or feed that lists the publisher's versions, a pattern that reads them (the highest wins), the download and published-hash locations, the expected signer, and the allowed download hosts. Placeholders such as `{version}` and groups captured from the installed display name (for example Thunderbird's `{locale}`) fill the templates. A release without its publisher-published hash is never installed, and a vendor's staged rollout is respected.
+
 The current implementation includes:
 
 - filters Store SKU candidates by current Windows fulfillment availability; redemption-only, purchase-only, console-only and inactive variants are not sent to the native update API, while valid full/trial update routes and their real failures remain visible;

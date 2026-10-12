@@ -21,18 +21,27 @@ internal static class GitHubApiClient
         return await (cliReader ?? ReadUsingCliAsync)(endpoint, token);
     }
 
+    // The signed-in GitHub CLI account's token, for private release assets only.
+    public static async Task<string?> ReadTokenUsingCliAsync(CancellationToken token)
+    {
+        var executable = FindCli();
+        if (executable is null) return null;
+        try
+        {
+            var result = await new ProcessQueryRunner().RunAsync(executable, ["auth", "token", "--hostname", "github.com"], TimeSpan.FromSeconds(15), token);
+            var value = result.StandardOutput.Trim();
+            return result.ExitCode == 0 && value.Length is > 20 and < 256 && !value.Any(char.IsWhiteSpace) ? value : null;
+        }
+        catch (OperationCanceledException) when (token.IsCancellationRequested) { throw; }
+        catch { return null; }
+    }
+
     public static async Task<string?> ReadUsingCliAsync(string endpoint, CancellationToken token)
     {
         // Pass only a repository API path as one argument. Credentials stay in gh.
         if (!endpoint.StartsWith("repos/", StringComparison.Ordinal) || endpoint.Contains("..") ||
             endpoint.Any(char.IsControl)) return null;
-        var candidates = new[]
-        {
-            Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "GitHub CLI", "gh.exe"),
-            Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Programs", "GitHub CLI", "gh.exe")
-        }.Concat((Environment.GetEnvironmentVariable("PATH") ?? "").Split(Path.PathSeparator,
-            StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).Select(path => Path.Combine(path.Trim('"'), "gh.exe")));
-        var executable = candidates.FirstOrDefault(File.Exists);
+        var executable = FindCli();
         if (executable is null) return null;
         try
         {
@@ -42,5 +51,16 @@ internal static class GitHubApiClient
         }
         catch (OperationCanceledException) when (token.IsCancellationRequested) { throw; }
         catch { return null; }
+    }
+
+    private static string? FindCli()
+    {
+        var candidates = new[]
+        {
+            Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "GitHub CLI", "gh.exe"),
+            Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Programs", "GitHub CLI", "gh.exe")
+        }.Concat((Environment.GetEnvironmentVariable("PATH") ?? "").Split(Path.PathSeparator,
+            StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).Select(path => Path.Combine(path.Trim('"'), "gh.exe")));
+        return candidates.FirstOrDefault(File.Exists);
     }
 }
