@@ -31,17 +31,25 @@ public sealed class GitHubReleaseUpdateProvider : IUpdateProvider
 
     public bool CanHandle(InstalledApplication application)
     {
-        return application.DisplayName.Equals(recipe.DisplayName, StringComparison.OrdinalIgnoreCase) &&
+        return MatchesDisplayName(application.DisplayName, recipe.DisplayName) &&
                (string.IsNullOrWhiteSpace(recipe.PublisherContains) ||
                 application.Publisher?.Contains(recipe.PublisherContains, StringComparison.OrdinalIgnoreCase) == true);
     }
 
+    // Installers often append the version to the registered name
+    // ("Nax-TaskManager 2.0.0-alpha.23"); only a trailing version is accepted.
+    internal static bool MatchesDisplayName(string installed, string recipeName) =>
+        installed.Equals(recipeName, StringComparison.OrdinalIgnoreCase) ||
+        installed.StartsWith(recipeName + " ", StringComparison.OrdinalIgnoreCase) &&
+        Regex.IsMatch(installed[(recipeName.Length + 1)..], @"^v?\d+(?:\.\d+)*(?:-[0-9A-Za-z.]+)?$", RegexOptions.CultureInvariant);
+
     public async Task<UpdateCheckResult> CheckAsync(InstalledApplication application, CancellationToken cancellationToken)
     {
         HttpResponseMessage response;
+        var followPrerelease = recipe.FollowInstalledPrerelease && IsPrereleaseVersion(application.NormalizedVersion);
         try
         {
-            response = await GetLatestReleaseResponseAsync(cancellationToken);
+            response = await GetLatestReleaseResponseAsync(followPrerelease, cancellationToken);
         }
         catch (Exception exception) when (exception is (HttpRequestException or TaskCanceledException) && !cancellationToken.IsCancellationRequested)
         {
@@ -62,13 +70,14 @@ public sealed class GitHubReleaseUpdateProvider : IUpdateProvider
 
             var root = document.RootElement;
             if ((root.TryGetProperty("draft", out var draft) && draft.ValueKind == JsonValueKind.True) ||
-                (root.TryGetProperty("prerelease", out var prerelease) && prerelease.ValueKind == JsonValueKind.True))
+                (!followPrerelease && root.TryGetProperty("prerelease", out var prerelease) && prerelease.ValueKind == JsonValueKind.True))
                 return Error(application, "The release is not a published stable release.");
             var tag = root.TryGetProperty("tag_name", out var tagValue) ? tagValue.GetString()?.TrimStart('v', 'V') : null;
             if (recipe.ReleaseTagPrefix is { } prefix)
             {
                 if (tag?.StartsWith(prefix, StringComparison.Ordinal) != true) return Error(application, "The release belongs to a different product.");
-                tag = tag[prefix.Length..].TrimStart('v', 'V');
+                // Some projects separate tag versions with underscores (Inno Setup: is-7_1_0).
+                tag = tag[prefix.Length..].TrimStart('v', 'V').Replace('_', '.');
             }
             var releasePage = root.TryGetProperty("html_url", out var htmlValue) ? htmlValue.GetString() : null;
             if (string.IsNullOrWhiteSpace(tag) || !root.TryGetProperty("assets", out var assets))
@@ -112,7 +121,9 @@ public sealed class GitHubReleaseUpdateProvider : IUpdateProvider
             if (VersionOrder.Compare(latestVersion, releaseVersion) != 0)
                 return Error(application, "The release tag and installer version disagree; the installer was not approved.", tag, releasePage);
             var assetName = selectedAsset.Value.GetProperty("name").GetString()!;
-            var downloadUrl = selectedAsset.Value.GetProperty("browser_download_url").GetString();
+            // A private repository's browser URL needs a session; its API asset URL
+            // answers an authenticated request with a redirect to the signed file.
+            var downloadUrl = selectedAsset.Value.GetProperty(recipe.PrivateRepository ? "url" : "browser_download_url").GetString();
             var digest = selectedAsset.Value.TryGetProperty("digest", out var digestValue) ? digestValue.GetString() : null;
             var sha256 = digest?.StartsWith("sha256:", StringComparison.OrdinalIgnoreCase) == true ? digest[7..] : null;
             var status = VersionOrder.Compare(latestVersion, application.NormalizedVersion) > 0
@@ -133,7 +144,7 @@ public sealed class GitHubReleaseUpdateProvider : IUpdateProvider
                     null, Applicability: UpdateApplicability.NotApplicable);
             }
             if (status == UpdateStatus.Available &&
-                (string.IsNullOrWhiteSpace(downloadUrl) || sha256?.Length != 64 || string.IsNullOrWhiteSpace(recipe.ExpectedSigner)))
+                (string.IsNullOrWhiteSpace(downloadUrl) || sha256?.Length != 64 || string.IsNullOrWhiteSpace(recipe.ExpectedSigner) && !recipe.Unsigned))
             {
                 return new UpdateCheckResult(
                     application.Identity,
@@ -175,12 +186,16 @@ public sealed class GitHubReleaseUpdateProvider : IUpdateProvider
                     new Uri(downloadUrl!),
                     assetName,
                     sha256,
-                    recipe.ExpectedSigner,
+                    recipe.Unsigned ? null : recipe.ExpectedSigner,
                     null,
                     arguments,
                     application.Scope == InstallScope.Machine && recipe.RequiresElevation,
-                    ["github.com", "objects.githubusercontent.com", "release-assets.githubusercontent.com", "github-releases.githubusercontent.com"],
-                    recipe.RunningProcessNames.ToArray())
+                    recipe.PrivateRepository
+                        ? ["api.github.com", "objects.githubusercontent.com", "release-assets.githubusercontent.com", "github-releases.githubusercontent.com"]
+                        : ["github.com", "objects.githubusercontent.com", "release-assets.githubusercontent.com", "github-releases.githubusercontent.com"],
+                    recipe.RunningProcessNames.ToArray(),
+                    RequireAuthenticode: !recipe.Unsigned,
+                    AuthenticatedGitHubAsset: recipe.PrivateRepository)
                 : null;
             return new UpdateCheckResult(
                 application.Identity,
@@ -197,7 +212,9 @@ public sealed class GitHubReleaseUpdateProvider : IUpdateProvider
                 installedArchitecture ?? recipe.Architecture,
                 "stable",
                 releasePage,
-                "The GitHub asset SHA-256 and Windows publisher signature are required before installation.",
+                recipe.Unsigned
+                    ? "The publisher ships unsigned installers; the GitHub asset SHA-256 is required before installation."
+                    : "The GitHub asset SHA-256 and Windows publisher signature are required before installation.",
                 plan);
         }
     }
@@ -208,8 +225,26 @@ public sealed class GitHubReleaseUpdateProvider : IUpdateProvider
     private static bool IsPrereleaseTag(string tag) =>
         Regex.IsMatch(tag, @"-(?:alpha|beta|rc|pre|preview|dev|nightly)", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
 
-    private async Task<HttpResponseMessage> GetLatestReleaseResponseAsync(CancellationToken cancellationToken)
+    private static bool IsPrereleaseVersion(string? version) =>
+        version is not null && Regex.IsMatch(version, @"^v?\d+(?:\.\d+)*-", RegexOptions.CultureInvariant);
+
+    private async Task<HttpResponseMessage> GetLatestReleaseResponseAsync(bool includePrerelease, CancellationToken cancellationToken)
     {
+        if (includePrerelease && recipe.ReleaseTagPrefix is null)
+        {
+            var all = await GitHubApiClient.ReadAsync(httpClient, $"repos/{recipe.Repository}/releases?per_page=100", cancellationToken);
+            if (all is not null)
+            {
+                using var channel = JsonDocument.Parse(all);
+                var newest = channel.RootElement.EnumerateArray().Where(r =>
+                        r.TryGetProperty("tag_name", out var tag) && tag.GetString() is { Length: > 0 } &&
+                        (!r.TryGetProperty("draft", out var draft) || draft.ValueKind != JsonValueKind.True))
+                    .OrderByDescending(r => r.GetProperty("tag_name").GetString()!.TrimStart('v', 'V'), Comparer<string>.Create(VersionOrder.Compare))
+                    .FirstOrDefault();
+                if (newest.ValueKind == JsonValueKind.Object)
+                    return new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(newest.GetRawText(), Encoding.UTF8, "application/json") };
+            }
+        }
         var response = await GetLatestReleaseCoreAsync(cancellationToken);
         if (recipe.ReleaseTagPrefix is not null || !response.IsSuccessStatusCode) return response;
         var json = await response.Content.ReadAsStringAsync(cancellationToken);
@@ -252,7 +287,7 @@ public sealed class GitHubReleaseUpdateProvider : IUpdateProvider
                 !IsPrereleaseTag(tag.GetString()![prefix.Length..]) &&
                 (!r.TryGetProperty("draft", out var draft) || draft.ValueKind != JsonValueKind.True) &&
                 (!r.TryGetProperty("prerelease", out var prerelease) || prerelease.ValueKind != JsonValueKind.True))
-                .OrderByDescending(r => r.GetProperty("tag_name").GetString()![prefix.Length..], Comparer<string>.Create(VersionOrder.Compare)).ToArray();
+                .OrderByDescending(r => r.GetProperty("tag_name").GetString()![prefix.Length..].Replace('_', '.'), Comparer<string>.Create(VersionOrder.Compare)).ToArray();
             return matches.Length == 0 ? new(HttpStatusCode.NotFound) : new(HttpStatusCode.OK)
                 { Content = new StringContent(matches[0].GetRawText(), Encoding.UTF8, "application/json") };
         }

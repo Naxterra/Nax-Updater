@@ -158,7 +158,8 @@ public sealed record UpdateExecutionPlan(
     WingetUpdateTarget? WingetTarget = null,
     PublishedStorePackage? NativeStoreTarget = null,
     StoreQueueTarget? StoreQueueTarget = null,
-    ChocolateyUpdateTarget? ChocolateyTarget = null);
+    ChocolateyUpdateTarget? ChocolateyTarget = null,
+    bool AuthenticatedGitHubAsset = false);
 
 public sealed record StoreQueueTarget(string ProductId, string PackageFamilyName, string InstalledVersion);
 

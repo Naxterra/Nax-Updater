@@ -474,6 +474,8 @@ try
     await DriverTimeoutRegression.RunAsync(Assert);
     await VanishedFeedRegression.RunAsync(Assert, fixture);
     await StoreCacheAndFeedRegression.RunAsync(Assert, fixture);
+    await GitHubRecipeRegression.RunAsync(Assert);
+    await OfficialSiteRegression.RunAsync(Assert);
     // WinGet's COM server exits after installing a fresh catalog package; only its
     // "server gone" RPC errors are retried on a new server.
     Assert(WingetFallbackUpdateProvider.IsServerGone(new System.Runtime.InteropServices.COMException("gone", unchecked((int)0x800706BE))) &&

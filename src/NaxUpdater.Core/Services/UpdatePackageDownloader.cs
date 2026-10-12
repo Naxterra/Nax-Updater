@@ -41,6 +41,32 @@ public sealed class UpdatePackageDownloader(
         }
     }
 
+    private static readonly HttpClient GitHubAssetResolver = new(new SocketsHttpHandler { AllowAutoRedirect = false })
+        { Timeout = TimeSpan.FromSeconds(30) };
+
+    // A private repository's release asset: GitHub's API answers an authenticated
+    // request with a redirect to a short-lived signed URL. The token is sent only
+    // to api.github.com on a client that never follows redirects; the file itself
+    // is then downloaded without it and verified against the release digest.
+    internal static async Task<Uri> ResolveGitHubAssetAsync(Uri assetUri, CancellationToken cancellationToken,
+        Func<CancellationToken, Task<string?>>? tokenReader = null, HttpClient? resolver = null)
+    {
+        if (!assetUri.Host.Equals("api.github.com", StringComparison.OrdinalIgnoreCase) ||
+            !System.Text.RegularExpressions.Regex.IsMatch(assetUri.AbsolutePath, @"^/repos/[^/]+/[^/]+/releases/assets/\d+$"))
+            throw new InvalidOperationException("The private release asset URL is not a GitHub API asset URL.");
+        var token = await (tokenReader ?? GitHubApiClient.ReadTokenUsingCliAsync)(cancellationToken)
+            ?? throw new InvalidOperationException("The GitHub CLI is not signed in, so the private release asset cannot be downloaded.");
+        using var request = new HttpRequestMessage(HttpMethod.Get, assetUri);
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+        request.Headers.Accept.ParseAdd("application/octet-stream");
+        request.Headers.UserAgent.ParseAdd("NaxUpdater");
+        using var response = await (resolver ?? GitHubAssetResolver).SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
+        if ((int)response.StatusCode is >= 300 and < 400 && response.Headers.Location is { IsAbsoluteUri: true } location &&
+            location.Scheme == Uri.UriSchemeHttps)
+            return location;
+        throw new InvalidOperationException($"GitHub did not provide a download link for the private release asset ({(int)response.StatusCode}).");
+    }
+
     public async Task<VerifiedInstaller> DownloadAndVerifyAsync(
         UpdateCheckResult update,
         string cacheRoot,
@@ -89,9 +115,12 @@ public sealed class UpdatePackageDownloader(
         }
         try
         {
-            using var response = await httpClient.GetAsync(plan.DownloadUri, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
+            var sourceUri = plan.AuthenticatedGitHubAsset
+                ? await ResolveGitHubAssetAsync(plan.DownloadUri, cancellationToken)
+                : plan.DownloadUri;
+            using var response = await httpClient.GetAsync(sourceUri, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
             response.EnsureSuccessStatusCode();
-            var finalUri = response.RequestMessage?.RequestUri ?? plan.DownloadUri;
+            var finalUri = response.RequestMessage?.RequestUri ?? sourceUri;
             if (finalUri.Scheme != Uri.UriSchemeHttps ||
                 (!plan.AllowHashVerifiedRedirects && !IsAllowedHost(finalUri.Host, plan.AllowedDownloadHosts)))
             {
