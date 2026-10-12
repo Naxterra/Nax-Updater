@@ -75,6 +75,31 @@ internal static class CoverageRegression
         var current = await storeProvider.CheckAsync(storeApp, CancellationToken.None);
         assert(current.Status == UpdateStatus.Current && current.AvailableVersion is null,
             "Generic Store checking promoted catalog-only versions to updates.");
+        // A native "no update" answer is reused while the installed version and the
+        // catalog are unchanged; a changed version or an offer is searched again.
+        var cachePath = Path.Combine(Path.GetTempPath(), $"naxupdater-store-cache-{Guid.NewGuid():N}.json");
+        try
+        {
+            var searched = nativeClient.CheckedSkus.Count;
+            var first = await new MsixStoreUpdateProvider(metadata, null, native, new StoreSearchCache(cachePath)).CheckAsync(storeApp, CancellationToken.None);
+            var afterFirst = nativeClient.CheckedSkus.Count;
+            var reused = await new MsixStoreUpdateProvider(metadata, null, native, new StoreSearchCache(cachePath)).CheckAsync(storeApp, CancellationToken.None);
+            assert(first.Status == UpdateStatus.Current && reused.Status == UpdateStatus.Current && afterFirst > searched &&
+                   nativeClient.CheckedSkus.Count == afterFirst && reused.Message?.Contains("unchanged since") == true,
+                "An unchanged Store family was searched again, or its cached answer was presented differently.");
+            await new MsixStoreUpdateProvider(metadata, null, native, new StoreSearchCache(cachePath))
+                .CheckAsync(storeApp with { NormalizedVersion = "1.0.0.1" }, CancellationToken.None);
+            assert(nativeClient.CheckedSkus.Count > afterFirst, "A changed installed version reused an earlier Store answer.");
+            nativeClient.Available = true;
+            var offerPath = cachePath + ".offer";
+            await new MsixStoreUpdateProvider(metadata, null, native, new StoreSearchCache(offerPath)).CheckAsync(storeApp, CancellationToken.None);
+            var afterOffer = nativeClient.CheckedSkus.Count;
+            var again = await new MsixStoreUpdateProvider(metadata, null, native, new StoreSearchCache(offerPath)).CheckAsync(storeApp, CancellationToken.None);
+            assert(again.IsInstallable && nativeClient.CheckedSkus.Count > afterOffer, "A found Store update was cached instead of searched again.");
+            nativeClient.Available = false;
+            File.Delete(offerPath);
+        }
+        finally { File.Delete(cachePath); }
         using var wrongMetadata = new HttpClient(new MetadataHandler("Wrong_family"));
         var identity = await new MicrosoftStoreProductMetadataClient(wrongMetadata).ResolvePackageFamilyAsync(family, "x64", "1.0.0.0", CancellationToken.None);
         assert(identity is null, "Package-family lookup accepted a different family's product metadata.");
