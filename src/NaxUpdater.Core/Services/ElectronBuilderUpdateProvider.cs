@@ -5,7 +5,7 @@ using System.Text.RegularExpressions;
 
 namespace NaxUpdater.Core.Services;
 
-public sealed partial class ElectronBuilderUpdateProvider(HttpClient httpClient) : IUpdateProvider
+public sealed partial class ElectronBuilderUpdateProvider(HttpClient httpClient, string? appDataRoot = null) : IUpdateProvider
 {
     private readonly ConcurrentDictionary<string, UpdateConfiguration> _configurations = new(StringComparer.Ordinal);
 
@@ -37,7 +37,8 @@ public sealed partial class ElectronBuilderUpdateProvider(HttpClient httpClient)
                 releasePage: configuration.ReleasePage) with { Status = UpdateStatus.Unsupported };
         response.EnsureSuccessStatusCode();
         var bytes = await response.Content.ReadAsByteArrayAsync(cancellationToken);
-        var metadata = ParseLatestMetadata(Encoding.UTF8.GetString(bytes));
+        var feed = Encoding.UTF8.GetString(bytes);
+        var metadata = ParseLatestMetadata(feed);
         if (metadata is null)
         {
             return Error(application, "The installed updater feed did not contain a usable version and installer hash.");
@@ -53,6 +54,21 @@ public sealed partial class ElectronBuilderUpdateProvider(HttpClient httpClient)
         var status = VersionOrder.Compare(metadata.Version, application.NormalizedVersion) > 0
             ? UpdateStatus.Available
             : UpdateStatus.Current;
+        // The application's own updater withholds a staged release from
+        // installations outside the rollout; so does Nax-Updater.
+        if (status == UpdateStatus.Available && ElectronStagedRollout.Percentage(feed) is { } percent && percent < 100 &&
+            ElectronStagedRollout.Position(application, appDataRoot) is var position &&
+            (position is null || !ElectronStagedRollout.Includes(percent, position.Value)))
+        {
+            return Error(application, ElectronStagedRollout.HeldMessage(metadata.Version, percent, position), metadata.Version, configuration.ReleasePage) with
+            {
+                Status = UpdateStatus.NewerReleaseKnown,
+                Architecture = architecture,
+                Channel = configuration.Channel,
+                Applicability = UpdateApplicability.NotApplicable,
+                AvailabilityReason = UpdateAvailabilityReason.StagedRollout
+            };
+        }
         var downloadUri = ResolveDownloadUri(configuration, artifact.Url);
         var signer = configuration.PublisherNames.FirstOrDefault() ??
                      NativeAuthenticodeVerifier.GetTrustedSigner(application.PrimaryInstallPath ?? string.Empty);
