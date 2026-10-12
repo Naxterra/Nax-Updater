@@ -4,6 +4,8 @@
 
 Nax-Updater is a native Windows 11 application for discovering and updating installed software from independent Windows and vendor evidence instead of trusting a single package-manager catalog.
 
+How it works and why: [docs/DESIGN.md](docs/DESIGN.md) (architecture, source order, verification rules) and [docs/DECISIONS.md](docs/DECISIONS.md) (decision log per release).
+
 ## Downloads
 
 GitHub Releases provide:
@@ -160,7 +162,7 @@ The current implementation includes:
 
 The native **Drivers / Treiber** view does not use Windows Update. It correlates present PnP hardware with signed-driver data and retained installed INF registrations, then groups interface records into physical-device or driver-package rows.
 
-- NVIDIA GeForce RTX 50-series desktop drivers are checked directly against NVIDIA's official WHQL Game Ready catalog.
+- NVIDIA GeForce RTX 20- to 50-series desktop drivers are checked directly against the official WHQL Game Ready list of the card's own series; the series ID is read by name from NVIDIA's series list.
 - A newer NVIDIA driver receives an install button only after Nax-Updater obtains NVIDIA's official installer URL and published SHA-256 sidecar; the downloaded package must also carry the `NVIDIA Corporation` Authenticode publisher.
 - The manufacturer installer remains visible so component choices stay under user control. Nax-Updater handles download verification, elevation, exit codes, restart reporting, and the post-install rescan.
 - Realtek RTL8125 Ethernet is compared by its applicable driver branch rather than the catalog publication date, so installed `10.80.50.407` is correctly current for package branch `10.80.50`; Realtek's CAPTCHA-protected download remains an exact source action only for a genuinely newer branch.
@@ -178,7 +180,7 @@ The native **Drivers / Treiber** view does not use Windows Update. It correlates
 - The driver workspace fills maximized and ultrawide windows while the device-name column remains capped, keeping surplus width after the action column instead of centering a narrow table island.
 - Applications and Updates now use the same full-width table/details workspace. Their name columns share the same responsive 280–600 px constraint, while surplus ultrawide space is placed after the last data/action column instead of inside the application name.
 
-Provider priority is strict: installed native/self-updaters and signed updater metadata, official vendor download feeds, producer-controlled GitHub releases, Microsoft Store for Store-owned packages, and finally the exact-identity WinGet fallback. A fallback result never replaces or downgrades a producer-owned result.
+Driver updates are never part of **Update all**; the updates list shows them only as information that points to the Drivers view. Application provider priority is described under [Source order](#source-order).
 
 The single **Scan and check updates** action rebuilds the installed-application list and then checks every supported provider. The **Updates (N)** control shows both available updates and the checked/installed coverage; it only switches to the results and never starts a second check.
 
