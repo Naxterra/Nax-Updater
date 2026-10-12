@@ -229,6 +229,13 @@ using (var manufacturerClient = new HttpClient(new StubHttpMessageHandler(reques
             Content = new StringContent($"{manufacturerHash} 999.99-desktop-win10-win11-64bit-international-dch-whql.exe")
         };
     }
+    if (request.RequestUri?.AbsolutePath.EndsWith("/lookupValueSearch.aspx", StringComparison.OrdinalIgnoreCase) == true)
+    {
+        return new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent("<LookupValue><Name>GeForce RTX 50 Series</Name><Value>131</Value></LookupValue>")
+        };
+    }
     return new HttpResponseMessage(HttpStatusCode.OK)
     {
         Content = new StringContent("""
