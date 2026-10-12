@@ -50,7 +50,7 @@ public sealed class OfficialSiteUpdateProvider(HttpClient httpClient, OfficialSi
             .Where(c => !recipe.StayOnInstalledMajor || c.Version!.Split('.', '-')[0] == installedMajor)
             .ToArray();
         if (candidates.Length == 0) return Error(application, "The publisher's version source lists no matching release.");
-        var (latest, version) = candidates.OrderByDescending(c => c.Version, Comparer<string>.Create(VersionOrder.Compare)).First();
+        var (latest, version) = candidates.OrderByDescending(c => c.Version!, Comparer<string>.Create(VersionOrder.Compare)).First();
         Capture(latest, values);
         values["version"] = version!;
         values["version_"] = version!.Replace('.', '_');

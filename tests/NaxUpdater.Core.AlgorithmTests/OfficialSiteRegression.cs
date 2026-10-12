@@ -97,7 +97,7 @@ internal static class OfficialSiteRegression
                signed.ExecutionPlan is { SignatureOnly: true, Sha256: null, Sha512: null, ExpectedSigner: "Vendor Inc", RequireAuthenticode: true, FileName: "setup-643b16.exe" } &&
                signed.ExecutionPlan.DownloadUri!.AbsoluteUri == "https://dl.example/AutoDL?BundleId=777_abc",
             "A signature-only release lost its built version, second-page link, file name or signer pin.");
-        var bound = signed with { ExecutionPlan = signed.ExecutionPlan with { CheckGenerationId = Guid.NewGuid(), CreatedAt = DateTimeOffset.UtcNow,
+        var bound = signed with { ExecutionPlan = signed.ExecutionPlan! with { CheckGenerationId = Guid.NewGuid(), CreatedAt = DateTimeOffset.UtcNow,
             ExpiresAt = DateTimeOffset.UtcNow.AddMinutes(15), InstalledVersionPrecondition = signed.InstalledVersion }, CorrelationKey = "fixture" };
         assert(UpdatePlanValidator.Validate(bound, DateTimeOffset.UtcNow) is null,
             "A signature-only plan with an exact signer was rejected.");
