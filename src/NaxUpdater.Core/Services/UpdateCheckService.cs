@@ -258,8 +258,11 @@ public sealed class UpdateCheckService
         // nor turn it into an error. Chocolatey's "nodejs" offered 26.x over a
         // Node.js 22 LTS that nodejs.org confirmed current on its own line, and
         // Chocolatey's pinned wrapper held back a release nodejs.org already shipped.
+        // A publisher's staged rollout that has not reached this installation
+        // settles it the same way: the application's own updater withholds the
+        // release, so no lower source may deliver it early.
         // Lower results stay visible in the source checks.
-        var firstCurrent = Array.FindIndex(checks, c => c.Status == UpdateStatus.Current);
+        var firstCurrent = Array.FindIndex(checks, c => c.Status == UpdateStatus.Current || c.AvailabilityReason == UpdateAvailabilityReason.StagedRollout);
         var ranked = firstCurrent >= 0 ? firstCurrent + 1 : checks.Length;
         var available = Array.FindIndex(checks, 0, ranked, c => c.IsInstallable);
         var selectedIndex = available >= 0 && !checks.Take(available).Any(c => c.Status == UpdateStatus.Error)
