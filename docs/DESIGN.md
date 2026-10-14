@@ -1,6 +1,6 @@
 # Nax-Updater design
 
-Current as of 0.17.21. Updated with every release; the reasons behind each rule are in [DECISIONS.md](DECISIONS.md).
+Current as of 0.17.22. Updated with every release; the reasons behind each rule are in [DECISIONS.md](DECISIONS.md).
 
 ## Goal
 
@@ -34,6 +34,10 @@ Hard requirements:
 4. **Selection**: one result per app, chosen by source order (below). All source results stay visible in the details panel.
 5. **Execution** (`UpdateTransactionCoordinator`): revalidate, download and verify, close bound processes, install, then re-check the installed version. A journal and a lease make interrupted updates recoverable.
 
+## While updates run
+
+The update and driver lists stay enabled, so they can be scrolled and every row's details read during an update; only the row actions and "Alle aktualisieren" are locked. Each row in a run shows its own state in the status column (in Warteschlange, wird vorbereitet, Anwendung wird geschlossen, wird installiert, wird geprüft, then aktualisiert, fehlgeschlagen, nicht mehr anwendbar, Neustart erforderlich or übersprungen). Outcomes stay on the rows after the closing rescan until the next manual scan; a failed row shows its reason above the provider notes. A row that is still installable after a reported success shows the remaining offer instead of "aktualisiert".
+
 ## Source order
 
 Authorities (`UpdateProviderAuthority`), highest first:
@@ -58,7 +62,7 @@ A publisher's **staged rollout** that has not reached this PC settles the app th
 - `github`: repository, asset pattern, expected signer. Options: `unsigned` (GitHub asset digest only), `followInstalledPrerelease`, `privateRepository` (asset resolved through the API with the `gh` CLI token, sent only to `api.github.com`), `releaseTagPrefix`.
 - `official`: version page or feed, a regex for versions (highest wins), download and hash locations, expected signer, allowed hosts. Options: `versionFormat`, `downloadPageUrl`/`downloadPattern`, `fileName`, `nestedInstaller` (MSI inside a ZIP), `hashUrl`/`hashPattern`/`hashEncoding`, `rolloutPattern`, `stayOnInstalledMajor`, `architecture: neutral`, `allowMirrorRedirects`, `alwaysElevate`, `unsigned`, `signatureOnly`.
 
-Every recipe is added only after a real download was verified against its hash and signer.
+Every recipe is added only after a real download was verified against its hash and signer. When a publisher's signer changes, the update fails with "expected signer ..., found ..." and the pin is changed only after the new certificate is matched to the publisher's own legal records.
 
 ## Verification
 
