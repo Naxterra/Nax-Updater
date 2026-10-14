@@ -1,6 +1,6 @@
 # Nax-Updater design
 
-Current as of 0.17.23. Updated with every release; the reasons behind each rule are in [DECISIONS.md](DECISIONS.md).
+Current as of 0.17.24. Updated with every release; the reasons behind each rule are in [DECISIONS.md](DECISIONS.md).
 
 ## Goal
 
@@ -54,6 +54,8 @@ Authorities (`UpdateProviderAuthority`), highest first:
 Selection rule: the first source, in this order, that reports the installed version as current settles the app. A lower source can neither offer an installer nor turn the app into an error. Above that point, the highest installable result wins, unless a higher source failed (a lower source never bypasses a higher source's verification failure). A Store queue item always wins, so a platform-owned deployment is never duplicated.
 
 A publisher's **staged rollout** that has not reached this PC settles the app the same way as "current": the release is shown as known, but no lower catalog may deliver it early.
+
+A **superseded registration** (an entry named "Product - 12.0.30501" next to a current "Product - 12.0.40664" of the same name family, at or above the version offered for the older one) is shown as current with the provider "Neuere installierte Registrierung". Burn bundles such as Visual C++ redistributables register themselves even when all their packages are obsolete.
 
 ## Local source library
 

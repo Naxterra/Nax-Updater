@@ -324,7 +324,7 @@
                             <ColumnDefinition Width="105" />
                             <ColumnDefinition Width="105" />
                             <ColumnDefinition Width="115" />
-                            <ColumnDefinition Width="100" />
+                            <ColumnDefinition Width="130" />
                             <ColumnDefinition Width="*" />
                         </Grid.ColumnDefinitions>
                         <Button Grid.Column="0" Tag="Name" Style="{StaticResource ColumnHeaderButtonStyle}" HorizontalContentAlignment="Left" Click="UpdateResultSortHeader_Click">
@@ -352,7 +352,7 @@
                                         <ColumnDefinition Width="105" />
                                         <ColumnDefinition Width="105" />
                                         <ColumnDefinition Width="115" />
-                                        <ColumnDefinition Width="100" />
+                                        <ColumnDefinition Width="130" />
                                         <ColumnDefinition Width="*" />
                                     </Grid.ColumnDefinitions>
                                     <Grid ColumnSpacing="10">

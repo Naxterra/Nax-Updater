@@ -1,5 +1,6 @@
 using Microsoft.Windows.ApplicationModel.Resources;
 using NaxUpdater.Core.Models;
+using NaxUpdater.Core.Services;
 using System.Text.RegularExpressions;
 
 namespace NaxUpdater.Services;
@@ -40,6 +41,7 @@ public static partial class LocalizationService
         if (update.ProviderId == "gog-galaxy-native") return Get("ProviderGogGalaxyNative");
         if (update.ProviderId == "rarlab-winrar") return Get("ProviderWinRar");
         if (update.ProviderId == "winget-fallback") return Get("ProviderWingetFallback");
+        if (update.ProviderId == "superseded-registration") return Get("ProviderSupersededRegistration");
         if (update.ProviderId.StartsWith("github:", StringComparison.Ordinal))
         {
             return Format("ProviderGitHub", update.ProviderId[7..]);
@@ -53,6 +55,8 @@ public static partial class LocalizationService
         if (update.Status == UpdateStatus.StoreQueued) return update.IsInstallable ? Get("StoreQueueMessage") : update.Message ?? Get("StatusStoreQueued");
         if (update.AvailabilityReason == UpdateAvailabilityReason.NoApplicableStoreUpdate) return Get("NoApplicableStoreUpdateMessage");
         if (update.ProviderId == "wsl-native" && update.Status != UpdateStatus.Error) return Get("ProviderWslNote");
+        if (update.ProviderId == "superseded-registration")
+            return Format("SupersededRegistrationMessage", UpdateCheckService.VersionedNameFamily(update.DisplayName) ?? update.DisplayName, update.AvailableVersion);
         if (update.AvailabilityReason == UpdateAvailabilityReason.AwaitingStoreOffer)
             return Format("StoreOfferPendingMessage", update.PublishedPackageVersion, update.InstalledVersion);
         if (update.ProviderId == "openai-codex-store" && update.Status == UpdateStatus.Available &&

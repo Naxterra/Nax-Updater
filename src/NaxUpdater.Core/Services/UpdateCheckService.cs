@@ -149,6 +149,7 @@ public sealed class UpdateCheckService
             for (var k = 0; k < storeRetries.Length; k++) results[storeRetries[k]] = retried[k];
         }
         ReconcileCompanionChecks(results);
+        ReconcileSupersededRegistrations(results);
         return new UpdateCheckSnapshot(
             checkedAt,
             results.OrderBy(static result => result.Status == UpdateStatus.Available ? 0 : result.Status == UpdateStatus.Error ? 1 : 2)
@@ -285,6 +286,45 @@ public sealed class UpdateCheckService
         application.Identity, application.DisplayName, application.NormalizedVersion, null, UpdateStatus.Error,
         "provider-check", "Update provider check", "unknown", "Check did not complete",
         "unknown", "unknown", null, error, null, Applicability: UpdateApplicability.Unknown);
+
+    // A Burn bundle (Visual C++ redistributables, for example) registers itself even
+    // when all its packages are obsolete because a newer build of the same product is
+    // installed: "Microsoft Visual C++ 2013 Redistributable (x64) - 12.0.30501" next to
+    // "... - 12.0.40664". Such an entry is superseded, not outdated, when a sibling of
+    // the same name family is current at or above the version offered for it.
+    internal static void ReconcileSupersededRegistrations(UpdateCheckResult[] results)
+    {
+        for (var i = 0; i < results.Length; i++)
+        {
+            var older = results[i];
+            if (older.Status != UpdateStatus.NewerReleaseKnown || older.AvailableVersion is null ||
+                VersionedNameFamily(older.DisplayName) is not { } family) continue;
+            var sibling = results
+                .Where(s => !ReferenceEquals(s, older) && s.Status == UpdateStatus.Current && s.InstalledVersion is not null &&
+                            string.Equals(VersionedNameFamily(s.DisplayName), family, StringComparison.OrdinalIgnoreCase) &&
+                            VersionOrder.Compare(s.InstalledVersion, older.AvailableVersion) >= 0)
+                .OrderByDescending(s => s.InstalledVersion!, Comparer<string>.Create(VersionOrder.Compare))
+                .FirstOrDefault();
+            if (sibling is null) continue;
+            results[i] = older with
+            {
+                Status = UpdateStatus.Current,
+                AvailableVersion = sibling.InstalledVersion,
+                ProviderId = "superseded-registration",
+                ProviderDisplayName = "Newer installed registration",
+                Applicability = UpdateApplicability.NotRequired,
+                AvailabilityReason = UpdateAvailabilityReason.None,
+                ExecutionPlan = null,
+                Message = $"An older registration of {family}. {sibling.DisplayName} is installed and current; " +
+                          "the packages of this registration were superseded by it."
+            };
+        }
+    }
+
+    // "Name - 12.0.30501" -> "Name"; null for names without a trailing version.
+    public static string? VersionedNameFamily(string displayName) =>
+        System.Text.RegularExpressions.Regex.Match(displayName, @"^(?<family>.+?)\s+-\s+[0-9]+(?:\.[0-9]+)+$",
+            System.Text.RegularExpressions.RegexOptions.CultureInvariant) is { Success: true } match ? match.Groups["family"].Value : null;
 
     private static void ReconcileCompanionChecks(UpdateCheckResult[] results)
     {
