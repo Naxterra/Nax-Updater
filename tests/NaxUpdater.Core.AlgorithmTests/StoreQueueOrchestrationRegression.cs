@@ -47,6 +47,23 @@ internal static class StoreQueueOrchestrationRegression
         var finished = await prepared.Apply(new InlineProgress(progress.Add), CancellationToken.None);
         assert(finished.IsSuccess && active.Restarts == 0 && active.NewInstalls == 0 && progress.Count > 0,
             "Tracking an active queue item restarted it or lost progress.");
+        // A Store item that never moves (PowerShell sat at 0 bytes) releases Update All
+        // after the stall limit instead of the full install timeout; it stays queued.
+        foreach (var (stuckState, expectStall) in new[] { (AppInstallState.Downloading, true), (AppInstallState.Pending, true), (AppInstallState.Installing, false) })
+        {
+            var clock = DateTimeOffset.UtcNow;
+            var stuck = new QueueClient { State = stuckState };
+            var stuckService = new NativeStoreUpdateService(stuck, (_, _) => throw new InvalidOperationException(),
+                (span, _) => { clock += span; return Task.CompletedTask; }, TimeSpan.FromMinutes(20), () => clock);
+            var started = clock;
+            var stuckPrepared = await stuckService.PrepareQueueAsync(new("Fixture.Product", Family, "1.0.0.0"), CancellationToken.None);
+            var stuckResult = await stuckPrepared.Apply(null, CancellationToken.None);
+            var waited = clock - started;
+            assert(!stuckResult.IsSuccess && stuck.Restarts == 0 && (expectStall
+                    ? stuckResult.Error?.Contains("has not moved") == true && waited >= NativeStoreUpdateService.DefaultStallTimeout && waited < TimeSpan.FromMinutes(4)
+                    : stuckResult.Error?.Contains("has not completed") == true && waited >= TimeSpan.FromMinutes(20)),
+                $"A Store item stuck in {stuckState} was {(expectStall ? "waited on for the full install timeout" : "abandoned while installing")}.");
+        }
         var blocked = new QueueClient { MayAffectOtherItems = true };
         var blockedService = new NativeStoreUpdateService(blocked, (_, _) => throw new InvalidOperationException());
         var blockedPrepared = await blockedService.PrepareQueueAsync(new("Fixture.Product", Family, "1.0.0.0"), CancellationToken.None);

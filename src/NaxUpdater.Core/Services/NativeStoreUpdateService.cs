@@ -57,6 +57,14 @@ public sealed class NativeStoreUpdateService : INativeStoreUpdateService
     private readonly Func<PublishedStorePackage, CancellationToken, Task<PublishedStorePackage?>> _refresh;
     private readonly Func<TimeSpan, CancellationToken, Task> _delay;
     private readonly TimeSpan _installTimeout;
+    private readonly Func<DateTimeOffset> _now;
+    private readonly TimeSpan _stallTimeout;
+
+    // Microsoft Store sometimes accepts an item and then never moves it: no bytes,
+    // no state change (observed: PowerShell at 0 bytes for minutes while Update All
+    // waited the full 20 minutes). After this long without any change, Nax-Updater
+    // stops observing and moves on; the item stays in the Store queue.
+    internal static readonly TimeSpan DefaultStallTimeout = TimeSpan.FromMinutes(3);
 
     public NativeStoreUpdateService(HttpClient? client = null)
     {
@@ -66,16 +74,44 @@ public sealed class NativeStoreUpdateService : INativeStoreUpdateService
             target.ProductId, target.PackageFamilyName, target.Architecture, target.Version, token, target.SkuId);
         _delay = Task.Delay;
         _installTimeout = TimeSpan.FromMinutes(20);
+        _now = static () => DateTimeOffset.UtcNow;
+        _stallTimeout = DefaultStallTimeout;
     }
 
     internal NativeStoreUpdateService(INativeStoreUpdateClient client,
         Func<PublishedStorePackage, CancellationToken, Task<PublishedStorePackage?>> refresh,
-        Func<TimeSpan, CancellationToken, Task>? delay = null, TimeSpan? installTimeout = null)
+        Func<TimeSpan, CancellationToken, Task>? delay = null, TimeSpan? installTimeout = null,
+        Func<DateTimeOffset>? clock = null, TimeSpan? stallTimeout = null)
     {
         _client = client;
         _refresh = refresh;
         _delay = delay ?? Task.Delay;
         _installTimeout = installTimeout ?? TimeSpan.FromMinutes(20);
+        _now = clock ?? (static () => DateTimeOffset.UtcNow);
+        _stallTimeout = stallTimeout ?? DefaultStallTimeout;
+    }
+
+    internal static string StalledMessage(TimeSpan stall) =>
+        $"Microsoft Store has not moved this update for {stall.TotalMinutes:0} minutes (no download or state progress). " +
+        "It stays in the Store queue and can continue there; Nax-Updater moved on without claiming success.";
+
+    // Tracks the last observed change. Installing and restoring data can legitimately
+    // run without reported progress, so they never count as stalled.
+    private sealed class StallWatch(Func<DateTimeOffset> now, TimeSpan limit)
+    {
+        private NativeStoreItemState? _last;
+        private DateTimeOffset _since = now();
+
+        public bool IsStalled(NativeStoreItemState state)
+        {
+            if (_last is null || state.State != _last.State || state.Fraction != _last.Fraction)
+            {
+                _last = state;
+                _since = now();
+                return false;
+            }
+            return state.State is not (AppInstallState.Installing or AppInstallState.RestoringData) && now() - _since >= limit;
+        }
     }
 
     public Task<NativeStoreOffer> CheckAsync(PublishedStorePackage package, CancellationToken token) =>
@@ -114,11 +150,13 @@ public sealed class NativeStoreUpdateService : INativeStoreUpdateService
                 }
                 else current.Restart();
             }
-            var deadline = DateTimeOffset.UtcNow + _installTimeout;
-            while (DateTimeOffset.UtcNow < deadline)
+            var deadline = _now() + _installTimeout;
+            var stall = new StallWatch(_now, _stallTimeout);
+            while (_now() < deadline)
             {
                 cancellation.ThrowIfCancellationRequested(); // Stop observing, not the Store deployment.
                 var state = current.Status();
+                if (stall.IsStalled(state)) return new(-1, false, StalledMessage(_stallTimeout));
                 if (state.Fraction is double fraction) progress?.Report(Math.Clamp(fraction, 0, 1));
                 if (state.State == AppInstallState.Completed) return new(0, true, null);
                 if (state.State == AppInstallState.Error) return new(state.ErrorCode == 0 ? -1 : state.ErrorCode, false,
@@ -187,10 +225,12 @@ public sealed class NativeStoreUpdateService : INativeStoreUpdateService
             var active = await _client.StartUpdateAsync(package, cancellationToken)
                 ?? throw new InvalidOperationException("Windows Store no longer returns the approved update.");
             ValidateIdentity(active, package);
-            var deadline = DateTimeOffset.UtcNow + _installTimeout;
-            while (DateTimeOffset.UtcNow < deadline)
+            var deadline = _now() + _installTimeout;
+            var stall = new StallWatch(_now, _stallTimeout);
+            while (_now() < deadline)
             {
                 var state = active.Status();
+                if (stall.IsStalled(state)) return new(-1, false, StalledMessage(_stallTimeout));
                 if (state.State == AppInstallState.Completed) return new(0, true, null);
                 if (state.State == AppInstallState.Error)
                     return new(state.ErrorCode == 0 ? -1 : state.ErrorCode, false, $"Windows Store update failed (0x{state.ErrorCode:X8}).");
