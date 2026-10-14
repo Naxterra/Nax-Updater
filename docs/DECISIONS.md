@@ -2,6 +2,12 @@
 
 Why Nax-Updater works the way it does. Newest first; every release adds its decisions here and updates [DESIGN.md](DESIGN.md). Each entry names the decision, the evidence that led to it, and what was rejected.
 
+## 0.17.23 (2026-10-14)
+
+**A stalled Store item no longer holds up Update All.**
+PowerShell's Store update was accepted at 08:34:14, reported "DownloadingProduct, 0 of 0" once and never moved; Delivery Optimization had no job for it. Nax-Updater waited up to 20 minutes per Store item regardless. Now an item with no change in state or progress for 3 minutes is released and reported with its reason; it stays in the Store queue.
+Rejected: canceling the Store item (Windows owns it, and it may still finish), and a shorter overall timeout (large packages legitimately take longer while progressing).
+
 ## 0.17.22 (2026-10-14)
 
 **The lists stay usable while updates run, and each row shows its own state.**
