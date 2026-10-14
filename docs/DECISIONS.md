@@ -5,7 +5,7 @@ Why Nax-Updater works the way it does. Newest first; every release adds its deci
 ## 0.17.23 (2026-10-14)
 
 **A stalled Store item no longer holds up Update All.**
-PowerShell's Store update was accepted at 08:34:14, reported "DownloadingProduct, 0 of 0" once and never moved; Delivery Optimization had no job for it. Nax-Updater waited up to 20 minutes per Store item regardless. Now an item with no change in state or progress for 3 minutes is released and reported with its reason; it stays in the Store queue.
+PowerShell's Store update was accepted at 08:34:14, reported "DownloadingProduct, 0 of 0" once and never moved; Delivery Optimization had no job for it. Nax-Updater waited up to 20 minutes per Store item regardless. Now an item with no change in state or progress for 3 minutes is released and reported with its reason; it stays in the Store queue. The same item later finished on its own: the Store stayed idle until 08:48:24 (no deployment operation reached Windows before then), then downloaded 74.6 MB in 4 seconds and installed 7.6.7.0, which confirms that releasing the wait loses nothing.
 Rejected: canceling the Store item (Windows owns it, and it may still finish), and a shorter overall timeout (large packages legitimately take longer while progressing).
 
 ## 0.17.22 (2026-10-14)
