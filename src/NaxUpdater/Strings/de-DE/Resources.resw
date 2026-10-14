@@ -140,6 +140,8 @@
   <data name="RunNotApplicable"><value>Nicht mehr anwendbar</value></data>
   <data name="RunRestartRequired"><value>Neustart erforderlich</value></data>
   <data name="RunSkipped"><value>Übersprungen</value></data>
+  <data name="ProviderSupersededRegistration"><value>Neuere installierte Registrierung</value></data>
+  <data name="SupersededRegistrationMessage"><value>Ältere Registrierung von {0}. Dasselbe Produkt ist bereits als Version {1} installiert und aktuell; die Pakete dieser Registrierung wurden dadurch ersetzt. Ihr Eintrag in den Apps kann entfernt werden.</value></data>
   <data name="StatusAwaitingReleaseVerification"><value>Neuere Version bekannt · Verifizierung ausstehend, in Kürze erneut scannen</value></data>
   <data name="AwaitingReleaseVerificationMessage"><value>Der Hersteller hat diese Version veröffentlicht, aber noch nicht die Prüfsumme und Herausgebersignatur bereitgestellt – Nax-Updater installiert nichts, das nicht verifiziert werden kann. Dies löst sich in der Regel innerhalb weniger Minuten nach Veröffentlichung von selbst; erneut scannen, um es zu prüfen.</value></data>
   <data name="ProviderOpenAiReleaseKnown"><value>Das offizielle OpenAI-Manifest meldet eine neuere Version, aber Microsoft Store stellt für diese exakte Paketfamilie derzeit kein versionsgebundenes anwendbares Upgrade bereit. Es wird kein Update versucht.</value></data>

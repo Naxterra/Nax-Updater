@@ -2,6 +2,14 @@
 
 Why Nax-Updater works the way it does. Newest first; every release adds its decisions here and updates [DESIGN.md](DESIGN.md). Each entry names the decision, the evidence that led to it, and what was rejected.
 
+## 0.17.24 (2026-10-14)
+
+**Orphaned bundle registrations are recognized as superseded.**
+On 2026-10-13 a program ran the Visual C++ 2013 12.0.30501 installer. Its log shows both packages as "Obsolete" (12.0.40664 was installed), so it installed nothing but still registered "Microsoft Visual C++ 2013 Redistributable (x64) - 12.0.30501". The runtime files are 12.0.40664. That entry was shown as "newer version known, not applicable". An entry is now settled when a current sibling of the same name family (name without its trailing " - version") is installed at or above the version offered for it.
+Rejected: uninstalling the orphan automatically (removal always needs the user's explicit confirmation), and matching families without the trailing version (too broad; "Some App" 1.0 and 2.0 could be different products).
+
+**The update action column is 130 px**, because "Aktualisieren" plus the button padding did not fit in 100 px.
+
 ## 0.17.23 (2026-10-14)
 
 **A stalled Store item no longer holds up Update All.**

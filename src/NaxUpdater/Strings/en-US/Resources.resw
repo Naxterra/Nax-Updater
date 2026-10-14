@@ -140,6 +140,8 @@
   <data name="RunNotApplicable"><value>No longer applicable</value></data>
   <data name="RunRestartRequired"><value>Restart required</value></data>
   <data name="RunSkipped"><value>Skipped</value></data>
+  <data name="ProviderSupersededRegistration"><value>Newer installed registration</value></data>
+  <data name="SupersededRegistrationMessage"><value>An older registration of {0}. The same product is already installed as version {1} and current; this registration's packages were superseded by it. Its entry in Apps can be removed.</value></data>
   <data name="StatusAwaitingReleaseVerification"><value>Newer release known · verification pending, try rescanning shortly</value></data>
   <data name="AwaitingReleaseVerificationMessage"><value>The producer has published this release, but not yet its checksum and publisher signature — Nax-Updater refuses to install anything it cannot verify. This is usually resolved within minutes of the release going live; rescan to check again.</value></data>
   <data name="ProviderOpenAiReleaseKnown"><value>OpenAI's official manifest reports a newer build, but Microsoft Store does not currently expose a version-bound applicable upgrade for this exact package family. No update will be attempted.</value></data>
