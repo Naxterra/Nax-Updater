@@ -152,12 +152,65 @@ public sealed class PolicyRow
     public string Reason { get; }
 }
 
-public sealed class UpdateRow
+// Live state of an update this session started. It replaces the check status in
+// the list while an update runs, and its outcome stays visible until the next
+// manual scan.
+public enum UpdateRunState { None, Queued, Preparing, Closing, Installing, Verifying, Succeeded, Failed, NotApplicable, RestartRequired, Skipped }
+
+public sealed class UpdateRow : INotifyPropertyChanged
 {
+    private UpdateRunState _runState;
+    private string? _runMessage;
+    private bool _actionsLocked;
+
     public UpdateRow(UpdateCheckResult source, ApplicationRow? application = null)
     {
         Source = source;
         Application = application;
+    }
+
+    public event PropertyChangedEventHandler? PropertyChanged;
+
+    public UpdateRunState RunState
+    {
+        get => _runState;
+        set
+        {
+            if (_runState == value) return;
+            _runState = value;
+            Notify(nameof(RunState), nameof(Status), nameof(StatusForeground), nameof(StatusBackground));
+        }
+    }
+
+    // Why an update did not complete; shown above the provider notes.
+    public string? RunMessage
+    {
+        get => _runMessage;
+        set
+        {
+            if (_runMessage == value) return;
+            _runMessage = value;
+            Notify(nameof(RunMessage), nameof(Message));
+        }
+    }
+
+    // While any update runs, row actions are locked but the list stays usable.
+    public bool ActionsLocked
+    {
+        get => _actionsLocked;
+        set
+        {
+            if (_actionsLocked == value) return;
+            _actionsLocked = value;
+            Notify(nameof(ActionsLocked), nameof(CanAct));
+        }
+    }
+
+    public bool CanAct => CanInstall && !ActionsLocked;
+
+    private void Notify(params string[] names)
+    {
+        foreach (var name in names) PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));
     }
 
     public UpdateCheckResult Source { get; }
@@ -167,7 +220,9 @@ public sealed class UpdateRow
     public string Available => Source.AvailableVersion ?? "—";
     public string Language => LocalizationService.LanguageName(Source.Language);
     public string Provider => LocalizationService.ProviderName(Source);
-    public string Status => StatusText(Source.Status, Source.AvailabilityReason, Source.RolloutThresholdPercent);
+    public string Status => RunState == UpdateRunState.None
+        ? StatusText(Source.Status, Source.AvailabilityReason, Source.RolloutThresholdPercent)
+        : LocalizationService.Get("Run" + RunState);
 
     // Shared by the update list and the per-source results in the details panel.
     public static string StatusText(UpdateStatus status, UpdateAvailabilityReason reason, int? rolloutThresholdPercent) => status switch
@@ -222,7 +277,9 @@ public sealed class UpdateRow
                     Source.ExecutionPlan.ExpectedSigners is { Count: > 0 }
                         ? string.Join(" / ", Source.ExecutionPlan.ExpectedSigners)
                         : Source.ExecutionPlan.ExpectedSigner);
-    public string Message => LocalizationService.ProviderMessage(Source);
+    public string Message => RunMessage is { } run
+        ? run + Environment.NewLine + Environment.NewLine + LocalizationService.ProviderMessage(Source)
+        : LocalizationService.ProviderMessage(Source);
     public string ReleaseNotes => Source.ReleaseNotesUrl ?? LocalizationService.Get("NotProvided");
     public bool CanInstall => Source.IsInstallable;
     public string UpdateActionText => Source.ExecutionPlan?.Kind == UpdateExecutionKind.NativeStoreQueue
@@ -233,7 +290,7 @@ public sealed class UpdateRow
         ? LocalizationService.Get("RunUpdateShort")
         : LocalizationService.Get("UpdateShort");
     public Visibility UpdateActionVisibility => CanInstall ? Visibility.Visible : Visibility.Collapsed;
-    public Brush StatusForeground => PresentationBrushes.Get(Source.Status switch
+    public Brush StatusForeground => PresentationBrushes.Get(RunState != UpdateRunState.None ? RunBrush(card: false) : Source.Status switch
     {
         UpdateStatus.Available => "NaxOrangeBrush",
         UpdateStatus.NewerReleaseKnown => "NaxBlueBrush",
@@ -243,7 +300,7 @@ public sealed class UpdateRow
         UpdateStatus.Unsupported => "NaxPurpleBrush",
         _ => "NaxPinkBrush"
     });
-    public Brush StatusBackground => PresentationBrushes.Get(Source.Status switch
+    public Brush StatusBackground => PresentationBrushes.Get(RunState != UpdateRunState.None ? RunBrush(card: true) : Source.Status switch
     {
         UpdateStatus.Available => "NaxOrangeCardBrush",
         UpdateStatus.NewerReleaseKnown => "NaxBlueCardBrush",
@@ -253,6 +310,15 @@ public sealed class UpdateRow
         UpdateStatus.Unsupported => "NaxPurpleCardBrush",
         _ => "NaxPinkCardBrush"
     });
+
+    private string RunBrush(bool card) => (RunState switch
+    {
+        UpdateRunState.Succeeded => "NaxGreen",
+        UpdateRunState.Failed => "NaxPink",
+        UpdateRunState.RestartRequired => "NaxOrange",
+        UpdateRunState.Queued or UpdateRunState.Skipped or UpdateRunState.NotApplicable => "NaxPurple",
+        _ => "NaxBlue"
+    }) + (card ? "CardBrush" : "Brush");
 }
 
 public sealed class DriverColumnLayout : INotifyPropertyChanged

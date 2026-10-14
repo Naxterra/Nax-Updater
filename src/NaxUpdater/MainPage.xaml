@@ -380,7 +380,7 @@
                                         Grid.Column="4"
                                         Content="{Binding UpdateActionText}"
                                         Visibility="{Binding UpdateActionVisibility}"
-                                        IsEnabled="{Binding CanInstall}"
+                                        IsEnabled="{Binding CanAct}"
                                         Click="UpdateRowButton_Click"
                                         Padding="12,5"
                                         HorizontalAlignment="Stretch"

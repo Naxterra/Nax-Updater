@@ -34,6 +34,8 @@ public sealed partial class MainPage : Page
     private bool _stopBatch;
     private CancellationTokenSource? _operationCancellation;
     private bool _restartPending;
+    // Outcomes of updates started since the last manual scan, by application identity.
+    private readonly Dictionary<string, (UpdateRunState State, string? Message)> _runOutcomes = new(StringComparer.Ordinal);
     private CancellationTokenSource? _providerCheckCancellation;
     private ApplicationSortColumn _sortColumn = ApplicationSortColumn.Name;
     private bool _sortDescending;
@@ -87,8 +89,7 @@ public sealed partial class MainPage : Page
             if (waitingForRestart)
             {
                 _restartPending = true;
-                UpdatesList.IsEnabled = false;
-                DriversList.IsEnabled = false;
+                RefreshMassUpdateButton();
                 UpdateBar.Title = LocalizationService.Format("UpdateRestartRequiredTitle", interruptedOperation.DisplayName);
                 UpdateBar.Message = LocalizationService.Get("RestartRequired");
                 UpdateBar.Severity = InfoBarSeverity.Warning;
@@ -161,6 +162,7 @@ public sealed partial class MainPage : Page
             return;
         }
         if (_updateBusy || _massUpdateBusy) return;
+        _runOutcomes.Clear();
         if (DriversWorkspace.Visibility == Visibility.Visible)
         {
             await CheckManufacturerDriversAsync();
@@ -700,9 +702,18 @@ public sealed partial class MainPage : Page
             await SaveScanDiagnosticsAsync(result, checkTimer.Elapsed);
 
             var applicationsByIdentity = _allApplications.ToDictionary(static row => row.Source.Identity, StringComparer.Ordinal);
-            _allUpdates = result.Results.Select(update => new UpdateRow(
-                update,
-                applicationsByIdentity.GetValueOrDefault(update.ApplicationIdentity))).ToArray();
+            _allUpdates = result.Results.Select(update =>
+            {
+                var row = new UpdateRow(update, applicationsByIdentity.GetValueOrDefault(update.ApplicationIdentity));
+                // A completed update that still has an offer shows the offer, not "updated".
+                if (_runOutcomes.TryGetValue(update.ApplicationIdentity, out var outcome) &&
+                    !(outcome.State == UpdateRunState.Succeeded && update.IsInstallable))
+                {
+                    row.RunState = outcome.State;
+                    row.RunMessage = outcome.Message;
+                }
+                return row;
+            }).ToArray();
             var available = result.InstallableUpdateCount;
             var knownReleases = result.KnownReleaseCount;
             _availableUpdateCount = available;
@@ -1122,13 +1133,13 @@ public sealed partial class MainPage : Page
 
     private async void UpdateRowButton_Click(object sender, RoutedEventArgs e)
     {
-        if (_updateBusy || _massUpdateBusy || _restartPending || sender is not Button { DataContext: UpdateRow row } button ||
+        if (_updateBusy || _massUpdateBusy || _restartPending || sender is not Button { DataContext: UpdateRow row } ||
             !row.CanInstall || row.Source.ExecutionPlan is null)
         {
             return;
         }
         UpdatesList.SelectedItem = row;
-        await ExecuteUpdateAsync(row, button, rescanAfterSuccess: true);
+        await ExecuteUpdateAsync(row, rescanAfterSuccess: true);
     }
 
     private async void UpdateAllButton_Click(object sender, RoutedEventArgs e)
@@ -1150,6 +1161,9 @@ public sealed partial class MainPage : Page
         _massUpdateBusy = true;
         _stopBatch = false;
         _restartPending = false;
+        _runOutcomes.Clear();
+        foreach (var row in queue) row.RunState = UpdateRunState.Queued;
+        RefreshMassUpdateButton();
         var completed = 0;
         var failed = 0;
         try
@@ -1159,7 +1173,7 @@ public sealed partial class MainPage : Page
                 if (_stopBatch) break;
                 UpdatesList.SelectedItem = row;
                 StatusText.Text = LocalizationService.Format("MassUpdateProgress", completed + failed + 1, queue.Length, row.Name);
-                if (await ExecuteUpdateAsync(row, null, rescanAfterSuccess: false))
+                if (await ExecuteUpdateAsync(row, rescanAfterSuccess: false))
                 {
                     completed++;
                 }
@@ -1171,6 +1185,11 @@ public sealed partial class MainPage : Page
                         break;
                     }
                 }
+            }
+            foreach (var row in queue.Where(static row => row.RunState == UpdateRunState.Queued))
+            {
+                row.RunState = UpdateRunState.Skipped;
+                _runOutcomes[row.Source.ApplicationIdentity] = (UpdateRunState.Skipped, null);
             }
             await ScanAsync();
             await CheckUpdatesAsync(showWorkspace: true);
@@ -1186,7 +1205,7 @@ public sealed partial class MainPage : Page
         }
     }
 
-    private async Task<bool> ExecuteUpdateAsync(UpdateRow row, Button? button, bool rescanAfterSuccess)
+    private async Task<bool> ExecuteUpdateAsync(UpdateRow row, bool rescanAfterSuccess)
     {
         if (!row.CanInstall || row.Source.ExecutionPlan is null)
         {
@@ -1199,12 +1218,10 @@ public sealed partial class MainPage : Page
         StopOperationButton.Content = LocalizationService.Get(storeQueue ? "StopStoreWaiting" : "StopAfterCurrent");
         StopOperationButton.Visibility = storeQueue || _massUpdateBusy ? Visibility.Visible : Visibility.Collapsed;
         StopOperationButton.IsEnabled = true;
-        if (button is not null)
-        {
-            button.IsEnabled = false;
-        }
         UpdateProgress.Visibility = Visibility.Visible;
         UpdateProgress.IsIndeterminate = true;
+        row.RunState = UpdateRunState.Preparing;
+        row.RunMessage = null;
         try
         {
             var cacheRoot = Path.Combine(
@@ -1218,6 +1235,14 @@ public sealed partial class MainPage : Page
                 {
                     UpdateProgress.Value = Math.Clamp(fraction * 100, 0, 100);
                 }
+                row.RunState = state.Stage switch
+                {
+                    UpdateTransactionStage.Revalidating or UpdateTransactionStage.Preparing => UpdateRunState.Preparing,
+                    UpdateTransactionStage.Quiescing => UpdateRunState.Closing,
+                    UpdateTransactionStage.Applying => UpdateRunState.Installing,
+                    UpdateTransactionStage.Verifying => UpdateRunState.Verifying,
+                    _ => row.RunState
+                };
                 StatusText.Text = state.Stage switch
                 {
                     UpdateTransactionStage.Revalidating => LocalizationService.Format("RevalidatingUpdate", row.Name),
@@ -1239,15 +1264,6 @@ public sealed partial class MainPage : Page
                 row.Source,
                 cacheRoot,
                 transactionProgress, operationCancellation.Token);
-
-            if (rescanAfterSuccess)
-            {
-                await ScanAsync();
-                if (_snapshot is not null)
-                {
-                    await CheckUpdatesAsync(showWorkspace: true);
-                }
-            }
 
             // Windows (e.g. the Store working through its own queue) can finish the
             // same update between the scan and this action; revalidation then finds
@@ -1281,6 +1297,21 @@ public sealed partial class MainPage : Page
                     : InfoBarSeverity.Error;
             UpdateBar.IsOpen = true;
             _restartPending = transaction.RequiresRestart;
+            row.RunState = succeeded ? UpdateRunState.Succeeded
+                : transaction.RequiresRestart ? UpdateRunState.RestartRequired
+                : transaction.Stage is UpdateTransactionStage.NoLongerApplicable or UpdateTransactionStage.CanceledBeforeChange ? UpdateRunState.NotApplicable
+                : UpdateRunState.Failed;
+            row.RunMessage = succeeded ? null : UpdateBar.Message;
+            _runOutcomes[row.Source.ApplicationIdentity] = (row.RunState, row.RunMessage);
+
+            if (rescanAfterSuccess)
+            {
+                await ScanAsync();
+                if (_snapshot is not null)
+                {
+                    await CheckUpdatesAsync(showWorkspace: true);
+                }
+            }
             return succeeded;
         }
         finally
@@ -1289,10 +1320,6 @@ public sealed partial class MainPage : Page
             StopOperationButton.Visibility = Visibility.Collapsed;
             UpdateProgress.Visibility = Visibility.Collapsed;
             UpdateProgress.IsIndeterminate = false;
-            if (button is not null)
-            {
-                button.IsEnabled = row.CanInstall;
-            }
             SetUpdateBusy(false, null);
         }
     }
@@ -1333,8 +1360,8 @@ public sealed partial class MainPage : Page
         _updateBusy = busy;
         ScanButton.IsEnabled = !busy;
         DriversButton.IsEnabled = !busy;
-        UpdatesList.IsEnabled = !busy && !_restartPending;
-        DriversList.IsEnabled = !busy && !_restartPending;
+        // The lists stay enabled so they can be scrolled and inspected while an
+        // update runs; row actions are locked instead (RefreshMassUpdateButton).
         ShowUpdatesButton.IsEnabled = !busy && _allUpdates.Count > 0;
         RefreshMassUpdateButton();
         ScanProgress.IsActive = busy;
@@ -1359,6 +1386,8 @@ public sealed partial class MainPage : Page
             ? LocalizationService.Format("UpdateAllCountWithStore", verifiedUpdates, storeActions)
             : LocalizationService.Format("UpdateAllCount", verifiedUpdates);
         UpdateAllButton.IsEnabled = !_updateBusy && !_massUpdateBusy && !_restartPending && verifiedUpdates + storeActions > 0;
+        var locked = _updateBusy || _massUpdateBusy || _restartPending;
+        foreach (var row in _allUpdates) row.ActionsLocked = locked;
     }
 
     private async void LanguageButton_Click(object sender, RoutedEventArgs e)

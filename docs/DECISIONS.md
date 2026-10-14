@@ -2,6 +2,15 @@
 
 Why Nax-Updater works the way it does. Newest first; every release adds its decisions here and updates [DESIGN.md](DESIGN.md). Each entry names the decision, the evidence that led to it, and what was rejected.
 
+## 0.17.22 (2026-10-14)
+
+**The lists stay usable while updates run, and each row shows its own state.**
+During "Alle aktualisieren" the whole update list was disabled: greyed out, not scrollable, and the only progress was one line in the status bar. Now only the actions are locked; each row moves through queued, preparing, closing, installing, verifying and its outcome, and outcomes stay visible after the closing rescan until the next manual scan.
+Rejected: auto-scrolling to the running row, because it would fight the user while they read other rows.
+
+**AusweisApp's signer pin moved to "Governikus Software GmbH".**
+AusweisApp 2.6.1 is signed by Governikus Software GmbH (Bremen, HRB 18756 HB, EV certificate issued 2026-10-12) instead of Governikus GmbH & Co. KG (HRA 22041 HB). Governikus's imprint lists Governikus Software GmbH with exactly that register number as part of its restructured group, and the release and its digest come from Governikus's own repository. The update had failed safely on the old pin; a signer change is never accepted automatically.
+
 ## 0.17.21 (2026-10-12)
 
 **NVIDIA series IDs are read from NVIDIA, not hardcoded.**
