@@ -2,6 +2,11 @@
 
 Why Nax-Updater works the way it does. Newest first; every release adds its decisions here and updates [DESIGN.md](DESIGN.md). Each entry names the decision, the evidence that led to it, and what was rejected.
 
+## 0.17.26 (2026-10-18)
+
+**0.17.25 upgrades lost NaxUpdater.Core.dll; packaging no longer overrides versions.**
+0.17.25 passed `-p:Version` to the whole build to fix the review's version finding. That also renumbered `NaxUpdater.Core.dll` from 1.0.0.0 to 0.17.25.0. On upgrade, Windows Installer kept the installed DLL as the "newer" file, then removed it with the old product, so upgraded installs could not start (fresh installs were complete). The version guard stays: packaging refuses a `-Version` that differs from the project and checks the published exe. The release check now compares the installed files with the published ones instead of only counting them.
+
 ## 0.17.25 (2026-10-18)
 
 Fixes from the 2026-10-18 code review; each was confirmed in the source before changing it.
@@ -14,7 +19,7 @@ Fixes from the 2026-10-18 code review; each was confirmed in the source before c
 
 **Access denied from the desktop shell keeps the current window.** The relaunch fallback did not catch `UnauthorizedAccessException`, which a restricted session raises.
 
-**Packaging cannot label a release with a version the app does not carry.** `-Version` must equal the project version and is passed to the app build; the published exe is checked.
+**Packaging cannot label a release with a version the app does not carry.** `-Version` must equal the project version, and the published exe is checked. (0.17.25 also passed it to the build; see 0.17.26.)
 
 **WinRAR 7.30 Beta 1 keeps its shell extension.** Name matching stripped "7.23.0" but not "7.30 Beta 1", so the MSIX shell extension stopped attaching to WinRAR. Prerelease labels (alpha, beta, RC, preview) are now part of the version suffix. This was the "known WinRAR failure" in every release since; behind it, live smoke checks had pinned past machine state (DeepL 26.8.2, Nextcloud 34.0.3, Intel chipset 10.1.20658.8883). Those now check the shape, the full smoke run passes again, and the release script stops on any smoke failure.
 

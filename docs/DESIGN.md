@@ -1,6 +1,6 @@
 # Nax-Updater design
 
-Current as of 0.17.25. Updated with every release; the reasons behind each rule are in [DECISIONS.md](DECISIONS.md).
+Current as of 0.17.26. Updated with every release; the reasons behind each rule are in [DECISIONS.md](DECISIONS.md).
 
 ## Goal
 
@@ -115,7 +115,7 @@ The product and executable are `Nax-Updater`; internal identifiers (namespaces, 
 GitHub Actions is disabled; releases are built and verified locally.
 
 1. Bump the version everywhere it appears (`git grep` the old version: README, bundle project, packaging script, app project, User-Agent strings).
-2. Packaging refuses a `-Version` that differs from the project version, passes it into the app build, and checks the published `Nax-Updater.exe` version. Algorithm, transaction and smoke tests must all pass; live smoke checks assert the shape of this machine's state, not past versions.
+2. Packaging refuses a `-Version` that differs from the project version and checks the published `Nax-Updater.exe` version. It never overrides versions with `-p:Version`, which would renumber `NaxUpdater.Core.dll` downwards. Algorithm, transaction and smoke tests must all pass; live smoke checks assert the shape of this machine's state, not past versions.
 3. Package, push, tag `vX` (annotated), `gh release create` with Setup.exe, portable ZIP and `SHA256SUMS.txt`.
-4. Download the published assets, verify `SHA256SUMS.txt`, install with `/passive`, verify the installed version and commit.
+4. Download the published assets, verify `SHA256SUMS.txt`, install with `/passive`, verify the installed version and commit, and compare the installed files with the published files (all but the `.pdb` files must be present).
 5. Update this file and [DECISIONS.md](DECISIONS.md).
