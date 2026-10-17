@@ -49,13 +49,20 @@ public static class UpdateHostLifetime
             LaunchThroughDesktop(executable, $"{DesktopFlag} {name}", show);
             return ready.WaitOne(TimeSpan.FromSeconds(10));
         }
-        catch (Exception exception) when (exception is COMException or InvalidOperationException or Microsoft.CSharp.RuntimeBinder.RuntimeBinderException)
+        catch (Exception exception) when (IsDesktopLaunchFailure(exception))
         {
             // Keep the current window usable. The close guard below refuses
             // destructive work from a host whose lifetime is still coupled.
             return false;
         }
     }
+
+    // Failures of the desktop-shell relaunch that keep the current window usable.
+    // A shell that denies access (restricted or remote sessions) raises
+    // UnauthorizedAccessException instead of a COMException.
+    internal static bool IsDesktopLaunchFailure(Exception exception) =>
+        exception is COMException or InvalidOperationException or UnauthorizedAccessException or
+            Microsoft.CSharp.RuntimeBinder.RuntimeBinderException;
 
     internal static void LaunchThroughDesktop(string executable, string arguments, int show = 1)
     {

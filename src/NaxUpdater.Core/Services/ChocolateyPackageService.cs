@@ -303,11 +303,14 @@ public sealed class ChocolateyPackageService : IChocolateyPackageService
                 return new UpdateExecutionResult(process.ExitCode, false,
                     $"Chocolatey upgrade failed (exit code {process.ExitCode}): {LastMeaningfulLine(log)}");
             // choco can exit 0 after resolving to another version (a dependency
-            // pin made it reinstall the old one), so its own record must agree.
-            var recorded = ChocolateyDependencyPlanner.ReadInstalled(InstallRoot()).TryGetValue(target.PackageId, out var package) ? package.Version : null;
-            if (recorded is not null && VersionOrder.Compare(recorded, target.Version) != 0)
-                return new UpdateExecutionResult(process.ExitCode, false,
-                    $"Chocolatey reported success, but {target.PackageId} is still {recorded} instead of {target.Version}: {LastMeaningfulLine(log)}");
+            // pin made it reinstall the old one), so its own records must agree:
+            // the package it ran and, for a wrapper route, the payload package.
+            var installed = ChocolateyDependencyPlanner.ReadInstalled(InstallRoot());
+            if (RecordMismatch(installed, target.PackageId, target.Version) is { } rootMismatch)
+                return new UpdateExecutionResult(process.ExitCode, false, $"{rootMismatch}: {LastMeaningfulLine(log)}");
+            if (target.PayloadPackageId is { } payload && target.PayloadVersion is { } payloadVersion &&
+                RecordMismatch(installed, payload, payloadVersion) is { } payloadMismatch)
+                return new UpdateExecutionResult(process.ExitCode, false, $"{payloadMismatch}: {LastMeaningfulLine(log)}");
             return new UpdateExecutionResult(process.ExitCode, true, null);
         }
         catch (Win32Exception exception) when (exception.NativeErrorCode == 1223)
@@ -319,6 +322,13 @@ public sealed class ChocolateyPackageService : IChocolateyPackageService
             try { if (File.Exists(logPath)) File.Delete(logPath); } catch (IOException) { } catch (UnauthorizedAccessException) { }
         }
     }
+
+    internal static string? RecordMismatch(IReadOnlyDictionary<string, ChocolateyPackageDetails> installed, string packageId, string version) =>
+        !installed.TryGetValue(packageId, out var package)
+            ? $"Chocolatey reported success, but it has no record of {packageId}"
+            : VersionOrder.Compare(package.Version, version) != 0
+                ? $"Chocolatey reported success, but {packageId} is still {package.Version} instead of {version}"
+                : null;
 
     private static string LastMeaningfulLine(string log)
     {

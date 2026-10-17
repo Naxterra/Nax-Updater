@@ -93,7 +93,7 @@ internal static class ChocolateyDependencyRegression
         feed["nodejs"] = new("nodejs", "26.11.1", [new("nodejs.install", "[26.11.1]")]);
         var carried = await provider.CheckAsync(node, CancellationToken.None);
         assert(carried.IsInstallable && carried.AvailableVersion == "26.11.1" &&
-               carried.ExecutionPlan?.ChocolateyTarget == new ChocolateyUpdateTarget("nodejs", "26.11.1"),
+               carried.ExecutionPlan?.ChocolateyTarget == new ChocolateyUpdateTarget("nodejs", "26.11.1", "nodejs.install", "26.11.1"),
             "The Node.js update was not applied through the nodejs wrapper package once it was published.");
 
         // Elevated WinGet arguments: what winget.exe parses must be the exact folder.

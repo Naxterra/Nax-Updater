@@ -34,6 +34,13 @@ public sealed partial class MainPage : Page
     private bool _stopBatch;
     private CancellationTokenSource? _operationCancellation;
     private bool _restartPending;
+    // One gate for everything that changes the machine (updates, driver installs,
+    // removals). While it is held, no other change may start, and a language
+    // restart or window close waits until it is released.
+    private bool _mutationActive;
+    private string? _pendingLanguage;
+    private bool _closeWhenIdle;
+    public bool IsChangingSystem => _mutationActive || _massUpdateBusy;
     // Outcomes of updates started since the last manual scan, by application identity.
     private readonly Dictionary<string, (UpdateRunState State, string? Message)> _runOutcomes = new(StringComparer.Ordinal);
     private CancellationTokenSource? _providerCheckCancellation;
@@ -563,7 +570,7 @@ public sealed partial class MainPage : Page
         DetailScopeText.Text = row.Scope;
         DetailInstallDateText.Text = row.InstallationDateDetail;
         DetailBlockedText.Text = row.BlockedProviders;
-        UninstallButton.IsEnabled = row.Source.RemovalPlan is not null;
+        RefreshUninstallButton();
         RemovalExplanation.Text = row.Source.RemovalPlan is not null ? string.Empty : LocalizationService.Get(
             row.Source.IsSystemComponent ? "RemovalWindowsComponent" : "RemovalUnavailable");
         RemovalExplanation.Visibility = row.Source.RemovalPlan is null ? Visibility.Visible : Visibility.Collapsed;
@@ -572,7 +579,7 @@ public sealed partial class MainPage : Page
 
     private async void UninstallButton_Click(object sender, RoutedEventArgs e)
     {
-        if (ApplicationsList.SelectedItem is not ApplicationRow row || row.Source.RemovalPlan is null)
+        if (ApplicationsList.SelectedItem is not ApplicationRow row || row.Source.RemovalPlan is null || OperationBlocked())
         {
             return;
         }
@@ -606,13 +613,21 @@ public sealed partial class MainPage : Page
         };
         nameBox.TextChanged += (_, _) =>
             confirmation.IsPrimaryButtonEnabled = string.Equals(nameBox.Text, row.Name, StringComparison.Ordinal);
-        if (await confirmation.ShowAsync() != ContentDialogResult.Primary)
+        if (await confirmation.ShowAsync() != ContentDialogResult.Primary || OperationBlocked())
         {
             return;
         }
+        // Updates hold this lease for each transaction; a removal holds it too, so the
+        // two can never run at the same time, even from another Nax-Updater instance.
+        using var lease = _updateTransactionLease.TryAcquire();
+        if (lease is null)
+        {
+            ShowOperationRunning();
+            return;
+        }
 
+        _mutationActive = true;
         SetUpdateBusy(true, LocalizationService.Format("RemovingApplication", row.Name));
-        UninstallButton.IsEnabled = false;
         try
         {
             var result = await _applicationRemovalService.RemoveAsync(row.Source);
@@ -645,8 +660,57 @@ public sealed partial class MainPage : Page
         finally
         {
             SetUpdateBusy(false, null);
-            UninstallButton.IsEnabled = ApplicationsList.SelectedItem is ApplicationRow selected && selected.Source.RemovalPlan is not null;
+            EndMutation();
         }
+    }
+
+    private void RefreshUninstallButton() =>
+        UninstallButton.IsEnabled = !_updateBusy && !_massUpdateBusy && !_restartPending &&
+                                    ApplicationsList.SelectedItem is ApplicationRow { Source.RemovalPlan: not null };
+
+    private bool OperationBlocked()
+    {
+        if (!_updateBusy && !_massUpdateBusy && !_restartPending) return false;
+        ShowOperationRunning();
+        return true;
+    }
+
+    private void ShowOperationRunning()
+    {
+        UpdateBar.Title = LocalizationService.Get("OperationRunningTitle");
+        UpdateBar.Message = LocalizationService.Get("OperationRunningMessage");
+        UpdateBar.Severity = InfoBarSeverity.Informational;
+        UpdateBar.IsOpen = true;
+    }
+
+    // Ends one change. When no change is left, a deferred language restart or
+    // window close runs now.
+    private void EndMutation()
+    {
+        _mutationActive = false;
+        if (IsChangingSystem) return;
+        if (_pendingLanguage is { } language)
+        {
+            _pendingLanguage = null;
+            App.RestartWithLanguage(language);
+        }
+        else if (_closeWhenIdle)
+        {
+            App.MainWindow.Close();
+        }
+    }
+
+    // Called by the window before it closes. Returns true when the close must wait
+    // for the running change; the window then closes on its own afterwards.
+    public bool DeferCloseUntilIdle()
+    {
+        if (!IsChangingSystem) return false;
+        _closeWhenIdle = true;
+        UpdateBar.Title = LocalizationService.Get("CloseAfterOperationTitle");
+        UpdateBar.Message = LocalizationService.Get("CloseAfterOperationMessage");
+        UpdateBar.Severity = InfoBarSeverity.Informational;
+        UpdateBar.IsOpen = true;
+        return true;
     }
 
     private void UpdateSummary(InventorySnapshot snapshot)
@@ -961,6 +1025,7 @@ public sealed partial class MainPage : Page
         }
 
         var update = row.Source.ExecutableUpdate!;
+        _mutationActive = true;
         SetUpdateBusy(true, LocalizationService.Format("RevalidatingUpdate", row.Name));
         DriverProgress.Visibility = Visibility.Visible;
         DriverProgress.IsIndeterminate = true;
@@ -1018,6 +1083,7 @@ public sealed partial class MainPage : Page
             DriverProgress.Visibility = Visibility.Collapsed;
             DriverProgress.IsIndeterminate = false;
             SetUpdateBusy(false, null);
+            EndMutation();
         }
         await CheckManufacturerDriversAsync();
     }
@@ -1202,6 +1268,7 @@ public sealed partial class MainPage : Page
         {
             _massUpdateBusy = false;
             RefreshMassUpdateButton();
+            EndMutation();
         }
     }
 
@@ -1211,6 +1278,7 @@ public sealed partial class MainPage : Page
         {
             return false;
         }
+        _mutationActive = true;
         SetUpdateBusy(true, LocalizationService.Format("RevalidatingUpdate", row.Name));
         using var operationCancellation = new CancellationTokenSource();
         _operationCancellation = operationCancellation;
@@ -1321,6 +1389,7 @@ public sealed partial class MainPage : Page
             UpdateProgress.Visibility = Visibility.Collapsed;
             UpdateProgress.IsIndeterminate = false;
             SetUpdateBusy(false, null);
+            EndMutation();
         }
     }
 
@@ -1364,6 +1433,7 @@ public sealed partial class MainPage : Page
         // update runs; row actions are locked instead (RefreshMassUpdateButton).
         ShowUpdatesButton.IsEnabled = !busy && _allUpdates.Count > 0;
         RefreshMassUpdateButton();
+        RefreshUninstallButton();
         ScanProgress.IsActive = busy;
         ScanProgress.Visibility = busy ? Visibility.Visible : Visibility.Collapsed;
         if (!string.IsNullOrWhiteSpace(message))
@@ -1482,6 +1552,16 @@ public sealed partial class MainPage : Page
             var selectedLanguage = languageBox.SelectedIndex == 1 ? "de-DE" : "en-US";
             if (!selectedLanguage.Equals(App.CurrentLanguage, StringComparison.OrdinalIgnoreCase))
             {
+                if (IsChangingSystem)
+                {
+                    // Restarting would close the host of a running installation.
+                    _pendingLanguage = selectedLanguage;
+                    UpdateBar.Title = LocalizationService.Get("LanguageAfterOperationTitle");
+                    UpdateBar.Message = LocalizationService.Get("LanguageAfterOperationMessage");
+                    UpdateBar.Severity = InfoBarSeverity.Informational;
+                    UpdateBar.IsOpen = true;
+                    return;
+                }
                 if (_providerCheckCancellation is not null) await _providerCheckCancellation.CancelAsync();
                 App.RestartWithLanguage(selectedLanguage);
             }

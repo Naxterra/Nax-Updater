@@ -20,6 +20,12 @@ public sealed partial class MainWindow : Window
         WindowRoot.ActualThemeChanged += (_, _) => UpdateCaptionButtons();
         UpdateCaptionButtons();
         RootFrame.Navigate(typeof(MainPage));
+        // Closing the window ends the process that owns a running installation's
+        // lease and payload locks; wait until the change is finished.
+        AppWindow.Closing += (_, args) =>
+        {
+            if (RootFrame.Content is MainPage page && page.DeferCloseUntilIdle()) args.Cancel = true;
+        };
     }
 
     private void UpdateCaptionButtons()

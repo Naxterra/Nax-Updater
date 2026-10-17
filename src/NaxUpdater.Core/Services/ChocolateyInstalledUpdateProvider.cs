@@ -70,7 +70,7 @@ public sealed class ChocolateyInstalledUpdateProvider(IChocolateyPackageService?
                     return Result(application, latest, UpdateStatus.NewerReleaseKnown, page,
                         $"Chocolatey published {packageId} {latest}, but the installed packages pin it; the newest {through.RootPackageId} {through.RootVersion} still requires {packageId} {through.TargetVersion}.", null) with
                         { Applicability = UpdateApplicability.NotApplicable };
-                target = new ChocolateyUpdateTarget(through.RootPackageId, through.RootVersion);
+                target = new ChocolateyUpdateTarget(through.RootPackageId, through.RootVersion, packageId, through.TargetVersion);
                 available = through.TargetVersion;
                 message = $"Chocolatey installed this application as {packageId}, which the installed {through.RootPackageId} package pins; " +
                           $"updating {through.RootPackageId} to {through.RootVersion} brings {packageId} {through.TargetVersion}.";

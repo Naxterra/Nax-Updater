@@ -1426,7 +1426,7 @@ var installedWinRar = snapshot.Applications.FirstOrDefault(app =>
     app.DisplayName.StartsWith("WinRAR", StringComparison.OrdinalIgnoreCase));
 if (installedWinRar is not null)
 {
-    Assert(installedWinRar.ManagementMode == ManagementMode.Registry && installedWinRar.NormalizedVersion == "7.23.0",
+    Assert(installedWinRar.ManagementMode == ManagementMode.Registry && !string.IsNullOrWhiteSpace(installedWinRar.NormalizedVersion),
         $"WinRAR's MSIX shell extension was not attached to its real Win32 installation: {installedWinRar.ManagementMode} · {installedWinRar.NormalizedVersion}.");
     Assert(installedWinRar.Evidence.Any(static evidence =>
             evidence.Label == "Attached MSIX integration package" &&
@@ -1515,7 +1515,7 @@ if (installedDeepL is not null)
     var deepLAssessment = await new ZeroInstallUpdateProvider(new ProcessQueryRunner())
         .CheckAsync(installedDeepL, CancellationToken.None);
     Assert(deepLAssessment.Status is UpdateStatus.Current or UpdateStatus.NewerReleaseKnown &&
-           deepLAssessment.AvailableVersion == "26.8.2.20990" &&
+           deepLAssessment.AvailableVersion is { } deepLAvailable && VersionOrder.Compare(deepLAvailable, installedDeepL.NormalizedVersion) >= 0 &&
            deepLAssessment.Message?.Contains("digest", StringComparison.OrdinalIgnoreCase) == true,
         $"DeepL's Zero Install refresh and cached-selection fallback both failed: {deepLAssessment.Message}");
 }
@@ -1546,7 +1546,8 @@ var nextcloud = snapshot.Applications.FirstOrDefault(app => app.DisplayName.Equa
 if (nextcloud is not null)
 {
     Assert(nextcloud.ManagementMode == ManagementMode.DirectVendor, "Nextcloud should prefer its direct vendor release source.");
-    Assert(nextcloud.NormalizedVersion == "34.0.3", $"Unexpected normalized Nextcloud version: {nextcloud.NormalizedVersion}");
+    // Live machine state changes with every update; check the shape, not a past version.
+    Assert(System.Text.RegularExpressions.Regex.IsMatch(nextcloud.NormalizedVersion ?? "", @"^[0-9]+\.[0-9]+\.[0-9]+$"), $"Unexpected normalized Nextcloud version: {nextcloud.NormalizedVersion}");
     Assert(nextcloud.PrimaryInstallPath?.EndsWith("nextcloud.exe", StringComparison.OrdinalIgnoreCase) == true, "Nextcloud executable path was not resolved.");
     Assert(nextcloud.RemovalPlan?.Kind == RemovalKind.WindowsInstaller, "Nextcloud MSI removal plan was not detected.");
     var liveProviderCatalog = await UpdateProviderCatalogLoader.LoadAsync(
@@ -1673,7 +1674,7 @@ if (intelChipsetGroup is not null)
 {
     Assert(intelChipsetGroup.Driver.DeviceName.Contains("Chipset Device Software", StringComparison.OrdinalIgnoreCase) &&
            intelChipsetGroup.Driver.GroupMembers is { Count: > 1 } &&
-           intelChipsetGroup.AvailableVersion == "10.1.20658.8883" &&
+           intelChipsetGroup.AvailableVersion is { } chipsetVersion && System.Text.RegularExpressions.Regex.IsMatch(chipsetVersion, @"^10\.1\.[0-9]+\.[0-9]+$") &&
            intelChipsetGroup.SourceUri?.AbsoluteUri.Contains("19347", StringComparison.OrdinalIgnoreCase) == true,
         "Intel chipset component INFs were not grouped and checked against Intel's official package.");
 }

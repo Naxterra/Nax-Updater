@@ -98,7 +98,7 @@ internal static partial class MsixIntegrationCorrelator
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
     }
 
-    private static string CanonicalProductName(string displayName)
+    internal static string CanonicalProductName(string displayName)
     {
         var withoutArchitecture = ArchitectureDisplaySuffixRegex().Replace(displayName, string.Empty);
         var withoutVersion = VersionDisplaySuffixRegex().Replace(withoutArchitecture, string.Empty);
@@ -133,7 +133,8 @@ internal static partial class MsixIntegrationCorrelator
     [GeneratedRegex(@"\s*\((?:x64|x86|arm64|64[- ]?bit(?:\s+x64)?|32[- ]?bit(?:\s+x86)?)[^)]*\)\s*$", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
     private static partial Regex ArchitectureDisplaySuffixRegex();
 
-    [GeneratedRegex(@"\s+v?\d+(?:\.\d+)+(?:[-+][A-Za-z0-9.-]+)?\s*$", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
+    // A trailing version, optionally with a prerelease label ("7.30 Beta 1", "2.0 RC2").
+    [GeneratedRegex(@"\s+v?\d+(?:\.\d+)+(?:[-+][A-Za-z0-9.-]+)?(?:\s+(?:alpha|beta|rc|preview|pre)\s*\d*)?\s*$", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
     private static partial Regex VersionDisplaySuffixRegex();
 
     private sealed record CorrelationMatch(ApplicationCandidate Candidate, int Score);

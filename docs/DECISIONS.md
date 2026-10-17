@@ -2,6 +2,24 @@
 
 Why Nax-Updater works the way it does. Newest first; every release adds its decisions here and updates [DESIGN.md](DESIGN.md). Each entry names the decision, the evidence that led to it, and what was rejected.
 
+## 0.17.25 (2026-10-18)
+
+Fixes from the 2026-10-18 code review; each was confirmed in the source before changing it.
+
+**One operation gate for every change.** Uninstall did not check for a running update and did not take the transaction lease, so a removal could start during an update, and whichever finished first released the other's busy state. Changing the language restarted the app, closing the host of a running installation. Now removals, updates and driver installs share one gate, removal takes the lease, and the language restart and window close wait for the gate.
+
+**A failed same-version Chocolatey repair is no longer a success.** The installed version already equals the target before the repair runs, so a canceled UAC prompt, exit code 1603, or a record that did not change all ended as "succeeded". Only a successful execution proves a repair; real version advances keep their recovery (an installer error after the target was reached still counts).
+
+**Chocolatey wrapper routes pass validation.** The plan compared the wrapper's version (nodejs 9.0.0) with the payload version the app was offered (nodejs.install 2.0.0) and turned valid updates into errors whenever the two numbers differed. The plan now names both packages; after `choco` exits, both records must match, and a missing record is a failure.
+
+**Access denied from the desktop shell keeps the current window.** The relaunch fallback did not catch `UnauthorizedAccessException`, which a restricted session raises.
+
+**Packaging cannot label a release with a version the app does not carry.** `-Version` must equal the project version and is passed to the app build; the published exe is checked.
+
+**WinRAR 7.30 Beta 1 keeps its shell extension.** Name matching stripped "7.23.0" but not "7.30 Beta 1", so the MSIX shell extension stopped attaching to WinRAR. Prerelease labels (alpha, beta, RC, preview) are now part of the version suffix. This was the "known WinRAR failure" in every release since; behind it, live smoke checks had pinned past machine state (DeepL 26.8.2, Nextcloud 34.0.3, Intel chipset 10.1.20658.8883). Those now check the shape, the full smoke run passes again, and the release script stops on any smoke failure.
+
+Not done from the review's suggestions: a per-operation history, a download cache view, and catalog validation at load time.
+
 ## 0.17.24 (2026-10-14)
 
 **Orphaned bundle registrations are recognized as superseded.**

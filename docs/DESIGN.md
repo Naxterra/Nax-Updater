@@ -1,6 +1,6 @@
 # Nax-Updater design
 
-Current as of 0.17.24. Updated with every release; the reasons behind each rule are in [DECISIONS.md](DECISIONS.md).
+Current as of 0.17.25. Updated with every release; the reasons behind each rule are in [DECISIONS.md](DECISIONS.md).
 
 ## Goal
 
@@ -35,6 +35,8 @@ Hard requirements:
 5. **Execution** (`UpdateTransactionCoordinator`): revalidate, download and verify, close bound processes, install, then re-check the installed version. A journal and a lease make interrupted updates recoverable.
 
 ## While updates run
+
+One gate covers every change to the machine: updates, Update All, driver installs and removals. While it is held no other change can start (removal is checked before its dialogs and again after confirmation, and holds the same transaction lease as updates). A language change is saved and the restart waits for the gate; closing the window is deferred the same way, and the window closes on its own afterwards.
 
 The update and driver lists stay enabled, so they can be scrolled and every row's details read during an update; only the row actions and "Alle aktualisieren" are locked. Each row in a run shows its own state in the status column (in Warteschlange, wird vorbereitet, Anwendung wird geschlossen, wird installiert, wird geprüft, then aktualisiert, fehlgeschlagen, nicht mehr anwendbar, Neustart erforderlich or übersprungen). Outcomes stay on the rows after the closing rescan until the next manual scan; a failed row shows its reason above the provider notes. A row that is still installable after a reported success shows the remaining offer instead of "aktualisiert".
 
@@ -74,6 +76,8 @@ Every recipe is added only after a real download was verified against its hash a
 - the publisher's SHA-256 or SHA-512;
 - the expected Authenticode publisher.
 
+A same-version repair (Chocolatey reinstalling a version that was installed outside it, so its record catches up) is proven only by a successful execution and matching Chocolatey records, never by the unchanged application version. A Chocolatey wrapper route names both the package it runs (`nodejs 9.0.0`) and the payload the application belongs to (`nodejs.install 2.0.0`); both records are checked afterwards.
+
 Exceptions, each modelled explicitly in the plan:
 
 - **Unsigned publisher** (`unsigned`): the hash alone, and only when the publisher ships no signed builds.
@@ -111,7 +115,7 @@ The product and executable are `Nax-Updater`; internal identifiers (namespaces, 
 GitHub Actions is disabled; releases are built and verified locally.
 
 1. Bump the version everywhere it appears (`git grep` the old version: README, bundle project, packaging script, app project, User-Agent strings).
-2. Run the algorithm tests and build the app; read the smoke-test output (a known local WinRAR assertion fails on the development PC; any other failure blocks the release).
+2. Packaging refuses a `-Version` that differs from the project version, passes it into the app build, and checks the published `Nax-Updater.exe` version. Algorithm, transaction and smoke tests must all pass; live smoke checks assert the shape of this machine's state, not past versions.
 3. Package, push, tag `vX` (annotated), `gh release create` with Setup.exe, portable ZIP and `SHA256SUMS.txt`.
 4. Download the published assets, verify `SHA256SUMS.txt`, install with `/passive`, verify the installed version and commit.
 5. Update this file and [DECISIONS.md](DECISIONS.md).

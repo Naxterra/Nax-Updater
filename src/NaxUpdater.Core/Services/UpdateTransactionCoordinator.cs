@@ -177,6 +177,7 @@ public sealed class UpdateTransactionCoordinator
         CancellationToken cancellationToken)
     {
         var changeMayHaveStarted = false;
+        var repairOnly = false;
         UpdateCheckResult? freshAssessment = null;
         UpdateExecutionResult? execution = null;
         PreparedUpdateExecution? prepared = null;
@@ -253,6 +254,10 @@ public sealed class UpdateTransactionCoordinator
 
             report(UpdateTransactionStage.Applying, null);
             changeMayHaveStarted = true;
+            // A same-version repair (Chocolatey reinstalling a version installed outside it
+            // so its record catches up) satisfies the version check before it runs. Its
+            // success is proven only by a successful execution, never by the version.
+            repairOnly = VersionOrder.Compare(freshAssessment.AvailableVersion, freshAssessment.InstalledVersion) <= 0;
             execution = await _backend.ApplyWithProgressAsync(freshAssessment, prepared,
                 new Progress<double>(fraction => report(UpdateTransactionStage.Applying, fraction)), cancellationToken);
             prepared = null;
@@ -261,7 +266,7 @@ public sealed class UpdateTransactionCoordinator
             var observed = execution.ExitCode == 1223
                 ? await _backend.RevalidateAsync(freshAssessment, cancellationToken)
                 : await ObserveInstalledTargetAsync(freshAssessment, cancellationToken);
-            if (ReachedTarget(freshAssessment, observed) ||
+            if (ReachedTarget(freshAssessment, observed) && (!repairOnly || execution.IsSuccess) ||
                 execution.IsSuccess && ReconciledStoreQueue(freshAssessment, observed))
             {
                 var completedStage = execution.ExitCode is 1641 or 3010
@@ -314,7 +319,7 @@ public sealed class UpdateTransactionCoordinator
                 {
                     report(UpdateTransactionStage.Verifying, null);
                     var observed = await _backend.RevalidateAsync(freshAssessment, CancellationToken.None);
-                    if (ReachedTarget(freshAssessment, observed))
+                    if (ReachedTarget(freshAssessment, observed) && !repairOnly)
                     {
                         return new(UpdateTransactionStage.Succeeded, observed, execution, null);
                     }
@@ -352,7 +357,7 @@ public sealed class UpdateTransactionCoordinator
                 {
                     report(UpdateTransactionStage.Verifying, null);
                     var observed = await _backend.RevalidateAsync(freshAssessment, CancellationToken.None);
-                    if (ReachedTarget(freshAssessment, observed))
+                    if (ReachedTarget(freshAssessment, observed) && !repairOnly)
                     {
                         return new(UpdateTransactionStage.Succeeded, observed, execution, null);
                     }
@@ -539,7 +544,8 @@ public static class UpdatePlanValidator
                 plan.NativeStoreTarget.ProductId != plan.StoreProductId
                 => "The native Store plan does not identify the approved package and version.",
             UpdateExecutionKind.ChocolateyPackage when plan.ChocolateyTarget is null ||
-                plan.ChocolateyTarget.Version != update.AvailableVersion
+                (plan.ChocolateyTarget.PayloadVersion ?? plan.ChocolateyTarget.Version) != update.AvailableVersion ||
+                plan.ChocolateyTarget.PayloadPackageId is null != plan.ChocolateyTarget.PayloadVersion is null
                 => "The Chocolatey update plan does not contain the approved package and version.",
             _ => null
         };

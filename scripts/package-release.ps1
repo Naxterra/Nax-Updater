@@ -24,12 +24,20 @@ function Reset-ProjectDirectory([string]$Path) {
     New-Item -ItemType Directory -Path $fullPath -Force | Out-Null
 }
 
+# The application's own version (assembly, About dialog, User-Agent strings) comes
+# from the project and the source; packaging another -Version would label installers
+# with a number the application does not carry.
+$projectVersion = ([xml](Get-Content -LiteralPath (Join-Path $repoRoot 'src\NaxUpdater\NaxUpdater.csproj') -Raw)).Project.PropertyGroup.Version | Where-Object { $_ } | Select-Object -First 1
+if ($projectVersion -ne $Version) {
+    throw "Version mismatch: -Version is $Version but src\NaxUpdater\NaxUpdater.csproj says $projectVersion. Bump every version reference first (git grep the old version)."
+}
+
 Reset-ProjectDirectory $publishDirectory
 Reset-ProjectDirectory $installerDirectory
 Reset-ProjectDirectory $bundleDirectory
 Reset-ProjectDirectory $releaseDirectory
 
-dotnet build (Join-Path $repoRoot 'NaxUpdater.slnx') -c Release
+dotnet build (Join-Path $repoRoot 'NaxUpdater.slnx') -c Release -p:Version=$Version
 if ($LASTEXITCODE -ne 0) { throw 'Solution build failed.' }
 
 dotnet run --project (Join-Path $repoRoot 'tests\NaxUpdater.Core.TransactionTests\NaxUpdater.Core.TransactionTests.csproj') -c Release --no-build
@@ -41,8 +49,12 @@ if ($LASTEXITCODE -ne 0) { throw 'Algorithm regression tests failed.' }
 dotnet run --project (Join-Path $repoRoot 'tests\NaxUpdater.Core.SmokeTests\NaxUpdater.Core.SmokeTests.csproj') -c Release --no-build
 if ($LASTEXITCODE -ne 0) { throw 'Smoke tests failed.' }
 
-dotnet publish (Join-Path $repoRoot 'src\NaxUpdater\NaxUpdater.csproj') -c Release -r win-x64 --self-contained true -o $publishDirectory
+dotnet publish (Join-Path $repoRoot 'src\NaxUpdater\NaxUpdater.csproj') -c Release -r win-x64 --self-contained true -o $publishDirectory -p:Version=$Version
 if ($LASTEXITCODE -ne 0) { throw 'Portable publish failed.' }
+$publishedVersion = (Get-Item -LiteralPath (Join-Path $publishDirectory 'Nax-Updater.exe')).VersionInfo.ProductVersion
+if (-not $publishedVersion -or -not ($publishedVersion -eq $Version -or $publishedVersion.StartsWith("$Version+"))) {
+    throw "The published Nax-Updater.exe reports version '$publishedVersion' instead of $Version."
+}
 
 dotnet build (Join-Path $repoRoot 'installer\NaxUpdater.Installer.wixproj') -c Release -p:NaxUpdaterVersion=$Version
 if ($LASTEXITCODE -ne 0) { throw 'MSI build failed.' }

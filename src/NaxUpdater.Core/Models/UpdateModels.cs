@@ -166,7 +166,10 @@ public sealed record UpdateExecutionPlan(
 
 public sealed record StoreQueueTarget(string ProductId, string PackageFamilyName, string InstalledVersion);
 
-public sealed record ChocolateyUpdateTarget(string PackageId, string Version);
+// PackageId/Version is what `choco upgrade` runs. For a wrapper route (nodejs pinning
+// nodejs.install) the payload package and version the application belongs to differ;
+// the installed application and Chocolatey's payload record are verified against those.
+public sealed record ChocolateyUpdateTarget(string PackageId, string Version, string? PayloadPackageId = null, string? PayloadVersion = null);
 
 public sealed record PublishedStorePackage(
     string ProductId, string SkuId, string PackageFamilyName,
