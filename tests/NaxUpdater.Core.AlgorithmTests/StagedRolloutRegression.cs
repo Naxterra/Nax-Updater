@@ -57,12 +57,12 @@ internal static class StagedRolloutRegression
         {
             Id(null);
             var unknown = await provider.CheckAsync(app, CancellationToken.None);
-            assert(unknown is { Status: UpdateStatus.NewerReleaseKnown, ExecutionPlan: null, AvailabilityReason: UpdateAvailabilityReason.StagedRollout } &&
+            assert(unknown is { Status: UpdateStatus.Current, ExecutionPlan: null, AvailabilityReason: UpdateAvailabilityReason.StagedRollout, AnnouncedVersion: "1.3.0-7", AvailableVersion: "1.2.0" } &&
                    unknown.Message?.Contains("has not stored its rollout ID") == true && unknown.RolloutThresholdPercent is null,
                 $"{provider.Id}: a staged release was offered to an installation without an updater ID.");
             Id(CurseForgeId);
             var outside = await provider.CheckAsync(app, CancellationToken.None);
-            assert(outside is { Status: UpdateStatus.NewerReleaseKnown, ExecutionPlan: null, AvailabilityReason: UpdateAvailabilityReason.StagedRollout } &&
+            assert(outside is { Status: UpdateStatus.Current, ExecutionPlan: null, AvailabilityReason: UpdateAvailabilityReason.StagedRollout, AnnouncedVersion: "1.3.0-7" } &&
                    outside.Message?.Contains("90.4 %") == true && outside.Message.Contains("reaches 91 %") && outside.RolloutThresholdPercent == 91,
                 $"{provider.Id}: a staged release was offered to an installation outside the rollout.");
             Id("00000000-0000-4000-8000-000010000000");
@@ -77,7 +77,8 @@ internal static class StagedRolloutRegression
         var held = await new UpdateCheckService([new OfficialSiteUpdateProvider(http, recipe, appData), new Catalog()])
             .CheckAsync(new(DateTimeOffset.UtcNow, [app], [], []));
         var result = held.Results.Single();
-        assert(!result.IsInstallable && result.AvailabilityReason == UpdateAvailabilityReason.StagedRollout && held.InstallableUpdateCount == 0 &&
+        assert(!result.IsInstallable && result.Status == UpdateStatus.Current && result.AvailabilityReason == UpdateAvailabilityReason.StagedRollout &&
+               held.InstallableUpdateCount == 0 && held.KnownReleaseCount == 0 &&
                result.SourceChecks?.Any(c => c.ProviderId == "fixture-catalog" && c.Status == UpdateStatus.Available) == true &&
                result.SourceChecks.Any(c => c.AvailabilityReason == UpdateAvailabilityReason.StagedRollout && c.RolloutThresholdPercent == 91),
             "A fallback catalog delivered a release the publisher is still withholding from this installation.");

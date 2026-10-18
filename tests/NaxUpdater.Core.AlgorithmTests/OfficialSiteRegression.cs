@@ -59,7 +59,7 @@ internal static class OfficialSiteRegression
             ExpectedSigner = "Vendor Ltd", AllowedHosts = ["cdn.example"], InstallerKind = UpdateExecutionKind.DownloadedExe, InstallerArguments = ["/S"]
         });
         var staged = await feed.CheckAsync(App("Feed App 1.2.0", "1.2.0.5"), CancellationToken.None);
-        assert(staged.Status == UpdateStatus.NewerReleaseKnown && staged.ExecutionPlan is null && staged.Message?.Contains("25 %") == true,
+        assert(staged.Status == UpdateStatus.Current && staged.ExecutionPlan is null && staged.AnnouncedVersion == "1.3.0-7" && staged.Message?.Contains("25 %") == true,
             "A staged rollout was offered before the publisher released it to everyone.");
         pages["https://feed.example/latest.yml"] = pages["https://feed.example/latest.yml"].Replace("stagingPercentage: 25", "stagingPercentage: 100");
         var released = await feed.CheckAsync(App("Feed App 1.2.0", "1.2.0.5"), CancellationToken.None);

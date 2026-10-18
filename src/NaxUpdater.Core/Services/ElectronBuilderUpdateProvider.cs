@@ -60,12 +60,13 @@ public sealed partial class ElectronBuilderUpdateProvider(HttpClient httpClient,
             ElectronStagedRollout.Position(application, appDataRoot) is var position &&
             (position is null || !ElectronStagedRollout.Includes(percent, position.Value)))
         {
-            return Error(application, ElectronStagedRollout.HeldMessage(metadata.Version, percent, position), metadata.Version, configuration.ReleasePage) with
+            return Error(application, ElectronStagedRollout.HeldMessage(metadata.Version, percent, position), application.NormalizedVersion, configuration.ReleasePage) with
             {
-                Status = UpdateStatus.NewerReleaseKnown,
+                Status = UpdateStatus.Current,
                 Architecture = architecture,
                 Channel = configuration.Channel,
-                Applicability = UpdateApplicability.NotApplicable,
+                Applicability = UpdateApplicability.NotRequired,
+                AnnouncedVersion = metadata.Version,
                 AvailabilityReason = UpdateAvailabilityReason.StagedRollout,
                 RolloutThresholdPercent = ElectronStagedRollout.ThresholdPercent(position)
             };

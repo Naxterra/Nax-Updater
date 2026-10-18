@@ -1,6 +1,6 @@
 # Nax-Updater design
 
-Current as of 0.17.26. Updated with every release; the reasons behind each rule are in [DECISIONS.md](DECISIONS.md).
+Current as of 0.17.27. Updated with every release; the reasons behind each rule are in [DECISIONS.md](DECISIONS.md).
 
 ## Goal
 
@@ -55,7 +55,7 @@ Authorities (`UpdateProviderAuthority`), highest first:
 
 Selection rule: the first source, in this order, that reports the installed version as current settles the app. A lower source can neither offer an installer nor turn the app into an error. Above that point, the highest installable result wins, unless a higher source failed (a lower source never bypasses a higher source's verification failure). A Store queue item always wins, so a platform-owned deployment is never duplicated.
 
-A publisher's **staged rollout** that has not reached this PC settles the app the same way as "current": the release is shown as known, but no lower catalog may deliver it early.
+A publisher's **staged rollout** that has not reached this PC is reported as current: the release is not released to this PC, so it is no update for it. The held version is named only in the details, and as a current result it settles the app, so no lower catalog may deliver it early.
 
 A **superseded registration** (an entry named "Product - 12.0.30501" next to a current "Product - 12.0.40664" of the same name family, at or above the version offered for the older one) is shown as current with the provider "Neuere installierte Registrierung". Burn bundles such as Visual C++ redistributables register themselves even when all their packages are obsolete.
 
@@ -86,7 +86,7 @@ Exceptions, each modelled explicitly in the plan:
 
 ## Staged rollouts
 
-Electron applications use electron-updater, which keeps a random UUID in `%APPDATA%\<app>\.updaterId` and offers a release with `stagingPercentage: N` only when the UUID's last four bytes, read big-endian and divided by `0xFFFFFFFF`, are below `N / 100`. `ElectronStagedRollout` reads the same file (folder named after the executable's product name or its install folder) and applies the same rule, in both the official-site provider and the installed-metadata provider. Without an ID the release waits until the rollout is complete. The result carries the percentage at which this PC is included (`RolloutThresholdPercent`); the UI shows "Gestaffelte Freigabe · ab N %".
+Electron applications use electron-updater, which keeps a random UUID in `%APPDATA%\<app>\.updaterId` and offers a release with `stagingPercentage: N` only when the UUID's last four bytes, read big-endian and divided by `0xFFFFFFFF`, are below `N / 100`. `ElectronStagedRollout` reads the same file (folder named after the executable's product name or its install folder) and applies the same rule, in both the official-site provider and the installed-metadata provider. Without an ID the release waits until the rollout is complete. Until this PC is included the app is shown as "Aktuell"; the details name the held version (`AnnouncedVersion`) and the percentage at which this PC is included (`RolloutThresholdPercent`).
 
 ## Drivers
 

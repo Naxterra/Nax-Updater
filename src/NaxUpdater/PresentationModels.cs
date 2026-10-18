@@ -234,9 +234,6 @@ public sealed class UpdateRow : INotifyPropertyChanged
             LocalizationService.Get("StatusStoreOfferPending"),
         UpdateStatus.NewerReleaseKnown when reason == UpdateAvailabilityReason.AwaitingReleaseVerification =>
             LocalizationService.Get("StatusAwaitingReleaseVerification"),
-        UpdateStatus.NewerReleaseKnown when reason == UpdateAvailabilityReason.StagedRollout => rolloutThresholdPercent is { } threshold
-            ? LocalizationService.Format("StatusStagedRolloutFrom", threshold)
-            : LocalizationService.Get("StatusStagedRolloutPending"),
         UpdateStatus.NewerReleaseKnown when reason == UpdateAvailabilityReason.DriverUpdateInDriversView =>
             LocalizationService.Get("StatusDriverUpdateInDriversView"),
         UpdateStatus.NewerReleaseKnown => LocalizationService.Get("StatusNewerReleaseKnown"),

@@ -2,6 +2,13 @@
 
 Why Nax-Updater works the way it does. Newest first; every release adds its decisions here and updates [DESIGN.md](DESIGN.md). Each entry names the decision, the evidence that led to it, and what was rejected.
 
+## 0.17.27 (2026-10-18)
+
+**A staged rollout that has not reached this PC is shown as current.**
+CurseForge 1.324 is being released to 75 % of installations; this PC's place is 90.4 %. It was listed as "Gestaffelte Freigabe · ab 91 %" and counted among known newer versions. The owner's rule: a version not released to this PC is no update for it. Such a result is now Current, the held version and the percentage at which this PC is included appear only in the details, and it still settles the app against lower catalogs.
+
+The 0.17.25 GitHub release (upgrades lost `NaxUpdater.Core.dll`) was deleted; its tag remains.
+
 ## 0.17.26 (2026-10-18)
 
 **0.17.25 upgrades lost NaxUpdater.Core.dll; packaging no longer overrides versions.**

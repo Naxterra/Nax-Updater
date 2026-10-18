@@ -56,9 +56,9 @@ public static class ElectronStagedRollout
 
     public static string HeldMessage(string version, int percent, double? position) => position is { } value
         ? string.Create(CultureInfo.InvariantCulture,
-            $"The publisher is rolling {version} out gradually ({percent} % of installations). This installation's rollout position is {value * 100:0.0} %, so the application's own updater does not offer it yet either; it is offered once the rollout reaches {ThresholdPercent(value)} %.")
+            $"Current for this installation. The publisher is rolling {version} out gradually ({percent} % of installations). This installation's rollout position is {value * 100:0.0} %, so the application's own updater does not offer it yet either; it is offered once the rollout reaches {ThresholdPercent(value)} %.")
         : string.Create(CultureInfo.InvariantCulture,
-            $"The publisher is rolling {version} out gradually ({percent} % of installations). The application has not stored its rollout ID yet, so it is offered once the rollout is complete.");
+            $"Current for this installation. The publisher is rolling {version} out gradually ({percent} % of installations). The application has not stored its rollout ID yet, so it is offered once the rollout is complete.");
 
     // Electron keeps userData in %APPDATA%\<app name>: the product name for most
     // applications (CurseForge, Vortex), the package name for others whose install

@@ -67,10 +67,11 @@ public sealed class OfficialSiteUpdateProvider(HttpClient httpClient, OfficialSi
             int.TryParse(rollout.Groups["percent"].Value, out var percent) && percent < 100 &&
             ElectronStagedRollout.Position(application, appDataRoot) is var position &&
             (position is null || !ElectronStagedRollout.Includes(percent, position.Value)))
-            return Result(application, version, UpdateStatus.NewerReleaseKnown, notes,
+            return Result(application, installed, UpdateStatus.Current, notes,
                 ElectronStagedRollout.HeldMessage(version, percent, position), null,
-                UpdateApplicability.NotApplicable, UpdateAvailabilityReason.StagedRollout) with
+                UpdateApplicability.NotRequired, UpdateAvailabilityReason.StagedRollout) with
             {
+                AnnouncedVersion = version,
                 RolloutThresholdPercent = ElectronStagedRollout.ThresholdPercent(position)
             };
 

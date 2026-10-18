@@ -52,6 +52,10 @@ public static partial class LocalizationService
 
     public static string ProviderMessage(UpdateCheckResult update)
     {
+        if (update.AvailabilityReason == UpdateAvailabilityReason.StagedRollout)
+            return update.RolloutThresholdPercent is { } threshold
+                ? Format("StagedRolloutHeldMessage", update.AnnouncedVersion, threshold)
+                : Format("StagedRolloutHeldPendingMessage", update.AnnouncedVersion);
         if (update.Status == UpdateStatus.StoreQueued) return update.IsInstallable ? Get("StoreQueueMessage") : update.Message ?? Get("StatusStoreQueued");
         if (update.AvailabilityReason == UpdateAvailabilityReason.NoApplicableStoreUpdate) return Get("NoApplicableStoreUpdateMessage");
         if (update.ProviderId == "wsl-native" && update.Status != UpdateStatus.Error) return Get("ProviderWslNote");
