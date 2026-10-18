@@ -2,7 +2,7 @@
 param(
     [Parameter()]
     [ValidatePattern('^\d+\.\d+\.\d+$')]
-    [string]$Version = '0.17.26'
+    [string]$Version = '0.17.27'
 )
 
 $ErrorActionPreference = 'Stop'
@@ -28,8 +28,8 @@ function Reset-ProjectDirectory([string]$Path) {
 # from the project and the source; packaging another -Version would label installers
 # with a number the application does not carry.
 # Never override it with -p:Version: that also renumbers NaxUpdater.Core.dll
-# (1.0.0.0 -> 0.17.26.0), and Windows Installer then treats the installed DLL as
-# newer, skips it and removes it during the upgrade (0.17.26 shipped without it).
+# (1.0.0.0 -> 0.17.27.0), and Windows Installer then treats the installed DLL as
+# newer, skips it and removes it during the upgrade (0.17.27 shipped without it).
 $projectVersion = ([xml](Get-Content -LiteralPath (Join-Path $repoRoot 'src\NaxUpdater\NaxUpdater.csproj') -Raw)).Project.PropertyGroup.Version | Where-Object { $_ } | Select-Object -First 1
 if ($projectVersion -ne $Version) {
     throw "Version mismatch: -Version is $Version but src\NaxUpdater\NaxUpdater.csproj says $projectVersion. Bump every version reference first (git grep the old version)."
