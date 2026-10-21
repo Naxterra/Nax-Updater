@@ -2,6 +2,13 @@
 
 Why Nax-Updater works the way it does. Newest first; every release adds its decisions here and updates [DESIGN.md](DESIGN.md). Each entry names the decision, the evidence that led to it, and what was rejected.
 
+## 0.17.28 (2026-10-21)
+
+**WinRAR follows the installed channel and RARLAB's new link labels.**
+RARLAB's download page now labels its links "English (64-bit x64)" instead of "English" and lists the 7.30 beta 1 table before the 7.23 release table. The check required the old label and failed for every WinRAR installation. It now accepts both label forms, ignores ARM64 and 32-bit links, and chooses the highest matching x64 build instead of the first one.
+
+A beta installation (display name "WinRAR 7.30 Beta 1") follows the beta line and final releases, and a final installation is offered final releases only. WinRAR registers beta n as x.yy.n and a release as x.yy.0, so a plain version comparison would never offer 7.30 over 7.30 beta 1 (7.30.0 is lower than 7.30.1). Releases therefore rank above every beta of the same version.
+
 ## 0.17.27 (2026-10-18)
 
 **A staged rollout that has not reached this PC is shown as current.**

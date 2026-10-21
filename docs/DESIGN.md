@@ -1,6 +1,6 @@
 # Nax-Updater design
 
-Current as of 0.17.27. Updated with every release; the reasons behind each rule are in [DECISIONS.md](DECISIONS.md).
+Current as of 0.17.28. Updated with every release; the reasons behind each rule are in [DECISIONS.md](DECISIONS.md).
 
 ## Goal
 

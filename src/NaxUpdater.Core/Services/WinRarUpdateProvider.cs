@@ -32,20 +32,24 @@ public sealed partial class WinRarUpdateProvider(HttpClient httpClient) : IUpdat
         EnsureRarLabUri(finalPage);
         var html = await pageResponse.Content.ReadAsStringAsync(cancellationToken);
         var language = DetectInstalledLanguage(application.PrimaryInstallPath);
-        var release = SelectRelease(html, language) ?? SelectRelease(html, "en");
+        // A beta installation follows the beta line as well as final releases;
+        // a final installation is offered final releases only.
+        var installedBeta = InstalledBeta(application.DisplayName);
+        var release = SelectRelease(html, language, installedBeta is not null) ?? SelectRelease(html, "en", installedBeta is not null);
         if (release is null)
         {
             return Result(application, null, null, language, UpdateStatus.Error,
                 "RARLAB's official download page did not expose a matching x64 release.");
         }
 
-        var status = VersionOrder.Compare(release.Version, application.NormalizedVersion) > 0
+        var installedRank = Rank(application.NormalizedVersion, installedBeta);
+        var status = installedRank is not null && release.Rank.CompareTo(installedRank.Value) > 0
             ? UpdateStatus.Available
             : UpdateStatus.Current;
         if (status == UpdateStatus.Current)
         {
-            return Result(application, release.Version, null, language, status,
-                "RARLAB's official download page reports the installed WinRAR release as current.");
+            return Result(application, application.NormalizedVersion, null, language, status,
+                $"RARLAB's official download page lists {release.Label} as its newest {(installedBeta is null ? "release" : "release or beta")}; the installed WinRAR is current.");
         }
 
         using var installerResponse = await httpClient.GetAsync(release.DownloadUri, cancellationToken);
@@ -68,13 +72,20 @@ public sealed partial class WinRarUpdateProvider(HttpClient httpClient) : IUpdat
             "The original RARLAB installer was hashed directly from the producer's HTTPS endpoint and must pass win.rar GmbH Authenticode verification before installation.");
     }
 
-    internal static WinRarRelease? SelectRelease(string html, string language)
+    // RARLAB labels links "English (64-bit x64)" (earlier just "English") and lists
+    // betas ("winrar-x64-730b1.exe", 7.30 beta 1) before releases
+    // ("winrar-x64-723.exe"). WinRAR registers a beta n as x.yy.n and a release as
+    // x.yy.0, so a release ranks above every beta of the same version.
+    internal static WinRarRelease? SelectRelease(string html, string language, bool includeBeta)
     {
         var desiredLabel = language.Equals("de", StringComparison.OrdinalIgnoreCase) ? "German" : "English";
+        WinRarRelease? best = null;
         foreach (Match match in DownloadLinkRegex().Matches(html))
         {
             var label = WebUtility.HtmlDecode(StripTagsRegex().Replace(match.Groups["label"].Value, string.Empty)).Trim();
-            if (!label.Equals(desiredLabel, StringComparison.OrdinalIgnoreCase))
+            var name = ArchitectureLabelRegex().Replace(label, string.Empty).Trim();
+            if (!name.Equals(desiredLabel, StringComparison.OrdinalIgnoreCase) ||
+                label.Contains("ARM", StringComparison.OrdinalIgnoreCase) || label.Contains("32-bit", StringComparison.OrdinalIgnoreCase))
             {
                 continue;
             }
@@ -84,15 +95,43 @@ public sealed partial class WinRarUpdateProvider(HttpClient httpClient) : IUpdat
                 continue;
             }
             EnsureRarLabUri(downloadUri);
-            var digits = VersionDigitsRegex().Match(downloadUri.LocalPath).Groups["digits"].Value;
-            if (digits.Length < 3)
+            var file = VersionDigitsRegex().Match(downloadUri.LocalPath);
+            var digits = file.Groups["digits"].Value;
+            if (!file.Success || digits.Length < 3)
+            {
+                continue;
+            }
+            var beta = file.Groups["beta"].Success ? int.Parse(file.Groups["beta"].Value, CultureInfo.InvariantCulture) : (int?)null;
+            if (beta is not null && !includeBeta)
             {
                 continue;
             }
             var version = $"{digits[..^2]}.{digits[^2..]}";
-            return Version.TryParse(version, out _) ? new WinRarRelease(version, downloadUri) : null;
+            if (Rank(version, beta) is not { } rank)
+            {
+                continue;
+            }
+            var release = new WinRarRelease($"{version}.{beta ?? 0}", downloadUri, rank,
+                beta is null ? version : $"{version} beta {beta}");
+            if (best is null || release.Rank.CompareTo(best.Rank) > 0)
+            {
+                best = release;
+            }
         }
-        return null;
+        return best;
+    }
+
+    // "WinRAR 7.30 Beta 1 (64-Bit)" -> 1; null for a release.
+    internal static int? InstalledBeta(string displayName) =>
+        InstalledBetaRegex().Match(displayName) is { Success: true } match ? int.Parse(match.Groups["beta"].Value, CultureInfo.InvariantCulture) : null;
+
+    // Orders x.yy betas below the x.yy release. An installed beta n registers as x.yy.n.
+    internal static (Version Version, int Stage)? Rank(string? version, int? beta)
+    {
+        if (string.IsNullOrWhiteSpace(version)) return null;
+        var parts = version.Split('.');
+        if (parts.Length < 2 || !Version.TryParse($"{parts[0]}.{parts[1]}", out var baseVersion)) return null;
+        return (baseVersion, beta ?? int.MaxValue);
     }
 
     private static string DetectInstalledLanguage(string? primaryPath)
@@ -159,8 +198,16 @@ public sealed partial class WinRarUpdateProvider(HttpClient httpClient) : IUpdat
     [GeneratedRegex("<[^>]+>", RegexOptions.CultureInvariant)]
     private static partial Regex StripTagsRegex();
 
-    [GeneratedRegex("winrar-x64-(?<digits>[0-9]+)", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
+    [GeneratedRegex("winrar-x64-(?<digits>[0-9]+)(?:b(?<beta>[0-9]+))?", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
     private static partial Regex VersionDigitsRegex();
+
+    [GeneratedRegex(@"\s*\([^)]*\)\s*$", RegexOptions.CultureInvariant)]
+    private static partial Regex ArchitectureLabelRegex();
+
+    [GeneratedRegex(@"\bbeta\s*(?<beta>[0-9]+)", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
+    private static partial Regex InstalledBetaRegex();
 }
 
-internal sealed record WinRarRelease(string Version, Uri DownloadUri);
+// Version is the form WinRAR registers (7.23.0, 7.30.1 for beta 1); Label is the
+// page's own wording for messages.
+internal sealed record WinRarRelease(string Version, Uri DownloadUri, (Version Version, int Stage) Rank, string Label);
