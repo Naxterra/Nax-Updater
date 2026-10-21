@@ -634,7 +634,7 @@ try
     {
         ProviderId: "rarlab-winrar",
         Status: UpdateStatus.Available,
-        AvailableVersion: "7.24",
+        AvailableVersion: "7.24.0",
         Language: "de",
         ExecutionPlan:
         {
