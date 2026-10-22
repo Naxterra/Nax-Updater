@@ -43,6 +43,29 @@ internal static class GitHubRecipeRegression
         var stable = await provider.CheckAsync(App("1.8.0"), CancellationToken.None);
         assert(stable.AvailableVersion == "1.9.0", "A stable installation was moved onto the pre-release channel.");
 
+        // Audit of 2026-10-22, finding 3: an installed prerelease never falls back to the
+        // stable release when its channel cannot be read, and an older release with a
+        // legacy installer name settles an installation without requiring that installer.
+        string Legacy(string tag) =>
+            $"{{\"tag_name\":\"{tag}\",\"prerelease\":false,\"draft\":false,\"html_url\":\"https://github.com/o/r/releases/tag/{tag}\"," +
+            $"\"assets\":[{{\"name\":\"OldApp_{tag.TrimStart('v')}_Installer.msi\",\"browser_download_url\":\"https://github.com/o/r/releases/download/{tag}/x.msi\"}}]}}";
+        using var emptyChannel = new HttpClient(new Respond(request => request.RequestUri!.AbsolutePath switch
+        {
+            "/repos/o/r/releases/latest" => Legacy("v1.0.0"),
+            "/repos/o/r/releases" => "[]",
+            _ => null
+        }));
+        var channelProvider = new GitHubReleaseUpdateProvider(emptyChannel, recipe, _ => Task.FromResult<string?>(null));
+        var unreadable = await channelProvider.CheckAsync(App("2.0.0-alpha.32"), CancellationToken.None);
+        assert(unreadable.Status == UpdateStatus.Error && unreadable.ExecutionPlan is null && unreadable.Message?.Contains("prerelease channel") == true,
+            $"An installed prerelease was checked against the stable release when its channel was empty: {unreadable.Status} · {unreadable.Message}");
+        var older = await channelProvider.CheckAsync(App("2.0.0"), CancellationToken.None);
+        assert(older is { Status: UpdateStatus.Current, ExecutionPlan: null },
+            $"An older release with a legacy installer name was reported as a failed check: {older.Status} · {older.Message}");
+        var newer = await channelProvider.CheckAsync(App("0.9.0"), CancellationToken.None);
+        assert(newer.Status == UpdateStatus.Error && newer.Message?.Contains("No release asset matched") == true,
+            "A newer release without a matching installer was not reported as a failed check.");
+
         // The token goes only to api.github.com; only the signed redirect target is used.
         string? sentAuthorization = null;
         using var resolver = new HttpClient(new Respond(request =>

@@ -60,7 +60,8 @@ public sealed class FileUpdateOperationJournal(string path) : IUpdateOperationJo
             now,
             now,
             ExecutionKind: plan.Kind,
-            StoreQueueTarget: plan.StoreQueueTarget);
+            StoreQueueTarget: plan.StoreQueueTarget,
+            ChocolateyTarget: plan.ChocolateyTarget);
         Write(operation);
         return operation;
     }

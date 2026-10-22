@@ -21,6 +21,8 @@ public interface IUpdateTransactionBackend
         CancellationToken cancellationToken);
     Task<UpdateExecutionResult> ApplyWithProgressAsync(UpdateCheckResult update, PreparedUpdateExecution prepared,
         IProgress<double> progress, CancellationToken token) => ApplyAsync(update, prepared, token);
+    // Called once the installed target was verified; the payload is no longer needed.
+    Task ReleaseCompletedPayloadAsync(UpdateCheckResult update, PreparedUpdateExecution prepared) => Task.CompletedTask;
 }
 
 public sealed record PreparedUpdateExecution(
@@ -53,8 +55,17 @@ public sealed class DefaultUpdateTransactionBackend(
     UpdatePackageDownloader packageDownloader,
     Func<UpdateCheckResult, CancellationToken, Task<UpdateCheckResult?>> revalidate) : IUpdateTransactionBackend
 {
+    private string? _cacheRoot;
+
     public Task<UpdateCheckResult?> RevalidateAsync(UpdateCheckResult previous, CancellationToken cancellationToken) =>
         revalidate(previous, cancellationToken);
+
+    public Task ReleaseCompletedPayloadAsync(UpdateCheckResult update, PreparedUpdateExecution prepared)
+    {
+        if (_cacheRoot is not null && prepared.Installer?.Path is { } path)
+            UpdatePayloadCache.ReleaseCompleted(_cacheRoot, path, update.ProviderId);
+        return Task.CompletedTask;
+    }
 
     public async Task<PreparedUpdateExecution> PrepareAsync(
         UpdateCheckResult update,
@@ -63,6 +74,7 @@ public sealed class DefaultUpdateTransactionBackend(
         CancellationToken cancellationToken)
     {
         VerifiedInstaller? installer = null;
+        _cacheRoot = cacheRoot;
         try
         {
             if (update.ExecutionPlan?.Kind is (
@@ -260,6 +272,7 @@ public sealed class UpdateTransactionCoordinator
             repairOnly = VersionOrder.Compare(freshAssessment.AvailableVersion, freshAssessment.InstalledVersion) <= 0;
             execution = await _backend.ApplyWithProgressAsync(freshAssessment, prepared,
                 new Progress<double>(fraction => report(UpdateTransactionStage.Applying, fraction)), cancellationToken);
+            var appliedPayload = prepared;
             prepared = null;
 
             report(UpdateTransactionStage.Verifying, null);
@@ -272,6 +285,11 @@ public sealed class UpdateTransactionCoordinator
                 var completedStage = execution.ExitCode is 1641 or 3010
                     ? UpdateTransactionStage.PendingReboot
                     : UpdateTransactionStage.Succeeded;
+                if (completedStage == UpdateTransactionStage.Succeeded)
+                {
+                    try { await _backend.ReleaseCompletedPayloadAsync(freshAssessment, appliedPayload); }
+                    catch (Exception exception) when (exception is IOException or UnauthorizedAccessException) { }
+                }
                 report(completedStage, 1);
                 return new(completedStage, observed, execution, null);
             }

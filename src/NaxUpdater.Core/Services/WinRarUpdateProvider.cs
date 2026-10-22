@@ -72,35 +72,32 @@ public sealed partial class WinRarUpdateProvider(HttpClient httpClient) : IUpdat
             "The original RARLAB installer was hashed directly from the producer's HTTPS endpoint and must pass win.rar GmbH Authenticode verification before installation.");
     }
 
-    // RARLAB labels links "English (64-bit x64)" (earlier just "English") and lists
-    // betas ("winrar-x64-730b1.exe", 7.30 beta 1) before releases
-    // ("winrar-x64-723.exe"). WinRAR registers a beta n as x.yy.n and a release as
-    // x.yy.0, so a release ranks above every beta of the same version.
+    // RARLAB has changed its link labels twice (plain "English", then
+    // "English (64-bit x64)", then a separate language cell with "64-bit version").
+    // The file names stayed stable, so they are the only thing read:
+    // winrar-x64-<digits>[b<beta>]<language>.exe, where English has no language
+    // code and German is "d" (winrar-x64-730b1d.exe is the German 7.30 beta 1).
+    // WinRAR registers a beta n as x.yy.n and a release as x.yy.0, so a release
+    // ranks above every beta of the same version.
     internal static WinRarRelease? SelectRelease(string html, string language, bool includeBeta)
     {
-        var desiredLabel = language.Equals("de", StringComparison.OrdinalIgnoreCase) ? "German" : "English";
+        var languageCode = language.Equals("de", StringComparison.OrdinalIgnoreCase) ? "d" : "";
         WinRarRelease? best = null;
         foreach (Match match in DownloadLinkRegex().Matches(html))
         {
-            var label = WebUtility.HtmlDecode(StripTagsRegex().Replace(match.Groups["label"].Value, string.Empty)).Trim();
-            var name = ArchitectureLabelRegex().Replace(label, string.Empty).Trim();
-            if (!name.Equals(desiredLabel, StringComparison.OrdinalIgnoreCase) ||
-                label.Contains("ARM", StringComparison.OrdinalIgnoreCase) || label.Contains("32-bit", StringComparison.OrdinalIgnoreCase))
-            {
-                continue;
-            }
             var href = WebUtility.HtmlDecode(match.Groups["href"].Value).Trim();
             if (!Uri.TryCreate(DownloadPage, href, out var downloadUri))
             {
                 continue;
             }
-            EnsureRarLabUri(downloadUri);
-            var file = VersionDigitsRegex().Match(downloadUri.LocalPath);
+            var file = InstallerFileRegex().Match(Path.GetFileName(downloadUri.LocalPath));
             var digits = file.Groups["digits"].Value;
-            if (!file.Success || digits.Length < 3)
+            if (!file.Success || digits.Length < 3 ||
+                !file.Groups["language"].Value.Equals(languageCode, StringComparison.OrdinalIgnoreCase))
             {
                 continue;
             }
+            EnsureRarLabUri(downloadUri);
             var beta = file.Groups["beta"].Success ? int.Parse(file.Groups["beta"].Value, CultureInfo.InvariantCulture) : (int?)null;
             if (beta is not null && !includeBeta)
             {
@@ -192,17 +189,11 @@ public sealed partial class WinRarUpdateProvider(HttpClient httpClient) : IUpdat
             message,
             plan);
 
-    [GeneratedRegex("(?is)<a[^>]+href=[\"'](?<href>[^\"']*winrar-x64-(?<digits>[0-9]+)[^\"']*\\.exe)[\"'][^>]*>(?<label>.*?)</a>", RegexOptions.CultureInvariant)]
+    [GeneratedRegex("(?i)href=[\"'](?<href>[^\"']*/winrar-x64-[^\"'/]*\\.exe)[\"']", RegexOptions.CultureInvariant)]
     private static partial Regex DownloadLinkRegex();
 
-    [GeneratedRegex("<[^>]+>", RegexOptions.CultureInvariant)]
-    private static partial Regex StripTagsRegex();
-
-    [GeneratedRegex("winrar-x64-(?<digits>[0-9]+)(?:b(?<beta>[0-9]+))?", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
-    private static partial Regex VersionDigitsRegex();
-
-    [GeneratedRegex(@"\s*\([^)]*\)\s*$", RegexOptions.CultureInvariant)]
-    private static partial Regex ArchitectureLabelRegex();
+    [GeneratedRegex("^winrar-x64-(?<digits>[0-9]+)(?:b(?<beta>[0-9]+))?(?<language>[a-z]*)\\.exe$", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
+    private static partial Regex InstallerFileRegex();
 
     [GeneratedRegex(@"\bbeta\s*(?<beta>[0-9]+)", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
     private static partial Regex InstalledBetaRegex();

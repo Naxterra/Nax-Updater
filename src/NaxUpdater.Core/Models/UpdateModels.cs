@@ -126,7 +126,10 @@ public sealed record UpdateOperationRecord(
     DateTimeOffset UpdatedAt,
     string? Error = null,
     UpdateExecutionKind? ExecutionKind = null,
-    StoreQueueTarget? StoreQueueTarget = null);
+    StoreQueueTarget? StoreQueueTarget = null,
+    // Recorded so that recovery after a restart can check Chocolatey's own package
+    // records for a same-version repair, which the application version cannot prove.
+    ChocolateyUpdateTarget? ChocolateyTarget = null);
 
 public sealed record UpdateExecutionPlan(
     UpdateExecutionKind Kind,

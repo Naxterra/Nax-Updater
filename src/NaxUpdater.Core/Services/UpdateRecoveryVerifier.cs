@@ -4,11 +4,26 @@ namespace NaxUpdater.Core.Services;
 
 public static class UpdateRecoveryVerifier
 {
-    public static bool HasReachedTarget(UpdateOperationRecord operation, string? observedVersion, UpdateCheckResult? assessment = null)
+    public static bool HasReachedTarget(UpdateOperationRecord operation, string? observedVersion, UpdateCheckResult? assessment = null,
+        Func<IReadOnlyDictionary<string, ChocolateyPackageDetails>>? chocolateyRecords = null)
     {
         if (string.IsNullOrWhiteSpace(observedVersion)) return false;
         if (!string.IsNullOrWhiteSpace(operation.TargetVersion))
-            return VersionOrder.Compare(observedVersion, operation.TargetVersion) >= 0;
+        {
+            if (VersionOrder.Compare(observedVersion, operation.TargetVersion) < 0) return false;
+            // A same-version repair (Chocolatey reinstalling a version installed outside
+            // it) already matched its target before it ran, so the application version
+            // proves nothing. Only Chocolatey's own records can, for the package it ran
+            // and, on a wrapper route, the payload package.
+            var repairOnly = !string.IsNullOrWhiteSpace(operation.InstalledVersion) &&
+                             VersionOrder.Compare(operation.TargetVersion, operation.InstalledVersion) <= 0;
+            if (!repairOnly) return true;
+            if (operation.ChocolateyTarget is not { } chocolatey) return false;
+            var records = (chocolateyRecords ?? (static () => ChocolateyDependencyPlanner.ReadInstalled(ChocolateyPackageService.InstallRoot())))();
+            return ChocolateyPackageService.RecordMismatch(records, chocolatey.PackageId, chocolatey.Version) is null &&
+                   (chocolatey.PayloadPackageId is null || chocolatey.PayloadVersion is null ||
+                    ChocolateyPackageService.RecordMismatch(records, chocolatey.PayloadPackageId, chocolatey.PayloadVersion) is null);
+        }
 
         // 0.17.0 journals had no execution kind for versionless Store queue
         // operations. Support only that identifiable legacy case, not arbitrary

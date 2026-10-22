@@ -53,7 +53,7 @@ public sealed class GitHubReleaseUpdateProvider : IUpdateProvider
         }
         catch (Exception exception) when (exception is (HttpRequestException or TaskCanceledException) && !cancellationToken.IsCancellationRequested)
         {
-            if (recipe.ReleaseTagPrefix is not null) return Error(application, exception.Message);
+            if (recipe.ReleaseTagPrefix is not null || followPrerelease) return Error(application, exception.Message);
             return await CheckLatestTagFallbackAsync(application, exception.Message, cancellationToken);
         }
         using (response)
@@ -61,6 +61,10 @@ public sealed class GitHubReleaseUpdateProvider : IUpdateProvider
             if (!response.IsSuccessStatusCode)
             {
                 if (recipe.ReleaseTagPrefix is not null) return Error(application, "The product-specific release feed could not be resolved.");
+                // The stable fallback is a different channel; it can neither offer nor
+                // confirm anything for an installed prerelease.
+                if (followPrerelease)
+                    return Error(application, $"GitHub's prerelease channel for {recipe.Repository} could not be read ({(int)response.StatusCode} {response.ReasonPhrase}); the stable release is not a substitute for the installed prerelease.");
                 return await CheckLatestTagFallbackAsync(
                     application,
                     $"GitHub API returned {(int)response.StatusCode} {response.ReasonPhrase}.",
@@ -110,6 +114,17 @@ public sealed class GitHubReleaseUpdateProvider : IUpdateProvider
             }
             if (selectedAsset is null || selectedMatch is null)
             {
+                // An installer is needed only to update. A release that is not newer
+                // than the installation settles it without one (older releases may use
+                // older asset names).
+                var tagVersion = recipe.Repository.Equals("git-for-windows/git", StringComparison.OrdinalIgnoreCase) &&
+                    tag.EndsWith(".windows.1", StringComparison.OrdinalIgnoreCase) ? tag[..^10] : tag;
+                if (!string.IsNullOrWhiteSpace(application.NormalizedVersion) && VersionOrder.Compare(tagVersion, application.NormalizedVersion) <= 0)
+                    return new UpdateCheckResult(
+                        application.Identity, application.DisplayName, application.NormalizedVersion, application.NormalizedVersion,
+                        UpdateStatus.Current, Id, $"Official GitHub release · {recipe.Repository}", recipe.Language, "Installer language",
+                        installedArchitecture ?? "unknown", followPrerelease ? "prerelease" : "stable", releasePage,
+                        $"GitHub's newest {(followPrerelease ? "release or prerelease" : "release")} is {tagVersion}, which is not newer than the installed version.", null);
                 return Error(application, $"No release asset matched {recipe.AssetNamePattern}.", tag);
             }
 
@@ -244,6 +259,8 @@ public sealed class GitHubReleaseUpdateProvider : IUpdateProvider
                 if (newest.ValueKind == JsonValueKind.Object)
                     return new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(newest.GetRawText(), Encoding.UTF8, "application/json") };
             }
+            // Never fall back to the stable "latest" release for an installed prerelease.
+            return new HttpResponseMessage(HttpStatusCode.ServiceUnavailable) { ReasonPhrase = all is null ? "release list unavailable" : "release list empty" };
         }
         var response = await GetLatestReleaseCoreAsync(cancellationToken);
         if (recipe.ReleaseTagPrefix is not null || !response.IsSuccessStatusCode) return response;

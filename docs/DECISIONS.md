@@ -2,6 +2,24 @@
 
 Why Nax-Updater works the way it does. Newest first; every release adds its decisions here and updates [DESIGN.md](DESIGN.md). Each entry names the decision, the evidence that led to it, and what was rejected.
 
+## 0.17.29 (2026-10-23)
+
+Fixes from the audit of 2026-10-22. Each finding was confirmed in the source or against live data before it was changed.
+
+**WinRAR is read from the installer file names.** RARLAB changed its download page again on 2026-10-22: the language now sits in its own table cell and every link says "64-bit version". Labels have changed three times, but the file names have not (`winrar-x64-730b1d.exe` is the German 7.30 beta 1), so the version, the beta number and the language code are now read from the file name alone. German is `d`, which is distinct from Danish `dk` and Brazilian `br`.
+
+**Recovery no longer accepts an unchanged version as proof of a repair.** The normal transaction path already required a successful execution for a same-version Chocolatey repair, but recovery after a restart still accepted the matching application version. The journal now records the Chocolatey targets, and recovery checks Chocolatey's own records for them.
+
+**GitHub sources keep their channel and need no installer to confirm an older release.** An installed prerelease fell back to the stable "latest" release whenever its channel listing was empty or unreadable, and a release without a matching installer was an error even when it was older than the installation. The prerelease channel now never falls back to stable (an unreadable channel is reported as a failed check), and a release that is not newer settles the app without an installer.
+
+**The update list and its details follow a running update.** The update list could not be reopened from the application view while a change ran, and the details panel kept the state from when the row was selected. Both now follow the live state.
+
+**A queued Store update no longer claims a hash and signature check.** Its verification text now names Windows' own Store queue item for the exact package family.
+
+**Verified installers are deleted after a successful update.** The download cache had grown to 9.3 GiB of app installers for versions installed long ago (27 versions for the Electron update feeds alone). After a verified successful update, that update's installer and its empty folders are deleted. Driver packages (2.8 GiB) stay, because an older driver installer can matter for a rollback.
+
+Not done from the audit's suggestions: a per-operation history, batch totals with a retry action, separating driver checks from the application scan, recipe validation at load time, and a coverage filter.
+
 ## 0.17.28 (2026-10-21)
 
 **WinRAR follows the installed channel and RARLAB's new link labels.**

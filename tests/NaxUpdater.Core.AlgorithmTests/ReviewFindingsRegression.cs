@@ -25,9 +25,12 @@ internal static class ReviewFindingsRegression
             (new UpdateExecutionResult(0, true, null), UpdateTransactionStage.Succeeded)
         })
         {
-            var outcome = await new UpdateTransactionCoordinator(new Backend(repair, repair, execution), verificationAttempts: 1).ApplyAsync(repair, "unused");
+            var backend = new Backend(repair, repair, execution);
+            var outcome = await new UpdateTransactionCoordinator(backend, verificationAttempts: 1).ApplyAsync(repair, "unused");
             assert(outcome.Stage == expected,
                 $"A same-version repair with exit {execution.ExitCode} (success={execution.IsSuccess}) ended as {outcome.Stage} instead of {expected}.");
+            assert(backend.Released == (expected == UpdateTransactionStage.Succeeded ? 1 : 0),
+                $"The payload of a {outcome.Stage} update was {(backend.Released == 0 ? "kept" : "released")}.");
         }
         // A real version advance keeps its recovery: the installer failed, but the
         // application reached the target, so it is a success.
@@ -52,6 +55,51 @@ internal static class ReviewFindingsRegression
                ChocolateyPackageService.RecordMismatch(records, "nodejs.install", "2.0.0")?.Contains("still 1.0.0") == true &&
                ChocolateyPackageService.RecordMismatch(records, "missing", "1.0.0")?.Contains("no record") == true,
             "Chocolatey's package records were not checked for the run package, the payload, or a missing record.");
+
+        // Audit of 2026-10-22, finding 1: recovery after a restart must not turn a failed
+        // same-version repair into success because the application version matches.
+        var journalPath = Path.Combine(Path.GetTempPath(), "nax-recovery-" + Guid.NewGuid().ToString("N") + ".json");
+        try
+        {
+            var journal = new FileUpdateOperationJournal(journalPath);
+            var recorded = journal.Begin(repair, DateTimeOffset.UtcNow);
+            assert(journal.ReadLatest()?.ChocolateyTarget == new ChocolateyUpdateTarget("fixture", "2.0.0"),
+                "The journal did not keep the Chocolatey target a repair must be checked against.");
+            var stale = new Dictionary<string, ChocolateyPackageDetails>(StringComparer.OrdinalIgnoreCase) { ["fixture"] = new("fixture", "1.0.0", null) };
+            var synced = new Dictionary<string, ChocolateyPackageDetails>(StringComparer.OrdinalIgnoreCase) { ["fixture"] = new("fixture", "2.0.0", null) };
+            assert(!UpdateRecoveryVerifier.HasReachedTarget(recorded, "2.0.0", null, () => stale) &&
+                   UpdateRecoveryVerifier.HasReachedTarget(recorded, "2.0.0", null, () => synced) &&
+                   !UpdateRecoveryVerifier.HasReachedTarget(recorded with { ChocolateyTarget = null }, "2.0.0", null, () => synced),
+                "Recovery accepted an unchanged application version as proof of a Chocolatey record repair.");
+            var advance = journal.Begin(upgrade, DateTimeOffset.UtcNow);
+            assert(UpdateRecoveryVerifier.HasReachedTarget(advance, "2.0.0", null, () => stale),
+                "Recovery of a real version advance started depending on Chocolatey's records.");
+        }
+        finally { File.Delete(journalPath); }
+
+        // Audit of 2026-10-22: a verified update's cached installer is deleted with its
+        // empty folders; the cache root, driver packages and foreign paths are kept.
+        var cacheRoot = Path.Combine(Path.GetTempPath(), "nax-payload-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            var payload = Path.Combine(cacheRoot, "official_Vendor.App", "2.0.0", "setup.exe");
+            var neighbour = Path.Combine(cacheRoot, "official_Vendor.App", "1.0.0", "setup.exe");
+            var driver = Path.Combine(cacheRoot, "manufacturer-driver_nvidia", "617.42", "driver.exe");
+            foreach (var file in new[] { payload, neighbour, driver })
+            {
+                Directory.CreateDirectory(Path.GetDirectoryName(file)!);
+                File.WriteAllBytes(file, [1]);
+            }
+            UpdatePayloadCache.ReleaseCompleted(cacheRoot, payload, "official:Vendor.App");
+            UpdatePayloadCache.ReleaseCompleted(cacheRoot, driver, "manufacturer-driver:nvidia");
+            UpdatePayloadCache.ReleaseCompleted(Path.Combine(cacheRoot, "official_Vendor.App"), Path.Combine(Path.GetTempPath(), "outside.exe"), "official:Vendor.App");
+            assert(!Directory.Exists(Path.GetDirectoryName(payload)) && File.Exists(neighbour) && File.Exists(driver) && Directory.Exists(cacheRoot),
+                "A verified installer was not removed, or another version, a driver package or the cache root was touched.");
+            UpdatePayloadCache.ReleaseCompleted(cacheRoot, neighbour, "official:Vendor.App");
+            assert(!Directory.Exists(Path.Combine(cacheRoot, "official_Vendor.App")) && Directory.Exists(cacheRoot),
+                "An emptied source folder was left behind, or the cache root itself was removed.");
+        }
+        finally { if (Directory.Exists(cacheRoot)) Directory.Delete(cacheRoot, true); }
 
         // Finding 5: a desktop shell that denies access keeps the current window.
         assert(UpdateHostLifetime.IsDesktopLaunchFailure(new UnauthorizedAccessException()) &&
@@ -81,6 +129,12 @@ internal static class ReviewFindingsRegression
     private sealed class Backend(UpdateCheckResult before, UpdateCheckResult after, UpdateExecutionResult execution) : IUpdateTransactionBackend
     {
         private bool _applied;
+        public int Released { get; private set; }
+        public Task ReleaseCompletedPayloadAsync(UpdateCheckResult update, PreparedUpdateExecution prepared)
+        {
+            Released++;
+            return Task.CompletedTask;
+        }
         public Task<UpdateCheckResult?> RevalidateAsync(UpdateCheckResult previous, CancellationToken token) =>
             Task.FromResult<UpdateCheckResult?>(_applied ? after : before);
         public Task<PreparedUpdateExecution> PrepareAsync(UpdateCheckResult update, string cacheRoot, IProgress<double>? progress, CancellationToken token) =>

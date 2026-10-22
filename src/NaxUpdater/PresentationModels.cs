@@ -258,6 +258,9 @@ public sealed class UpdateRow : INotifyPropertyChanged
         ? LocalizationService.Get("SecurityNoExternalInstaller")
         : Source.ExecutionPlan.Kind is UpdateExecutionKind.StorePackage or UpdateExecutionKind.NativeStorePackage
             ? LocalizationService.Get("SecurityMicrosoftStoreIdentity")
+        : Source.ExecutionPlan.Kind == UpdateExecutionKind.NativeStoreQueue
+            ? LocalizationService.Format("SecurityMicrosoftStoreQueue",
+                Source.ExecutionPlan.StoreQueueTarget?.PackageFamilyName ?? Source.ExecutionPlan.StorePackageFamilyName ?? Source.DisplayName)
         : Source.ExecutionPlan.Kind == UpdateExecutionKind.WingetPackage
             ? LocalizationService.Get("SecurityWingetProvider")
         : Source.ExecutionPlan.Kind == UpdateExecutionKind.NativeCommand

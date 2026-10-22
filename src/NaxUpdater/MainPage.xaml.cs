@@ -1175,8 +1175,23 @@ public sealed partial class MainPage : Page
             UpdateApplicability.NotRequired,
             previous.CorrelationKey ?? $"driver:{driver.Identity}");
 
+    // The details panel follows the selected row while an update changes its state.
+    private UpdateRow? _detailsRow;
+
+    private void DetailsRow_PropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
+    {
+        if (sender is not UpdateRow row || !ReferenceEquals(row, _detailsRow)) return;
+        if (e.PropertyName is nameof(UpdateRow.Status) or nameof(UpdateRow.RunState))
+            UpdateProviderText.Text = $"{row.Provider} · {row.Status}";
+        if (e.PropertyName is nameof(UpdateRow.Message) or nameof(UpdateRow.RunMessage))
+            UpdateMessageText.Text = row.Message;
+    }
+
     private void UpdatesList_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
+        if (_detailsRow is not null) _detailsRow.PropertyChanged -= DetailsRow_PropertyChanged;
+        _detailsRow = UpdatesList.SelectedItem as UpdateRow;
+        if (_detailsRow is not null) _detailsRow.PropertyChanged += DetailsRow_PropertyChanged;
         if (UpdatesList.SelectedItem is not UpdateRow row)
         {
             UpdateDetailsPlaceholder.Visibility = Visibility.Visible;
@@ -1431,7 +1446,7 @@ public sealed partial class MainPage : Page
         DriversButton.IsEnabled = !busy;
         // The lists stay enabled so they can be scrolled and inspected while an
         // update runs; row actions are locked instead (RefreshMassUpdateButton).
-        ShowUpdatesButton.IsEnabled = !busy && _allUpdates.Count > 0;
+        ShowUpdatesButton.IsEnabled = (!busy || IsChangingSystem) && _allUpdates.Count > 0;
         RefreshMassUpdateButton();
         RefreshUninstallButton();
         ScanProgress.IsActive = busy;
