@@ -19,7 +19,7 @@ internal static class ReviewFindingsRegression
         assert(repair.IsInstallable, "The same-version Chocolatey repair fixture was not installable.");
         foreach (var (execution, expected) in new[]
         {
-            (new UpdateExecutionResult(1223, false, "The Windows elevation prompt was canceled."), UpdateTransactionStage.CanceledBeforeChange),
+            (new UpdateExecutionResult(1223, false, "The Windows elevation prompt was canceled.", NotStarted: true), UpdateTransactionStage.CanceledBeforeChange),
             (new UpdateExecutionResult(1603, false, "Chocolatey upgrade failed (exit code 1603)."), UpdateTransactionStage.FailedNeedsAttention),
             (new UpdateExecutionResult(0, false, "Chocolatey reported success, but fixture is still 1.0.0 instead of 2.0.0"), UpdateTransactionStage.FailedNeedsAttention),
             (new UpdateExecutionResult(0, true, null), UpdateTransactionStage.Succeeded)

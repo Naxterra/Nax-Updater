@@ -58,6 +58,9 @@ public sealed class OfficialSiteRecipe
     // The publisher publishes no installer hash; the owner approved the exact
     // publisher signature as the only proof for these recipes.
     public bool SignatureOnly { get; init; }
+    // The installer's version resource must equal the approved version even when the
+    // download URL happens to contain the version's digits (opaque bundle links).
+    public bool VerifyInstallerVersion { get; init; }
 }
 
 public sealed class GitHubUpdateRecipe

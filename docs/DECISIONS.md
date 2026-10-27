@@ -2,6 +2,28 @@
 
 Why Nax-Updater works the way it does. Newest first; every release adds its decisions here and updates [DESIGN.md](DESIGN.md). Each entry names the decision, the evidence that led to it, and what was rejected.
 
+## 0.17.30 (2026-10-27)
+
+Fixes from the release review of 0.17.29. Each finding was confirmed in the source, by a probe or against live data before it was changed.
+
+**A signature-only installer must declare the approved version.** A signature proves the publisher, not the version. PotPlayer downloads a "Latest" file whose URL names no version, and Java 8 takes its version from one page and its download link from another, so a lagging download could run an older or different build silently. When the URL does not name the version, the installer's own version resource must now match (PotPlayer's page lists 261021 and its installer declares 26.10.21.0; Java 8u511 declares 8.0.5110.33). A cached signature-only installer is never reused.
+
+**An update across a major version is recognized by its identity.** The correlation key of a versioned display name ("7-Zip 24.09" becoming "7-Zip 25.01") changes with the major version, so a successful update was reported as not reaching its target. The installed application is now also matched by its unchanged inventory identity.
+
+**A journal write failure no longer loses an outcome or ends the app.** A locked or full disk while saving the final journal entry threw out of the transaction after the installer had already succeeded. The outcome is now kept with a warning, an update whose journal cannot be started does not run, and the update and driver handlers catch unexpected exceptions instead of ending the process.
+
+**A refusal before the start is recorded as such.** When an application was reopened after closing, or the verified payload was missing or changed, the executor refused to start, but the transaction was recorded as needing attention and warned at every start. Such refusals are now failures before any change, and a known failure is reported again at startup only if it turned out to have succeeded.
+
+**Only a refused start counts as a canceled UAC prompt.** An installer that ran and returned its own ERROR_CANCELLED (1223) was recorded as never started, so nothing rechecked it. Only a start that Windows refused now counts as "not started".
+
+**Mirror redirects require a published hash.** Without a hash, a redirect could have delivered a correctly signed installer from any HTTPS host.
+
+**Packaging refuses file-version decreases and repeated versions.** Windows Installer skips a file whose version is lower than the installed one and then removes the old copy, which is how release 0.17.25 lost a DLL. Every DLL and EXE is now compared with the previous release, and an already released version number is refused.
+
+**Live tests separate missing preconditions from defects.** An integration check is skipped when its package is not installed, an exhausted GitHub quota is reported as inconclusive, and the process-lifetime test starts its console copies through conhost, because Windows 11 hands console programs started from the desktop to Windows Terminal, which runs them in a job.
+
+Not changed: a machine-wide transaction lock for several Windows users, driver archives with files in subfolders, cache limits for driver packages, and the self-update recipe (which stays non-installable).
+
 ## 0.17.29 (2026-10-23)
 
 Fixes from the audit of 2026-10-22. Each finding was confirmed in the source or against live data before it was changed.

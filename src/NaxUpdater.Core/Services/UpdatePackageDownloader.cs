@@ -99,11 +99,16 @@ public sealed class UpdatePackageDownloader(
 
         if (File.Exists(destinationPath))
         {
-            var existing = await VerifyFileAsync(destinationPath, plan, cancellationToken);
-            if (existing.IsValid)
+            // A signature-only installer has no hash that binds it to this version, so a
+            // cached copy is never reused; it is downloaded and checked again.
+            if (!plan.SignatureOnly)
             {
-                progress?.Report(1);
-                return new VerifiedInstaller(destinationPath, existing.Signer!);
+                var existing = await VerifyFileAsync(destinationPath, plan, cancellationToken);
+                if (existing.IsValid)
+                {
+                    progress?.Report(1);
+                    return new VerifiedInstaller(destinationPath, existing.Signer!);
+                }
             }
             File.Delete(destinationPath);
         }
@@ -387,7 +392,9 @@ public sealed class UpdatePackageDownloader(
             var signature = authenticodeVerifier.Verify(path, expectedSigner);
             if (signature.IsValid)
             {
-                return new FileVerification(true, signature.Signer, null);
+                return InstallerVersionMismatch(path, plan) is { } mismatch
+                    ? new FileVerification(false, null, mismatch)
+                    : new FileVerification(true, signature.Signer, null);
             }
             if (!string.IsNullOrWhiteSpace(signature.Error))
             {
@@ -396,6 +403,30 @@ public sealed class UpdatePackageDownloader(
         }
         return new FileVerification(false, null, string.Join(" | ", errors));
     }
+
+    // A signature-only download whose URL does not name the version (PotPlayer's
+    // ".../Latest/PotPlayerSetup64.exe", Java's AutoDL bundle link) proves the publisher
+    // but not the version. Its own version resource must then match the approved target
+    // in every component the target names (26.10.21 matches 26.10.21.0).
+    internal static string? InstallerVersionMismatch(string path, UpdateExecutionPlan plan)
+    {
+        if (plan.ExpectedInstallerVersion is not { } expected) return null;
+        string? declared;
+        try { declared = System.Diagnostics.FileVersionInfo.GetVersionInfo(path).FileVersion; }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException) { declared = null; }
+        var expectedParts = VersionParts(expected);
+        var declaredParts = VersionParts(declared);
+        return expectedParts.Length > 0 && declaredParts.Length >= expectedParts.Length &&
+               expectedParts.SequenceEqual(declaredParts.Take(expectedParts.Length))
+            ? null
+            : $"The downloaded installer declares version {declared ?? "none"}, not the approved {expected}; it was not run.";
+    }
+
+    private static long[] VersionParts(string? version) =>
+        string.IsNullOrWhiteSpace(version)
+            ? []
+            : System.Text.RegularExpressions.Regex.Matches(version, "[0-9]+")
+                .Select(static match => long.TryParse(match.Value, out var part) ? part : -1).ToArray();
 
     private static bool IsAllowedHost(string host, IReadOnlyList<string> allowedHosts) =>
         allowedHosts.Any(allowed => host.Equals(allowed, StringComparison.OrdinalIgnoreCase));

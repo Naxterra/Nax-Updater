@@ -158,15 +158,30 @@ public sealed class UpdateTransactionCoordinator
                 null,
                 "Another NaxUpdater process is already applying or recovering an update.");
         }
-        UpdateOperationRecord? operation = approvedAssessment.ExecutionPlan is null
-            ? null
-            : _journal?.Begin(approvedAssessment, _timeProvider.GetUtcNow());
+        UpdateOperationRecord? operation;
+        try
+        {
+            operation = approvedAssessment.ExecutionPlan is null
+                ? null
+                : _journal?.Begin(approvedAssessment, _timeProvider.GetUtcNow());
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+        {
+            // Without a journal entry an interrupted change could not be recovered.
+            return new(
+                UpdateTransactionStage.FailedBeforeChange,
+                approvedAssessment,
+                null,
+                $"The update journal could not be written, so the update was not started: {exception.Message}");
+        }
+        string? journalFailure = null;
         void Report(UpdateTransactionStage stage, double? fraction = null)
         {
             progress?.Report(new(stage, fraction));
             if (fraction is null && operation is not null && _journal is not null)
             {
-                operation = _journal.Record(operation, stage, _timeProvider.GetUtcNow());
+                try { operation = _journal.Record(operation, stage, _timeProvider.GetUtcNow()); }
+                catch (Exception exception) when (exception is IOException or UnauthorizedAccessException) { journalFailure = exception.Message; }
             }
         }
 
@@ -177,9 +192,14 @@ public sealed class UpdateTransactionCoordinator
             cancellationToken);
         if (operation is not null && _journal is not null)
         {
-            _journal.Record(operation, result.Stage, _timeProvider.GetUtcNow(), result.Error);
+            // The installer has already finished; a locked or full disk must not turn its
+            // verified outcome into an exception.
+            try { _journal.Record(operation, result.Stage, _timeProvider.GetUtcNow(), result.Error); }
+            catch (Exception exception) when (exception is IOException or UnauthorizedAccessException) { journalFailure = exception.Message; }
         }
-        return result;
+        return journalFailure is null
+            ? result
+            : result with { JournalWarning = $"The outcome could not be saved in the update journal: {journalFailure}" };
     }
 
     private async Task<UpdateTransactionResult> ApplyCoreAsync(
@@ -276,7 +296,7 @@ public sealed class UpdateTransactionCoordinator
             prepared = null;
 
             report(UpdateTransactionStage.Verifying, null);
-            var observed = execution.ExitCode == 1223
+            var observed = execution.NotStarted
                 ? await _backend.RevalidateAsync(freshAssessment, cancellationToken)
                 : await ObserveInstalledTargetAsync(freshAssessment, cancellationToken);
             if (ReachedTarget(freshAssessment, observed) && (!repairOnly || execution.IsSuccess) ||
@@ -304,7 +324,9 @@ public sealed class UpdateTransactionCoordinator
             }
             if (!execution.IsSuccess)
             {
-                if (execution.ExitCode == 1223)
+                // Only a refused start proves that nothing ran. An installer that ran and
+                // exited with its own ERROR_CANCELLED (1223) may have changed the system.
+                if (execution.NotStarted)
                 {
                     return new(
                         UpdateTransactionStage.CanceledBeforeChange,
@@ -369,7 +391,10 @@ public sealed class UpdateTransactionCoordinator
                 await _backend.DiscardPreparedAsync(prepared);
                 prepared = null;
             }
-            if (changeMayHaveStarted && freshAssessment is not null)
+            // The executor refuses to start (an application was reopened after closing, or
+            // the verified payload is missing or changed) before anything runs.
+            if (changeMayHaveStarted && freshAssessment is not null &&
+                exception is not (ApplicationStillRunningException or UpdateExecutionRefusedException))
             {
                 try
                 {
@@ -416,10 +441,15 @@ public sealed class UpdateTransactionCoordinator
         !string.IsNullOrWhiteSpace(observed.InstalledVersion) &&
         VersionOrder.Compare(observed.InstalledVersion, target.InstalledVersion) >= 0;
 
+    // The observed application is the same one when it keeps its inventory identity or its
+    // correlation key. The key of a versioned display name ("7-Zip 24.09" becoming
+    // "7-Zip 25.01") changes with the major version while the identity stays the same.
     internal static bool ReachedTarget(UpdateCheckResult expected, UpdateCheckResult? observed) =>
         observed is not null &&
-        !string.IsNullOrWhiteSpace(expected.CorrelationKey) &&
-        expected.CorrelationKey.Equals(observed.CorrelationKey, StringComparison.Ordinal) &&
+        (!string.IsNullOrWhiteSpace(expected.ApplicationIdentity) &&
+         expected.ApplicationIdentity.Equals(observed.ApplicationIdentity, StringComparison.Ordinal) ||
+         !string.IsNullOrWhiteSpace(expected.CorrelationKey) &&
+         expected.CorrelationKey.Equals(observed.CorrelationKey, StringComparison.Ordinal)) &&
         !string.IsNullOrWhiteSpace(expected.AvailableVersion) &&
         !string.IsNullOrWhiteSpace(observed.InstalledVersion) &&
         (expected.ExecutionPlan?.Kind == UpdateExecutionKind.StorePackage
@@ -527,6 +557,15 @@ public static class UpdatePlanValidator
                        (!string.IsNullOrWhiteSpace(plan.ExpectedSigner) || plan.ExpectedSigners is { Count: > 0 })) ||
                      plan.AllowedDownloadHosts.Count == 0
                 => "The downloadable update plan is missing its HTTPS artifact identity or release hash.",
+            // Mirror redirects are safe only because a published hash must match; without
+            // a hash they would accept an installer from any HTTPS host.
+            UpdateExecutionKind.DownloadedExe or
+            UpdateExecutionKind.DownloadedMsi or
+            UpdateExecutionKind.DownloadedZipMsi or
+            UpdateExecutionKind.DownloadedZipDriver
+                when plan.AllowHashVerifiedRedirects &&
+                     string.IsNullOrWhiteSpace(plan.Sha256) && string.IsNullOrWhiteSpace(plan.Sha512)
+                => "Mirror redirects are allowed only for an installer with a published hash.",
             UpdateExecutionKind.DownloadedExe or
             UpdateExecutionKind.DownloadedMsi or
             UpdateExecutionKind.DownloadedZipMsi

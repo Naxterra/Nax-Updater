@@ -94,7 +94,7 @@ internal static class OfficialSiteRegression
         };
         var signed = await new OfficialSiteUpdateProvider(http, signatureOnly).CheckAsync(App("Sig App", "6, 43, 15, 2"), CancellationToken.None);
         assert(signed.Status == UpdateStatus.Available && signed.AvailableVersion == "6.43.16" &&
-               signed.ExecutionPlan is { SignatureOnly: true, Sha256: null, Sha512: null, ExpectedSigner: "Vendor Inc", RequireAuthenticode: true, FileName: "setup-643b16.exe" } &&
+               signed.ExecutionPlan is { SignatureOnly: true, Sha256: null, Sha512: null, ExpectedSigner: "Vendor Inc", RequireAuthenticode: true, FileName: "setup-643b16.exe", ExpectedInstallerVersion: "6.43.16" } &&
                signed.ExecutionPlan.DownloadUri!.AbsoluteUri == "https://dl.example/AutoDL?BundleId=777_abc",
             "A signature-only release lost its built version, second-page link, file name or signer pin.");
         var bound = signed with { ExecutionPlan = signed.ExecutionPlan! with { CheckGenerationId = Guid.NewGuid(), CreatedAt = DateTimeOffset.UtcNow,
@@ -112,7 +112,9 @@ internal static class OfficialSiteRegression
         }).CheckAsync(App("Sig App", "6.43.15"), CancellationToken.None);
         assert(noSigner.Status == UpdateStatus.Error && noSigner.ExecutionPlan is null, "A signature-only recipe without a signer was accepted.");
 
-        // The downloader accepts a signature-only file only with the exact publisher.
+        // The downloader accepts a signature-only file only with the exact publisher. The fixture payload has
+        // no version resource, so this part uses a download whose URL names the version.
+        bound = bound with { ExecutionPlan = bound.ExecutionPlan! with { ExpectedInstallerVersion = null } };
         var payload = Encoding.UTF8.GetBytes("signature-only fixture");
         using var downloads = new HttpClient(new Bytes(payload));
         var cache = Path.Combine(Path.GetTempPath(), "naxupdater-signature-only-" + Guid.NewGuid().ToString("N"));

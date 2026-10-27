@@ -20,7 +20,12 @@ public static class UpdateHostLifetime
     // Return true only after the desktop-launched replacement confirms it is
     // outside the launcher's job. A plain Shell.Application.ShellExecute call
     // can still execute in the caller; use the existing desktop's shell object.
-    public static bool TryDetachFromLauncher(string[] arguments, string executable, int show = 1)
+    public static bool TryDetachFromLauncher(string[] arguments, string executable, int show = 1) =>
+        TryDetachFromLauncher(arguments, executable, show, LaunchThroughDesktop);
+
+    // The launch step is replaceable for tests: a console test host is handed to Windows
+    // Terminal (which runs it in a job) unless it is started through conhost.
+    internal static bool TryDetachFromLauncher(string[] arguments, string executable, int show, Action<string, string, int> launch)
     {
         bool inJob;
         try { inJob = IsJobBound(); }
@@ -46,7 +51,7 @@ public static class UpdateHostLifetime
         using var ready = new EventWaitHandle(false, EventResetMode.ManualReset, name);
         try
         {
-            LaunchThroughDesktop(executable, $"{DesktopFlag} {name}", show);
+            launch(executable, $"{DesktopFlag} {name}", show);
             return ready.WaitOne(TimeSpan.FromSeconds(10));
         }
         catch (Exception exception) when (IsDesktopLaunchFailure(exception))

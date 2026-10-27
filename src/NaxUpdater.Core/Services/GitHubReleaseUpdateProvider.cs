@@ -60,7 +60,7 @@ public sealed class GitHubReleaseUpdateProvider : IUpdateProvider
         {
             if (!response.IsSuccessStatusCode)
             {
-                if (recipe.ReleaseTagPrefix is not null) return Error(application, "The product-specific release feed could not be resolved.");
+                if (recipe.ReleaseTagPrefix is not null) return Error(application, $"The product-specific release feed could not be resolved: {(int)response.StatusCode} {response.ReasonPhrase}.");
                 // The stable fallback is a different channel; it can neither offer nor
                 // confirm anything for an installed prerelease.
                 if (followPrerelease)
@@ -297,7 +297,7 @@ public sealed class GitHubReleaseUpdateProvider : IUpdateProvider
         if (recipe.ReleaseTagPrefix is { } prefix)
         {
             var json = await GitHubApiClient.ReadAsync(httpClient, $"repos/{recipe.Repository}/releases?per_page=100", cancellationToken);
-            if (json is null) return new(HttpStatusCode.ServiceUnavailable);
+            if (json is null) return new(HttpStatusCode.ServiceUnavailable) { ReasonPhrase = "neither the GitHub API (possibly rate limited) nor the GitHub CLI returned the release list" };
             using var releases = JsonDocument.Parse(json);
             var matches = releases.RootElement.EnumerateArray().Where(r =>
                 r.TryGetProperty("tag_name", out var tag) && tag.GetString()?.StartsWith(prefix, StringComparison.Ordinal) == true &&
@@ -315,7 +315,7 @@ public sealed class GitHubReleaseUpdateProvider : IUpdateProvider
             using var request = new HttpRequestMessage(
                 HttpMethod.Get,
                 $"https://api.github.com/repos/{recipe.Repository}/releases/latest");
-            request.Headers.UserAgent.ParseAdd("NaxUpdater/0.17.29");
+            request.Headers.UserAgent.ParseAdd("NaxUpdater/0.17.30");
             request.Headers.Accept.ParseAdd("application/vnd.github+json");
             try
             {
@@ -361,7 +361,7 @@ public sealed class GitHubReleaseUpdateProvider : IUpdateProvider
         using var request = new HttpRequestMessage(
             HttpMethod.Get,
             $"https://github.com/{recipe.Repository}/releases/latest");
-        request.Headers.UserAgent.ParseAdd("NaxUpdater/0.17.29");
+        request.Headers.UserAgent.ParseAdd("NaxUpdater/0.17.30");
         using var response = await httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
         var finalUri = response.RequestMessage?.RequestUri;
         var match = finalUri is null

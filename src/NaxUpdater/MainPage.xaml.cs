@@ -82,11 +82,40 @@ public sealed partial class MainPage : Page
             return;
         }
         _loaded = true;
-        using var recoveryLease = _updateTransactionLease.TryAcquire();
+        var recoveryLease = _updateTransactionLease.TryAcquire();
         var interruptedOperation = recoveryLease is null ? null : _updateOperationJournal.ReadIncomplete();
+        // A failure that was already recorded is rechecked once more, but it is reported
+        // again only when it turns out to have succeeded after all.
+        var knownFailure = false;
         if (interruptedOperation is null && recoveryLease is not null &&
             _updateOperationJournal.ReadLatest() is { Stage: UpdateTransactionStage.FailedNeedsAttention } failed)
+        {
             interruptedOperation = failed;
+            knownFailure = true;
+        }
+        // The lease is held through the first scan only while there is something to
+        // recover, so that no new change starts before recovery has recorded its result.
+        if (interruptedOperation is null)
+        {
+            recoveryLease?.Dispose();
+            recoveryLease = null;
+        }
+        try
+        {
+            await RecoverInterruptedOperationAsync(interruptedOperation, knownFailure);
+        }
+        catch (Exception exception)
+        {
+            ShowUnexpectedFailure(LocalizationService.Get("UpdateCheckFailed"), exception);
+        }
+        finally
+        {
+            recoveryLease?.Dispose();
+        }
+    }
+
+    private async Task RecoverInterruptedOperationAsync(UpdateOperationRecord? interruptedOperation, bool knownFailure)
+    {
         await ScanAndCheckAsync();
         if (interruptedOperation is not null)
         {
@@ -138,6 +167,7 @@ public sealed partial class MainPage : Page
                 UpdateTransactionStage.PendingReboot or
                 UpdateTransactionStage.FailedNeedsAttention or
                 UpdateTransactionStage.Indeterminate;
+            if (knownFailure && !reachedTarget) return;
             var recoveredStage = reachedTarget
                 ? UpdateTransactionStage.Succeeded
                 : changeMayHaveStarted
@@ -675,6 +705,14 @@ public sealed partial class MainPage : Page
         return true;
     }
 
+    private void ShowUnexpectedFailure(string title, Exception exception)
+    {
+        UpdateBar.Title = title;
+        UpdateBar.Message = exception.Message;
+        UpdateBar.Severity = InfoBarSeverity.Error;
+        UpdateBar.IsOpen = true;
+    }
+
     private void ShowOperationRunning()
     {
         UpdateBar.Title = LocalizationService.Get("OperationRunningTitle");
@@ -1075,8 +1113,15 @@ public sealed partial class MainPage : Page
             UpdateBar.Severity = transaction.IsSuccess
                 ? InfoBarSeverity.Success
                 : transaction.RequiresRestart ? InfoBarSeverity.Warning : InfoBarSeverity.Error;
+            if (transaction.JournalWarning is { } journalWarning)
+                UpdateBar.Message += Environment.NewLine + journalWarning;
             UpdateBar.IsOpen = true;
             _restartPending = transaction.RequiresRestart;
+        }
+        catch (Exception exception)
+        {
+            // An async void handler must not let an exception end the process.
+            ShowUnexpectedFailure(LocalizationService.Format("DriverNotUpdatedTitle", row.Name), exception);
         }
         finally
         {
@@ -1384,6 +1429,8 @@ public sealed partial class MainPage : Page
                 : transaction.RequiresRestart ? UpdateRunState.RestartRequired
                 : transaction.Stage is UpdateTransactionStage.NoLongerApplicable or UpdateTransactionStage.CanceledBeforeChange ? UpdateRunState.NotApplicable
                 : UpdateRunState.Failed;
+            if (transaction.JournalWarning is { } journalWarning)
+                UpdateBar.Message += Environment.NewLine + journalWarning;
             row.RunMessage = succeeded ? null : UpdateBar.Message;
             _runOutcomes[row.Source.ApplicationIdentity] = (row.RunState, row.RunMessage);
 
@@ -1396,6 +1443,15 @@ public sealed partial class MainPage : Page
                 }
             }
             return succeeded;
+        }
+        catch (Exception exception)
+        {
+            // An exception here would end the process in the middle of "Alle aktualisieren".
+            ShowUnexpectedFailure(LocalizationService.Format("NotUpdatedTitle", row.Name), exception);
+            row.RunState = UpdateRunState.Failed;
+            row.RunMessage = UpdateBar.Message;
+            _runOutcomes[row.Source.ApplicationIdentity] = (row.RunState, row.RunMessage);
+            return false;
         }
         finally
         {

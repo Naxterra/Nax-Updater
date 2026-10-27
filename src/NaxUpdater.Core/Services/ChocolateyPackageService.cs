@@ -315,7 +315,7 @@ public sealed class ChocolateyPackageService : IChocolateyPackageService
         }
         catch (Win32Exception exception) when (exception.NativeErrorCode == 1223)
         {
-            return new UpdateExecutionResult(1223, false, "The Windows elevation prompt was canceled.");
+            return new UpdateExecutionResult(1223, false, "The Windows elevation prompt was canceled.", NotStarted: true);
         }
         finally
         {

@@ -385,7 +385,7 @@ public sealed class UpdateExecutionService
         if (plan.Kind == UpdateExecutionKind.NativeStoreQueue)
         {
             if (prepared.StoreQueueUpdate is null || prepared.StoreQueueUpdate.Target != plan.StoreQueueTarget)
-                throw new InvalidOperationException("The prepared Store queue item differs from the approved identity.");
+                throw new UpdateExecutionRefusedException("The prepared Store queue item differs from the approved identity.");
             return await prepared.StoreQueueUpdate.Apply(progress, cancellationToken);
         }
         var running = FindRunningProcesses(update);
@@ -440,18 +440,18 @@ public sealed class UpdateExecutionService
             cancellationToken.ThrowIfCancellationRequested();
             if (prepared.ChocolateyUpdate is null ||
                 prepared.ChocolateyUpdate.Target != plan.ChocolateyTarget)
-                throw new InvalidOperationException("The prepared Chocolatey package does not match the approved target.");
+                throw new UpdateExecutionRefusedException("The prepared Chocolatey package does not match the approved target.");
             return await prepared.ChocolateyUpdate.ApplyAsync(cancellationToken, progress);
         }
         if (string.IsNullOrWhiteSpace(prepared.ExecutablePath) || !File.Exists(prepared.ExecutablePath))
         {
             DiscardPrepared(prepared);
-            throw new InvalidOperationException("The prepared executable update payload is missing.");
+            throw new UpdateExecutionRefusedException("The prepared executable update payload is missing.");
         }
         if (prepared.ContentLocks is not { Count: > 0 })
         {
             DiscardPrepared(prepared);
-            throw new InvalidOperationException("The prepared update payload is not protected against replacement.");
+            throw new UpdateExecutionRefusedException("The prepared update payload is not protected against replacement.");
         }
         string currentHash;
         try
@@ -469,7 +469,7 @@ public sealed class UpdateExecutionService
         if (!string.Equals(currentHash, prepared.ContentSha256, StringComparison.OrdinalIgnoreCase))
         {
             DiscardPrepared(prepared);
-            throw new InvalidDataException("The prepared update payload changed after verification.");
+            throw new UpdateExecutionRefusedException("The prepared update payload changed after verification.");
         }
 
         if (plan.Kind == UpdateExecutionKind.NativeCommand)
@@ -574,7 +574,7 @@ public sealed class UpdateExecutionService
         }
         catch (Win32Exception exception) when (exception.NativeErrorCode == 1223)
         {
-            return new UpdateExecutionResult(1223, false, "The Windows elevation prompt was cancelled.");
+            return new UpdateExecutionResult(1223, false, "The Windows elevation prompt was cancelled.", NotStarted: true);
         }
     }
 
@@ -868,6 +868,9 @@ public sealed class UpdateExecutionService
         }
     }
 }
+
+// The executor refused to start the approved payload, so nothing was changed.
+public sealed class UpdateExecutionRefusedException(string message) : InvalidOperationException(message);
 
 public sealed class ApplicationStillRunningException(IReadOnlyList<string> processNames)
     : InvalidOperationException($"Close the following application processes before updating: {string.Join(", ", processNames)}")

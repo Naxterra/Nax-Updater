@@ -351,7 +351,7 @@ Assert(reboot.Stage == UpdateTransactionStage.PendingReboot &&
        reboot.RequiresRestart &&
        !reboot.IsSuccess,
     "A reboot-pending update was incorrectly counted as completed before post-restart verification.");
-var uacCanceledBackend = new ScriptedBackend([offer, offer, offer], new(1223, false, "UAC canceled"));
+var uacCanceledBackend = new ScriptedBackend([offer, offer, offer], new(1223, false, "UAC canceled", NotStarted: true));
 var uacCanceled = await new UpdateTransactionCoordinator(uacCanceledBackend, verificationAttempts: 1)
     .ApplyAsync(offer, Path.GetTempPath());
 Assert(uacCanceled.Stage == UpdateTransactionStage.CanceledBeforeChange && !uacCanceled.IsSuccess,

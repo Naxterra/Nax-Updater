@@ -91,7 +91,9 @@ public sealed record UpdateTransactionProgress(
     UpdateTransactionStage Stage,
     double? Fraction = null);
 
-public sealed record UpdateExecutionResult(int ExitCode, bool IsSuccess, string? Error);
+// NotStarted is true only when the installer was never started (for example a canceled
+// UAC prompt). An installer's own exit code 1223 does not prove that.
+public sealed record UpdateExecutionResult(int ExitCode, bool IsSuccess, string? Error, bool NotStarted = false);
 
 public sealed record ApplicationCloseResult(
     bool CloseRequested,
@@ -106,7 +108,9 @@ public sealed record UpdateTransactionResult(
     UpdateCheckResult? FreshAssessment,
     UpdateExecutionResult? Execution,
     string? Error,
-    IReadOnlyList<string>? RemainingProcessNames = null)
+    IReadOnlyList<string>? RemainingProcessNames = null,
+    // Set when the outcome is valid but the update journal could not be written.
+    string? JournalWarning = null)
 {
     public bool IsSuccess => Stage == UpdateTransactionStage.Succeeded;
     public bool RequiresRestart => Stage == UpdateTransactionStage.PendingReboot;
@@ -165,7 +169,10 @@ public sealed record UpdateExecutionPlan(
     bool AuthenticatedGitHubAsset = false,
     // Approved by the owner for official sites that publish no installer hash: the
     // exact publisher signature (on the nested MSI for an archive) is the proof.
-    bool SignatureOnly = false);
+    bool SignatureOnly = false,
+    // For a download whose URL does not name the version: the version the installer's
+    // own version resource must declare before it may run.
+    string? ExpectedInstallerVersion = null);
 
 public sealed record StoreQueueTarget(string ProductId, string PackageFamilyName, string InstalledVersion);
 

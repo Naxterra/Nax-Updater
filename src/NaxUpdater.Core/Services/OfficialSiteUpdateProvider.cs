@@ -129,13 +129,21 @@ public sealed class OfficialSiteUpdateProvider(HttpClient httpClient, OfficialSi
         var fileName = recipe.FileName is null
             ? Path.GetFileName(Uri.UnescapeDataString(download.AbsolutePath))
             : Path.GetFileName(Expand(recipe.FileName, values, escape: false));
+        // A signature-only installer proves its publisher, not its version. When the
+        // download URL does not name the version, the installer's version resource must.
+        var versionUnbound = recipe.SignatureOnly && (recipe.VerifyInstallerVersion || !UrlNamesVersion(download.AbsoluteUri, version));
+        if (versionUnbound && recipe.InstallerKind != UpdateExecutionKind.DownloadedExe)
+            return Result(application, version, UpdateStatus.NewerReleaseKnown, notes,
+                "The publisher's download does not name its version and only its signature can be checked, so the installer cannot be tied to this version.", null,
+                UpdateApplicability.NotApplicable);
         var plan = new UpdateExecutionPlan(
             recipe.InstallerKind, download, fileName, sha512 ? null : hash, recipe.Unsigned ? null : recipe.ExpectedSigner, null,
             (currentUser ? recipe.CurrentUserInstallerArguments ?? recipe.InstallerArguments : recipe.InstallerArguments).ToArray(),
             (!currentUser || recipe.AlwaysElevate) && recipe.RequiresElevation, recipe.AllowedHosts.ToArray(), recipe.RunningProcessNames.ToArray(),
             Sha512: sha512 ? hash : null, RequireAuthenticode: !recipe.Unsigned, AllowHashVerifiedRedirects: recipe.AllowMirrorRedirects,
             NestedInstallerRelativePath: recipe.NestedInstaller is null ? null : Expand(recipe.NestedInstaller, values, escape: false),
-            SignatureOnly: recipe.SignatureOnly);
+            SignatureOnly: recipe.SignatureOnly,
+            ExpectedInstallerVersion: versionUnbound ? version : null);
         return Result(application, version, UpdateStatus.Available, notes,
             recipe.SignatureOnly
                 ? $"The publisher's site offers {version}. It publishes no installer hash, so the exact {recipe.ExpectedSigner} signature is the verified proof (signature-only)."
@@ -143,6 +151,20 @@ public sealed class OfficialSiteUpdateProvider(HttpClient httpClient, OfficialSi
                 ? $"The publisher's site offers {version}; its published {recipe.HashAlgorithm.ToUpperInvariant()} is verified before installation (the publisher ships unsigned installers)."
                 : $"The publisher's site offers {version}; its published {recipe.HashAlgorithm.ToUpperInvariant()} and the {recipe.ExpectedSigner} signature are verified before installation.",
             plan);
+    }
+
+    // True when every numeric part of the version appears in the URL in order
+    // (".../616.92/..." or "idman643build16.exe" for 6.43.16).
+    internal static bool UrlNamesVersion(string url, string version)
+    {
+        var position = 0;
+        foreach (Match part in Regex.Matches(version, "[0-9]+", RegexOptions.CultureInvariant))
+        {
+            var index = url.IndexOf(part.Value, position, StringComparison.Ordinal);
+            if (index < 0) return false;
+            position = index + part.Value.Length;
+        }
+        return position > 0;
     }
 
     private string? VersionOf(Match match)
@@ -157,7 +179,7 @@ public sealed class OfficialSiteUpdateProvider(HttpClient httpClient, OfficialSi
     private async Task<string> ReadAsync(string url, CancellationToken cancellationToken)
     {
         using var request = new HttpRequestMessage(HttpMethod.Get, url);
-        request.Headers.UserAgent.ParseAdd("NaxUpdater/0.17.29");
+        request.Headers.UserAgent.ParseAdd("NaxUpdater/0.17.30");
         using var response = await httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
         response.EnsureSuccessStatusCode();
         // Version sources are small documents; never read a large file by accident.

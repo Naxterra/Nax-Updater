@@ -24,11 +24,11 @@ internal static class ProcessLifetimeRegression
             using var current = Process.GetCurrentProcess();
             try { UpdateHostLifetime.EnsureSafeToClose([current]); assert(false, "Job-bound close was not blocked."); }
             catch (InvalidOperationException exception) { assert(exception.Message.Contains("process job"), "Wrong close guard failure."); }
-            assert(UpdateHostLifetime.TryDetachFromLauncher([], Environment.ProcessPath!, 0),
+            assert(UpdateHostLifetime.TryDetachFromLauncher([], Environment.ProcessPath!, 0, LaunchConsoleThroughDesktop),
                 "Desktop replacement did not acknowledge an independent process lifetime.");
         }
         var report = Path.Combine(fixture, "process-lifetime-result.json");
-        UpdateHostLifetime.LaunchThroughDesktop(Environment.ProcessPath!, $"--close-fixture-worker \"{report}\"", 0);
+        LaunchConsoleThroughDesktop(Environment.ProcessPath!, $"--close-fixture-worker \"{report}\"", 0);
         var deadline = DateTimeOffset.UtcNow.AddSeconds(20);
         while (!File.Exists(report) && DateTimeOffset.UtcNow < deadline) await Task.Delay(100);
         assert(File.Exists(report), "Process lifetime worker did not finish.");
@@ -42,8 +42,33 @@ internal static class ProcessLifetimeRegression
         assert(root.GetProperty("UnrelatedChildPreserved").GetBoolean(), "Force-close terminated an unrelated descendant.");
     }
 
-    private static bool IsHeadlessCiRunner() =>
-        Environment.GetEnvironmentVariable("GITHUB_ACTIONS")?.Equals("true", StringComparison.OrdinalIgnoreCase) == true;
+    // This test host is a console program. Windows 11 hands a console program started from
+    // the desktop to Windows Terminal, which runs it inside its own job; Nax-Updater itself is
+    // a window program and is not affected. Hosting it in conhost keeps it outside any job.
+    private static void LaunchConsoleThroughDesktop(string executable, string arguments, int show) =>
+        UpdateHostLifetime.LaunchThroughDesktop(
+            Path.Combine(Environment.SystemDirectory, "conhost.exe"), $"--headless \"{executable}\" {arguments}", show);
+
+    // The regression needs a desktop shell window to launch through. CI runners and
+    // restricted sessions have none, or deny access to it.
+    private static bool IsHeadlessCiRunner()
+    {
+        if (Environment.GetEnvironmentVariable("GITHUB_ACTIONS")?.Equals("true", StringComparison.OrdinalIgnoreCase) == true) return true;
+        try
+        {
+            var shellType = Type.GetTypeFromProgID("Shell.Application");
+            if (shellType is null) return true;
+            dynamic shell = Activator.CreateInstance(shellType)!;
+            var hwnd = 0;
+            dynamic desktop = shell.Windows().FindWindowSW(0, 0, 8, ref hwnd, 1);
+            return desktop is null || hwnd == 0;
+        }
+        catch (Exception exception) when (UpdateHostLifetime.IsDesktopLaunchFailure(exception))
+        {
+            Console.WriteLine($"SKIPPED: ProcessLifetimeRegression needs a desktop shell ({exception.GetType().Name}).");
+            return true;
+        }
+    }
 
     public static async Task RunWorkerAsync(string report)
     {

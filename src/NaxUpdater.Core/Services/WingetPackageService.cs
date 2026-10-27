@@ -238,7 +238,7 @@ public sealed partial class WingetPackageService : IWingetPackageService
         }
         catch (System.ComponentModel.Win32Exception exception) when (exception.NativeErrorCode == 1223)
         {
-            return new UpdateExecutionResult(1223, false, "The Windows elevation prompt was cancelled.");
+            return new UpdateExecutionResult(1223, false, "The Windows elevation prompt was cancelled.", NotStarted: true);
         }
         finally
         {

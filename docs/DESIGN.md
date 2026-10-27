@@ -1,6 +1,6 @@
 # Nax-Updater design
 
-Current as of 0.17.29. Updated with every release; the reasons behind each rule are in [DECISIONS.md](DECISIONS.md).
+Current as of 0.17.30. Updated with every release; the reasons behind each rule are in [DECISIONS.md](DECISIONS.md).
 
 ## Goal
 
@@ -64,7 +64,7 @@ A **superseded registration** (an entry named "Product - 12.0.30501" next to a c
 `update-providers.json` records, per app, where the publisher lists versions and how to download and verify the installer, so nothing is searched at run time.
 
 - `github`: repository, asset pattern, expected signer. Options: `unsigned` (GitHub asset digest only), `followInstalledPrerelease`, `privateRepository` (asset resolved through the API with the `gh` CLI token, sent only to `api.github.com`), `releaseTagPrefix`.
-- `official`: version page or feed, a regex for versions (highest wins), download and hash locations, expected signer, allowed hosts. Options: `versionFormat`, `downloadPageUrl`/`downloadPattern`, `fileName`, `nestedInstaller` (MSI inside a ZIP), `hashUrl`/`hashPattern`/`hashEncoding`, `rolloutPattern`, `stayOnInstalledMajor`, `architecture: neutral`, `allowMirrorRedirects`, `alwaysElevate`, `unsigned`, `signatureOnly`.
+- `official`: version page or feed, a regex for versions (highest wins), download and hash locations, expected signer, allowed hosts. Options: `versionFormat`, `downloadPageUrl`/`downloadPattern`, `fileName`, `nestedInstaller` (MSI inside a ZIP), `hashUrl`/`hashPattern`/`hashEncoding`, `rolloutPattern`, `stayOnInstalledMajor`, `architecture: neutral`, `allowMirrorRedirects`, `alwaysElevate`, `unsigned`, `signatureOnly`, `verifyInstallerVersion`.
 
 Every recipe is added only after a real download was verified against its hash and signer. When a publisher's signer changes, the update fails with "expected signer ..., found ..." and the pin is changed only after the new certificate is matched to the publisher's own legal records.
 
@@ -81,7 +81,7 @@ A same-version repair (Chocolatey reinstalling a version that was installed outs
 Exceptions, each modelled explicitly in the plan:
 
 - **Unsigned publisher** (`unsigned`): the hash alone, and only when the publisher ships no signed builds.
-- **Signature only** (`signatureOnly`, `SignatureOnly` plan flag): for publishers that publish no hash. The exact pinned signer is required; the validator accepts this only with `RequireAuthenticode` and a named signer, never for drivers. For a ZIP the nested MSI's signer is checked before it runs. Payloads the signature does not cover (external unsigned cabinets) are not allowed.
+- **Signature only** (`signatureOnly`, `SignatureOnly` plan flag): for publishers that publish no hash. The exact pinned signer is required; the validator accepts this only with `RequireAuthenticode` and a named signer, never for drivers. For a ZIP the nested MSI's signer is checked before it runs. Payloads the signature does not cover (external unsigned cabinets) are not allowed. A signature proves the publisher but not the version, so when the download URL does not name the version (or the recipe sets `verifyInstallerVersion`), the installer's own version resource must match the approved version before it runs, and a cached signature-only installer is never reused. Mirror redirects are allowed only for an installer with a published hash.
 - **WinGet and Store**: the platform owns download integrity; Nax-Updater validates the exact package identity, architecture, installer type and locale before submitting. A queued Store update is shown as Windows' own queue item for the exact package family, without an installer hash.
 
 After a verified successful update, its cached installer is deleted with its empty folders, because it can never be needed again. Driver packages are kept for rollbacks.
