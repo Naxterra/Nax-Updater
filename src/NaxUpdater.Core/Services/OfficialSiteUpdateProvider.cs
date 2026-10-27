@@ -131,7 +131,7 @@ public sealed class OfficialSiteUpdateProvider(HttpClient httpClient, OfficialSi
             : Path.GetFileName(Expand(recipe.FileName, values, escape: false));
         // A signature-only installer proves its publisher, not its version. When the
         // download URL does not name the version, the installer's version resource must.
-        var versionUnbound = recipe.SignatureOnly && (recipe.VerifyInstallerVersion || !UrlNamesVersion(download.AbsoluteUri, version));
+        var versionUnbound = recipe.SignatureOnly && (recipe.VerifyInstallerVersion || !TemplateNamesVersion(recipe));
         if (versionUnbound && recipe.InstallerKind != UpdateExecutionKind.DownloadedExe)
             return Result(application, version, UpdateStatus.NewerReleaseKnown, notes,
                 "The publisher's download does not name its version and only its signature can be checked, so the installer cannot be tied to this version.", null,
@@ -153,18 +153,16 @@ public sealed class OfficialSiteUpdateProvider(HttpClient httpClient, OfficialSi
             plan);
     }
 
-    // True when every numeric part of the version appears in the URL in order
-    // (".../616.92/..." or "idman643build16.exe" for 6.43.16).
-    internal static bool UrlNamesVersion(string url, string version)
+    // True when the recipe builds its download URL from the version itself: from
+    // {version}, or from every part its versionFormat is made of ("idman{maj}{min}build{build}"
+    // for "{maj}.{min}.{build}"). Digits that merely happen to appear in a URL do not count.
+    internal static bool TemplateNamesVersion(OfficialSiteRecipe recipe)
     {
-        var position = 0;
-        foreach (Match part in Regex.Matches(version, "[0-9]+", RegexOptions.CultureInvariant))
-        {
-            var index = url.IndexOf(part.Value, position, StringComparison.Ordinal);
-            if (index < 0) return false;
-            position = index + part.Value.Length;
-        }
-        return position > 0;
+        if (recipe.DownloadUrl.Contains("{version", StringComparison.Ordinal)) return true;
+        if (recipe.VersionFormat is null) return false;
+        var parts = Regex.Matches(recipe.VersionFormat, @"\{[A-Za-z_][A-Za-z0-9_]*\}", RegexOptions.CultureInvariant)
+            .Select(static match => match.Value).ToArray();
+        return parts.Length > 0 && parts.All(part => recipe.DownloadUrl.Contains(part, StringComparison.Ordinal));
     }
 
     private string? VersionOf(Match match)

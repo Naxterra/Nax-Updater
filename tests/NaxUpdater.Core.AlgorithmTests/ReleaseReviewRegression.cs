@@ -18,6 +18,19 @@ internal static class ReleaseReviewRegression
         await refused_start_is_recorded_as_failed_before_change(assert);
         await journal_write_failure_keeps_the_verified_outcome(assert);
         await journal_that_cannot_be_started_blocks_the_update(assert);
+        await journal_that_cannot_save_the_applying_step_stops_before_the_installer(assert);
+    }
+
+    // Recovery reads the saved stage; an installer that ran while the journal still said
+    // "Quiescing" would be recovered as "canceled before change".
+    private static async Task journal_that_cannot_save_the_applying_step_stops_before_the_installer(Action<bool, string> assert)
+    {
+        var offer = await Offer();
+        var backend = new Backend(offer, new UpdateExecutionResult(0, true, null));
+        var result = await new UpdateTransactionCoordinator(backend, new Journal(failOn: UpdateTransactionStage.Applying), verificationAttempts: 1)
+            .ApplyAsync(offer, "unused");
+        assert(result.Stage == UpdateTransactionStage.FailedBeforeChange && !backend.Applied,
+            $"An installer ran although its \"Applying\" step could not be saved in the journal ({result.Stage}).");
     }
 
     // PotPlayer's "Latest" installer declares 26.10.21.0 when the page lists 261021.
@@ -36,10 +49,26 @@ internal static class ReleaseReviewRegression
 
     private static async Task download_url_without_version_requires_the_installer_version(Action<bool, string> assert)
     {
-        assert(!OfficialSiteUpdateProvider.UrlNamesVersion("https://t1.daumcdn.net/potplayer/PotPlayer/Version/Latest/PotPlayerSetup64.exe", "26.10.21") &&
-               OfficialSiteUpdateProvider.UrlNamesVersion("https://download.internetdownloadmanager.com/idman643build16.exe", "6.43.16") &&
-               OfficialSiteUpdateProvider.UrlNamesVersion("https://us.download.nvidia.com/nvapp/client/11.0.9.251/NVIDIA_app_v11.0.9.251.exe", "11.0.9.251"),
-            "A download URL was misjudged as naming, or not naming, its version.");
+        OfficialSiteRecipe Template(string url, string? format) => new()
+        {
+            Id = "t", DisplayNamePattern = "t", VersionUrl = "https://t.example/", VersionPattern = "t", DownloadUrl = url, VersionFormat = format,
+            AllowedHosts = ["t.example"], InstallerKind = UpdateExecutionKind.DownloadedExe
+        };
+        assert(OfficialSiteUpdateProvider.TemplateNamesVersion(Template("https://download.internetdownloadmanager.com/idman{maj}{min}build{build}.exe", "{maj}.{min}.{build}")) &&
+               OfficialSiteUpdateProvider.TemplateNamesVersion(Template("https://us.download.nvidia.com/nvapp/client/{version}/NVIDIA_app_v{version}.exe", null)) &&
+               !OfficialSiteUpdateProvider.TemplateNamesVersion(Template("https://t1.daumcdn.net/potplayer/PotPlayer/Version/Latest/PotPlayerSetup64.exe", "{yy}.{mm}.{dd}")) &&
+               !OfficialSiteUpdateProvider.TemplateNamesVersion(Template("https://vendor64.example/win64/latest/setup.exe", null)) &&
+               !OfficialSiteUpdateProvider.TemplateNamesVersion(Template("https://javadl.oracle.com/webapps/download/AutoDL?BundleId={bundle}", "8.0.{update}0")),
+            "A download was judged as tied, or not tied, to its version by digits instead of by the recipe template.");
+        var shipped = await UpdateProviderCatalogLoader.LoadAsync(Path.GetFullPath(Path.Combine(AppContext.BaseDirectory,
+            "../../../../../../src/NaxUpdater/Configuration/update-providers.json")));
+        var unbound = shipped.Official.Where(static recipe => recipe.SignatureOnly && !recipe.VerifyInstallerVersion &&
+            !OfficialSiteUpdateProvider.TemplateNamesVersion(recipe) && recipe.InstallerKind == UpdateExecutionKind.DownloadedExe).Select(static recipe => recipe.Id).ToArray();
+        assert(shipped.Official.Count(static recipe => recipe.SignatureOnly) > 0,
+            "The shipped recipe file was not read.");
+        assert(shipped.Official.Where(static recipe => recipe.SignatureOnly)
+                   .All(static recipe => recipe.VerifyInstallerVersion || OfficialSiteUpdateProvider.TemplateNamesVersion(recipe)),
+            $"A shipped signature-only recipe is tied to its version neither by its URL nor by an installer-version check: {string.Join(", ", unbound)}");
         using var http = new HttpClient(new Page("[261021] new release"));
         OfficialSiteRecipe Recipe(UpdateExecutionKind kind) => new()
         {

@@ -38,9 +38,14 @@ if ($projectVersion -ne $Version) {
 # A rebuilt release with an existing version number is not an upgrade for Windows
 # Installer: it installs a second Apps entry and the self-update check reports it as current.
 $repository = 'Naxterra/Nax-Updater'
-gh release view "v$Version" -R $repository *> $null
+$existing = gh release view "v$Version" -R $repository 2>&1 | Out-String
 if ($LASTEXITCODE -eq 0) {
     throw "Version $Version is already released. Bump the version before packaging."
+}
+# Only GitHub's own answer that the release does not exist lets packaging continue; a
+# network error, a rate limit or an expired login must not pass as "not released yet".
+if ($existing -notmatch 'release not found') {
+    throw "Whether version $Version is already released could not be checked: $($existing.Trim())"
 }
 $previousTag = gh release list -R $repository --limit 1 --exclude-drafts --exclude-pre-releases --json tagName -q '.[0].tagName'
 if ($LASTEXITCODE -ne 0 -or -not $previousTag) {

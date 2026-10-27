@@ -181,7 +181,14 @@ public sealed class UpdateTransactionCoordinator
             if (fraction is null && operation is not null && _journal is not null)
             {
                 try { operation = _journal.Record(operation, stage, _timeProvider.GetUtcNow()); }
-                catch (Exception exception) when (exception is IOException or UnauthorizedAccessException) { journalFailure = exception.Message; }
+                catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+                {
+                    // Up to "Applying" nothing has run yet. Recovery depends on that step being
+                    // saved, so the update stops before its installer starts.
+                    if (stage <= UpdateTransactionStage.Applying)
+                        throw new UpdateExecutionRefusedException($"The update journal could not be written, so the update was not started: {exception.Message}");
+                    journalFailure = exception.Message;
+                }
             }
         }
 
