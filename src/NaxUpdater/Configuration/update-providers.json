@@ -129,7 +129,6 @@
       "architecture": "x64",
       "language": "neutral",
       "unsigned": true,
-      "privateRepository": true,
       "installerKind": "DownloadedExe",
       "installerArguments": [ "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART", "/ALLUSERS" ],
       "currentUserInstallerArguments": [ "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART", "/CURRENTUSER" ],

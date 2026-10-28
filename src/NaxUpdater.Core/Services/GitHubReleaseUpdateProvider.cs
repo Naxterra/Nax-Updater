@@ -31,7 +31,7 @@ public sealed class GitHubReleaseUpdateProvider : IUpdateProvider
 
     public bool CanHandle(InstalledApplication application)
     {
-        return MatchesDisplayName(application.DisplayName, recipe.DisplayName) &&
+        return MatchesDisplayName(application.DisplayName, recipe.DisplayName, recipe.CurrentUserInstallerArguments is not null) &&
                (string.IsNullOrWhiteSpace(recipe.PublisherContains) ||
                 application.Publisher?.Contains(recipe.PublisherContains, StringComparison.OrdinalIgnoreCase) == true);
     }
@@ -40,11 +40,13 @@ public sealed class GitHubReleaseUpdateProvider : IUpdateProvider
     // ("Nax-TaskManager 2.0.0-alpha.23"); only a trailing version is accepted.
     // Inno Setup installers that let the user pick the install scope also append
     // the scope and bitness in the setup language ("Nax-Notepad (Aktueller Benutzer)");
-    // only those marks (English and German, as in Inno Setup's message files) are removed.
-    internal static bool MatchesDisplayName(string installed, string recipeName)
+    // Only recipes that serve both scopes accept those marks, and only the English and
+    // German ones (Inno Setup 7's Default.isl and German.isl), the languages these
+    // installers ship. A setup run in another language stays unmatched, never mismatched.
+    internal static bool MatchesDisplayName(string installed, string recipeName, bool acceptScopeMarks = false)
     {
         var marks = Regex.Match(installed, @"^(?<name>.+?) \((?<marks>[^()]+)\)$", RegexOptions.CultureInvariant);
-        if (marks.Success && marks.Groups["marks"].Value.Split(", ").All(InnoSetupNameMarks.Contains))
+        if (acceptScopeMarks && marks.Success && marks.Groups["marks"].Value.Split(", ").All(InnoSetupNameMarks.Contains))
             installed = marks.Groups["name"].Value;
         return installed.Equals(recipeName, StringComparison.OrdinalIgnoreCase) ||
             installed.StartsWith(recipeName + " ", StringComparison.OrdinalIgnoreCase) &&
@@ -329,7 +331,7 @@ public sealed class GitHubReleaseUpdateProvider : IUpdateProvider
             using var request = new HttpRequestMessage(
                 HttpMethod.Get,
                 $"https://api.github.com/repos/{recipe.Repository}/releases/latest");
-            request.Headers.UserAgent.ParseAdd("NaxUpdater/0.17.34");
+            request.Headers.UserAgent.ParseAdd("NaxUpdater/0.17.35");
             request.Headers.Accept.ParseAdd("application/vnd.github+json");
             try
             {
@@ -375,7 +377,7 @@ public sealed class GitHubReleaseUpdateProvider : IUpdateProvider
         using var request = new HttpRequestMessage(
             HttpMethod.Get,
             $"https://github.com/{recipe.Repository}/releases/latest");
-        request.Headers.UserAgent.ParseAdd("NaxUpdater/0.17.34");
+        request.Headers.UserAgent.ParseAdd("NaxUpdater/0.17.35");
         using var response = await httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
         var finalUri = response.RequestMessage?.RequestUri;
         var match = finalUri is null

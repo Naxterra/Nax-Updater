@@ -2,6 +2,10 @@
 
 Why Nax-Updater works the way it does. Newest first; every release adds its decisions here and updates [DESIGN.md](DESIGN.md). Each entry names the decision, the evidence that led to it, and what was rejected.
 
+## 0.17.35 (2026-10-28)
+
+**Scope marks are accepted only by recipes that serve both scopes.** Inno Setup adds "(Aktueller Benutzer)" and similar marks only when the user may choose the install scope, and such installers need per-user arguments anyway. A recipe without `currentUserInstallerArguments` therefore still requires the exact name, so a product that registers as "Name (64-bit)" cannot be claimed by a recipe for a different build. The Nax-Notepad recipe no longer marks its public repository as private, so its releases are read without the GitHub token.
+
 ## 0.17.34 (2026-10-28)
 
 **Per-user Inno Setup registrations are matched with their scope mark.** Inno Setup installers that let the user choose the install scope append the scope and bitness to the registered name in the setup language, for example "Nax-Notepad (Aktueller Benutzer)". The repository recipe compared names exactly, so such an installation showed no verified source. The matcher now removes only these marks (English and German, as Inno Setup's message files write them) before it compares the name; any other parenthesized suffix still does not match.
