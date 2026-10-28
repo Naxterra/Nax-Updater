@@ -17,6 +17,24 @@ internal static class MessageCatalogRegression
         english_setting_shows_the_message_unchanged(assert);
         unknown_text_is_shown_unchanged(assert);
         composed_scan_messages_are_shown_in_german(assert);
+        long_or_unusual_text_never_throws(assert);
+    }
+
+    // Translation runs inside the interface's error handlers; a long error text full of
+    // template fragments must come back quickly and without an exception.
+    private static void long_or_unusual_text_never_throws(Action<bool, string> assert)
+    {
+        var fragment = "x match to y; z reports the current version: Chocolatey published a b, but c, and d e does not pin one version of f; ";
+        var text = string.Concat(Enumerable.Repeat(fragment, 30));
+        var watch = System.Diagnostics.Stopwatch.StartNew();
+        string? result = null;
+        Exception? failure = null;
+        try { result = MessageCatalog.Translate(text, German); }
+        catch (Exception exception) { failure = exception; }
+        assert(failure is null && result is { Length: > 0 }, "Translating a long error text threw: " + failure?.GetType().Name);
+        assert(watch.Elapsed < TimeSpan.FromSeconds(2), $"Translating a long error text took {watch.Elapsed.TotalMilliseconds:F0} ms.");
+        var huge = new string('a', 5000);
+        assert(MessageCatalog.Translate(huge, German) == huge, "A very long text was not shown unchanged.");
     }
 
     // Messages as a real scan composes them from several pieces and values.
@@ -77,8 +95,9 @@ internal static class MessageCatalogRegression
         assert(MessageCatalog.Translate(message, German) == message, "Text without a template was changed.");
     }
 
-    private static int Placeholders(string template) =>
-        Regex.Matches(template, @"\{(\d+)\}").Select(static match => match.Groups[1].Value).Distinct().Count();
+    // The set of placeholder numbers, so "{0} {2}" against "{0} {1}" counts as a mismatch.
+    private static string Placeholders(string template) =>
+        string.Join(",", Regex.Matches(template, @"\{(\d+)\}").Select(static match => int.Parse(match.Groups[1].Value, CultureInfo.InvariantCulture)).Distinct().Order());
 
     // Every string literal in the Core sources that reads as a sentence: literals joined
     // with "+" form one template, and interpolation holes become {0}, {1}, ...

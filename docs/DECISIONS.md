@@ -2,6 +2,10 @@
 
 Why Nax-Updater works the way it does. Newest first; every release adds its decisions here and updates [DESIGN.md](DESIGN.md). Each entry names the decision, the evidence that led to it, and what was rejected.
 
+## 0.17.37 (2026-10-28)
+
+**Translating a message never fails.** The translation runs inside the interface's error handlers, so an exception there would end the application. A text that cannot be translated within the time limit, or whose template does not format, is shown in English. Values inside a template are limited in length and never cross a sentence, clause or line boundary, and only a bounded number of translated texts is cached.
+
 ## 0.17.36 (2026-10-28)
 
 **Messages from the checks are shown in German through a catalog of sentence templates.** About 570 English sentence templates in the core library produced the notes, source check results and error messages, and the German interface showed most of them in English. Translating at the source would have meant rewriting every message call and would have changed texts that tests and logs compare. The interface therefore translates the finished English text with a catalog keyed by the English template, and a test fails for any message literal without a German entry. The rejected alternative, a pattern list for only the messages seen on one PC, would have left every rarer message in English.

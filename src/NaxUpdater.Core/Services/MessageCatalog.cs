@@ -15,11 +15,25 @@ public static partial class MessageCatalog
     private static readonly Lazy<IReadOnlyList<Entry>> GermanEntries = new(() => Load("de"));
     private static readonly ConcurrentDictionary<string, string> GermanCache = new(StringComparer.Ordinal);
 
+    // Translation runs in the interface, also inside error handlers, so it never throws:
+    // text it cannot translate in time is shown as it is. Only a bounded number of texts
+    // is cached, because messages with times or error details rarely repeat.
     public static string Translate(string? text, CultureInfo culture)
     {
-        if (string.IsNullOrEmpty(text) || !culture.TwoLetterISOLanguageName.Equals("de", StringComparison.OrdinalIgnoreCase))
+        if (string.IsNullOrEmpty(text) || text.Length > 4000 || !culture.TwoLetterISOLanguageName.Equals("de", StringComparison.OrdinalIgnoreCase))
             return text ?? string.Empty;
-        return GermanCache.GetOrAdd(text, static value => Apply(value, GermanEntries.Value, 0));
+        if (GermanCache.TryGetValue(text, out var cached)) return cached;
+        string translated;
+        try
+        {
+            translated = Apply(text, GermanEntries.Value, 0);
+        }
+        catch (Exception exception) when (exception is RegexMatchTimeoutException or FormatException)
+        {
+            translated = text;
+        }
+        if (GermanCache.Count < 2048) GermanCache.TryAdd(text, translated);
+        return translated;
     }
 
     // Names, commands and identifiers that stay as they are ("same: " lines); they are listed
@@ -92,24 +106,27 @@ public static partial class MessageCatalog
         public static Entry Create(string english, string translation)
         {
             var parts = PlaceholderRegex().Split(english);
-            var pattern = new StringBuilder("(?<![A-Za-z])");
+            // A template that starts with a value starts at the beginning of the text or after
+            // a sentence, clause or line break, so earlier text is never taken into the value.
+            var pattern = new StringBuilder(parts[0].Length == 0 ? @"(?<=^|[.;:] |\n)" : "(?<![A-Za-z])");
             var placeholders = 0;
             for (var index = 0; index < parts.Length; index++)
             {
                 if (index % 2 == 0) pattern.Append(Regex.Escape(Unescape(parts[index])));
                 else
                 {
-                    // A value never spans a sentence boundary; a value at the very end
-                    // runs to the end of the sentence.
+                    // A value never spans a sentence boundary or a line, and a value inside the
+                    // template also not a clause; a value at the very end runs to the end of the
+                    // sentence. The lengths are bounded so backtracking stays small.
                     var last = index == parts.Length - 2 && parts[^1].Length == 0;
                     pattern.Append("(?<p").Append(parts[index]).Append('>')
-                        .Append(last ? @"(?:(?!\. [A-Z]).)+" : @"(?:(?!\. [A-Z]).)+?").Append(')');
+                        .Append(last ? @"(?:(?!\. [A-Z]|\n).){1,2000}" : @"(?:(?!\. [A-Z]|; |: |\n).){1,300}?").Append(')');
                     placeholders = Math.Max(placeholders, int.Parse(parts[index], CultureInfo.InvariantCulture) + 1);
                 }
             }
             var anchor = parts.Where((_, index) => index % 2 == 0).Select(Unescape).OrderByDescending(static part => part.Length).First();
             return new Entry(english, translation, placeholders, anchor,
-                new Regex(pattern.ToString(), RegexOptions.CultureInvariant | RegexOptions.Singleline, TimeSpan.FromMilliseconds(200)));
+                new Regex(pattern.ToString(), RegexOptions.CultureInvariant | RegexOptions.Singleline, TimeSpan.FromMilliseconds(50)));
         }
     }
 
