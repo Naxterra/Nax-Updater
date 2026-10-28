@@ -14,6 +14,9 @@
     <PackageReference Include="System.Management" Version="10.0.11" />
   </ItemGroup>
   <ItemGroup>
+    <EmbeddedResource Include="Services/MessageCatalog.de.txt" LogicalName="NaxUpdater.Core.Services.MessageCatalog.de.txt" WithCulture="false" />
+  </ItemGroup>
+  <ItemGroup>
     <InternalsVisibleTo Include="NaxUpdater.Core.SmokeTests" />
     <InternalsVisibleTo Include="NaxUpdater.Core.AlgorithmTests" />
   </ItemGroup>

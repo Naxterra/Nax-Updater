@@ -461,6 +461,7 @@ try
     await StoreFulfillmentRegression.RunAsync(Assert);
     await StoreQueueOrchestrationRegression.RunAsync(Assert);
     RecoveryRegression.Run(Assert);
+    MessageCatalogRegression.Run(Assert);
     await StoreSchedulingRegression.RunAsync(Assert);
     await CoverageRegression.RunAsync(Assert);
     await ChocolateyNextcloudRegression.RunAsync(Assert, fixture);

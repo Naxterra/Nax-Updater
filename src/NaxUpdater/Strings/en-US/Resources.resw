@@ -196,4 +196,5 @@
   <data name="StopAfterCurrent"><value>Stop after current operation</value></data>
   <data name="RemovalWindowsComponent"><value>Windows manages this system component. Nax-Updater does not offer direct package removal for it. Protected packages will not be forcibly removed.</value></data>
   <data name="RemovalUnavailable"><value>No supported uninstall method was found for this application.</value></data>
+  <data name="RemovalFailedWithCode" xml:space="preserve"><value>Removal failed with code {0}.</value></data>
 </root>

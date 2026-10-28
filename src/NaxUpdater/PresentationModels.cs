@@ -278,7 +278,7 @@ public sealed class UpdateRow : INotifyPropertyChanged
                         ? string.Join(" / ", Source.ExecutionPlan.ExpectedSigners)
                         : Source.ExecutionPlan.ExpectedSigner);
     public string Message => RunMessage is { } run
-        ? run + Environment.NewLine + Environment.NewLine + LocalizationService.ProviderMessage(Source)
+        ? LocalizationService.Text(run) + Environment.NewLine + Environment.NewLine + LocalizationService.ProviderMessage(Source)
         : LocalizationService.ProviderMessage(Source);
     public string ReleaseNotes => Source.ReleaseNotesUrl ?? LocalizationService.Get("NotProvided");
     public bool CanInstall => Source.IsInstallable;
@@ -390,7 +390,7 @@ public sealed class ManufacturerDriverRow(ManufacturerDriverResult source, Drive
         : Source.Status == ManufacturerDriverStatus.NoUpdateRequired && Source.SourceName.StartsWith("WD Elements", StringComparison.OrdinalIgnoreCase)
             ? LocalizationService.Get("DriverWdOptionsAvailable")
             : Source.AvailableVersion ?? "—";
-    public string Provider => Source.SourceName;
+    public string Provider => LocalizationService.Text(Source.SourceName);
     public string Status => Source.Status switch
     {
         ManufacturerDriverStatus.Available when CanUpdate => LocalizationService.Get("DriverStatusAvailable"),

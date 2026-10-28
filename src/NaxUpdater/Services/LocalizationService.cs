@@ -33,7 +33,7 @@ public static partial class LocalizationService
         if (update.ProviderId == "zero-install") return Get("ProviderZeroInstall");
         if (update.ProviderId == "wsl-native") return Get("ProviderWsl");
         if (update.ProviderId == "native-updater") return update.ProviderDisplayName == "NaxUpdater manufacturer-driver view"
-            ? Get("ProviderDriverWorkspace") : update.ProviderDisplayName;
+            ? Get("ProviderDriverWorkspace") : Text(update.ProviderDisplayName);
         if (update.ProviderId == "unverified") return Get("ProviderUnverified");
         if (update.ProviderId == "msix-store") return Get("ProviderMsixStore");
         if (update.ProviderId == "installed-updater-metadata") return Get("ProviderInstalledMetadata");
@@ -46,10 +46,18 @@ public static partial class LocalizationService
             return Format("ProviderGitHub", update.ProviderId[7..]);
         }
         if (update.ProviderId.StartsWith("official:", StringComparison.Ordinal)) return Get("ProviderOfficialSite");
-        return update.ProviderDisplayName;
+        return Text(update.ProviderDisplayName);
     }
 
-    public static string ProviderMessage(UpdateCheckResult update)
+    // Text from the checks and the update engine is English; the German interface shows it
+    // through the message catalog.
+    [return: System.Diagnostics.CodeAnalysis.NotNullIfNotNull(nameof(text))]
+    public static string? Text(string? text) =>
+        text is null ? null : MessageCatalog.Translate(text, System.Globalization.CultureInfo.CurrentUICulture);
+
+    public static string ProviderMessage(UpdateCheckResult update) => Text(ProviderMessageText(update));
+
+    private static string ProviderMessageText(UpdateCheckResult update)
     {
         if (update.AvailabilityReason == UpdateAvailabilityReason.StagedRollout)
             return update.RolloutThresholdPercent is { } threshold
@@ -132,7 +140,7 @@ public static partial class LocalizationService
         "Preserved by Microsoft Store/MSIX package" => Get("LanguageSourceMsixStore"),
         "Installed WinRAR language file" => Get("LanguageSourceWinRar"),
         "Check failed before language could be verified" => Get("LanguageSourceFailed"),
-        _ => source
+        _ => Text(source)
     };
 
     public static string LanguageName(string language) => language.ToLowerInvariant() switch

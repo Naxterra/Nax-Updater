@@ -2,6 +2,10 @@
 
 Why Nax-Updater works the way it does. Newest first; every release adds its decisions here and updates [DESIGN.md](DESIGN.md). Each entry names the decision, the evidence that led to it, and what was rejected.
 
+## 0.17.36 (2026-10-28)
+
+**Messages from the checks are shown in German through a catalog of sentence templates.** About 570 English sentence templates in the core library produced the notes, source check results and error messages, and the German interface showed most of them in English. Translating at the source would have meant rewriting every message call and would have changed texts that tests and logs compare. The interface therefore translates the finished English text with a catalog keyed by the English template, and a test fails for any message literal without a German entry. The rejected alternative, a pattern list for only the messages seen on one PC, would have left every rarer message in English.
+
 ## 0.17.35 (2026-10-28)
 
 **Scope marks are accepted only by recipes that serve both scopes.** Inno Setup adds "(Aktueller Benutzer)" and similar marks only when the user may choose the install scope, and such installers need per-user arguments anyway. A recipe without `currentUserInstallerArguments` therefore still requires the exact name, so a product that registers as "Name (64-bit)" cannot be claimed by a recipe for a different build. The Nax-Notepad recipe no longer marks its public repository as private, so its releases are read without the GitHub token.

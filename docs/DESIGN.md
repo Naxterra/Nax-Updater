@@ -1,6 +1,6 @@
 # Nax-Updater design
 
-Current as of 0.17.35. Updated with every release; the reasons behind each rule are in [DECISIONS.md](DECISIONS.md).
+Current as of 0.17.36. Updated with every release; the reasons behind each rule are in [DECISIONS.md](DECISIONS.md).
 
 ## Goal
 
@@ -109,6 +109,10 @@ Drivers have their own view (Treiber) and are never part of "Alle aktualisieren"
 - Chocolatey feed requests: 8 s per attempt, one retry on a fresh connection.
 - A Store item that shows no change (state or progress) for 3 minutes is released: Nax-Updater stops waiting, reports it as not completed, and moves on; the item stays in the Store queue. Installing and restoring phases never count as stalled, and an item that keeps progressing gets the full 20 minutes.
 - WinGet's COM server exits after installing a new catalog package; refresh and assessment reconnect once on `RPC_S_CALL_FAILED` or `RPC_S_SERVER_UNAVAILABLE`.
+
+## Interface language
+
+The checks and the update engine write their messages in English. The German interface shows every such message through the message catalog (`MessageCatalog.de.txt` in the core library), which holds a German version of each English sentence template with `{0}`, `{1}` and so on for inserted versions and names. A finished message is translated piece by piece, so messages built from several sentences and values are translated as well, and the inserted values are translated when the catalog knows them. Names, commands and identifiers are listed as `same:` and stay unchanged. A test reads every message literal in the core sources and fails when one has no catalog entry, so a new English message cannot ship untranslated.
 
 ## Naming
 

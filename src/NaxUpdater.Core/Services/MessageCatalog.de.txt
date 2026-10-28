@@ -1,0 +1,1106 @@
+# German versions of the messages that the checks and the update engine write in English.
+# Each entry is an "en: " line followed by its "de: " line. {0}, {1}, ... stand for inserted values.
+# "same: " lines are names, commands and identifiers that are shown unchanged.
+
+same: "{0}" upgrade {1} --version="{2}" -y -r --no-progress > "{3}" 2>&1
+same: Accept: application/vnd.github+json
+same: Bitdefender Endpoint Security Tools
+same: Bitdefender GravityZone policy
+same: Dell AW3423DW (M46J9)
+same: Dynamic Application Loader
+same: Fastmail desktop updater
+same: Firefox Setup {0}.exe
+same: GOG  sp. z o.o
+same: GeForce RTX {0} Series
+same: HD Audio Driver
+same: Huntsman V3 Pro 8 kHz
+same: IVPN Client.exe
+same: Intel Chipset Device Software
+same: Intel Driver & Support Assistant
+same: Intel Ethernet I219
+same: Intel Rapid Storage Technology
+same: Intel Z490 Chipset Device Software
+same: Intel {0} · e1d.inf {1}
+same: Intel(R) Ethernet Connection I219
+same: Intel(R) Network Connections Drivers
+same: Intel® Ethernet Connection I219
+same: Kiyo Pro Firmware Updater
+same: MSI MAG Z490 TOMAHAWK
+same: Macrium Reflect Home
+same: Microsoft Store / MSIX
+same: Microsoft Windows Hardware Compatibility Publisher
+same: Mozilla Maintenance Service
+same: Nommo Pro Firmware Updater
+same: Paramount Software (UK) Ltd.
+same: Python Software Foundation
+same: Razer Firefly V2
+same: Razer Huntsman V2
+same: Razer Huntsman V3 Pro 8KHz
+same: Razer Kiyo Pro
+same: Razer Naga Trinity
+same: Razer Nommo Pro
+same: Realtek Ethernet Controller Driver
+same: TP-Link Archer TBE400UH
+same: TP-Link Archer TBE400UH Driver
+same: USB Input Device
+same: Win10/Win11 Auto Installation Program (NDIS)
+same: tolower(Id) eq '{0}' and IsLatestVersion
+same: win.rar GmbH
+same: {0}:ambiguous metadata fallback
+
+en:  Apply the device update in the Drivers view.
+de:  Wenden Sie das Geräteupdate in der Treiberansicht an.
+en: A download segment redirected to untrusted host '{0}'.
+de: Ein Downloadabschnitt wurde auf den nicht vertrauenswürdigen Host „{0}“ umgeleitet.
+en: A native updater requires a trusted Authenticode publisher or an exact Store package identity.
+de: Ein eigener Updater braucht einen vertrauenswürdigen Authenticode-Herausgeber oder eine exakte Store-Paketidentität.
+en: A newer Node.js release exists on the installed major line, but its producer-published MSI SHA-256 could not be verified; automatic installation is blocked.
+de: Auf der installierten Hauptversion gibt es ein neueres Node.js-Release, aber der vom Hersteller veröffentlichte SHA-256 des MSI konnte nicht geprüft werden. Die automatische Installation ist gesperrt.
+en: A newer applicable Intel Windows 11 e1d INF ({0}) is available in package {1}.
+de: Im Paket {1} ist eine neuere passende Intel-INF e1d für Windows 11 ({0}) verfügbar.
+en: A newer official NVIDIA WHQL Game Ready driver is available.
+de: Ein neuerer offizieller NVIDIA-WHQL-Game-Ready-Treiber ist verfügbar.
+en: A newer producer release is verified, but automatic installation is blocked until the release has a complete asset digest, download URL, and Authenticode signer policy.
+de: Ein neueres Hersteller-Release ist geprüft, aber die automatische Installation bleibt gesperrt, bis das Release einen vollständigen Asset-Hash, eine Download-URL und eine Authenticode-Signaturregel hat.
+en: A signature-only recipe must name the publisher's exact signer.
+de: Ein Rezept, das nur die Signatur prüft, muss den exakten Signierer des Herstellers nennen.
+en: Active Firefox language pack in the default installation profile
+de: Aktives Firefox-Sprachpaket im Standardprofil der Installation
+en: Ambiguous update authority
+de: Mehrdeutige Updatequelle
+en: An older registration of {0}. {1} is installed and current; the packages of this registration were superseded by it.
+de: Eine ältere Registrierung von {0}. {1} ist installiert und aktuell, und die Pakete dieser Registrierung wurden dadurch ersetzt.
+en: An operation journal requires an execution plan.
+de: Ein Vorgangsjournal braucht einen Ausführungsplan.
+en: Another NaxUpdater process is already applying or recovering an update.
+de: Ein anderer Nax-Updater-Prozess installiert oder repariert bereits ein Update.
+en: Application policy requires {0}, but that provider did not claim the installed application. Fallback is blocked.
+de: Die Anwendungsrichtlinie verlangt {0}, aber diese Quelle hat die installierte Anwendung nicht erkannt. Ein Ausweichen auf andere Quellen ist gesperrt.
+en: Archive; the nested MSI publisher is verified before installation
+de: Archiv, dessen enthaltenes MSI vor der Installation auf seinen Herausgeber geprüft wird
+en: Attached MSIX integration package
+de: Angehängtes MSIX-Integrationspaket
+en: Authenticode verification failed.
+de: Die Authenticode-Prüfung ist fehlgeschlagen.
+en: Blizzard native updater
+de: Eigener Updater von Blizzard
+en: Brave native update channel
+de: Eigener Updatekanal von Brave
+en: Cached selection exited with {0}.
+de: Die zwischengespeicherte Auswahl endete mit {0}.
+en: Check did not complete
+de: Prüfung nicht abgeschlossen
+en: Check failed before language could be verified
+de: Prüfung fehlgeschlagen, bevor die Sprache geprüft werden konnte
+en: Chocolatey (choco.exe) is no longer available.
+de: Chocolatey (choco.exe) ist nicht mehr verfügbar.
+en: Chocolatey (choco.exe) is not installed.
+de: Chocolatey (choco.exe) ist nicht installiert.
+en: Chocolatey community feed
+de: Community-Feed von Chocolatey
+en: Chocolatey could not be started.
+de: Chocolatey konnte nicht gestartet werden.
+en: Chocolatey identifies {0} {1} as an exact-name match for this installation.
+de: Chocolatey ordnet dieser Installation {0} {1} über den exakten Namen zu.
+en: Chocolatey installed this application as {0}, but its configured source no longer lists that package.
+de: Chocolatey hat diese Anwendung als {0} installiert, aber die eingestellte Quelle führt dieses Paket nicht mehr.
+en: Chocolatey installed this application as {0}, which the installed {1} package pins; updating {2} to {3} brings {4} {5}.
+de: Chocolatey hat diese Anwendung als {0} installiert, und das installierte Paket {1} legt dessen Version fest. Ein Update von {2} auf {3} bringt {4} {5} mit.
+en: Chocolatey installed this application as {0}; it is updated through Chocolatey so Chocolatey's package record stays in sync.
+de: Chocolatey hat diese Anwendung als {0} installiert. Sie wird über Chocolatey aktualisiert, damit dessen Paketeintrag stimmt.
+en: Chocolatey no longer offers the approved package version.
+de: Chocolatey bietet die freigegebene Paketversion nicht mehr an.
+en: Chocolatey package role
+de: Rolle des Chocolatey-Pakets
+en: Chocolatey package that installed the application, identified by Chocolatey's own registry snapshot
+de: Chocolatey-Paket, das die Anwendung installiert hat, erkannt über Chocolateys eigenen Registrierungsstand
+en: Chocolatey published {0} {1}, but the installed packages pin it; the newest {2} {3} still requires {4} {5}.
+de: Chocolatey hat {0} {1} veröffentlicht, aber die installierten Pakete legen die Version fest. Das neueste {2} {3} verlangt weiterhin {4} {5}.
+en: Chocolatey published {0} {1}, but {2}, and several installed packages ({3}) depend on {4}.
+de: Chocolatey hat {0} {1} veröffentlicht, aber {2}, und mehrere installierte Pakete ({3}) hängen von {4} ab.
+en: Chocolatey published {0} {1}, but {2}, and the configured source does not list {3}.
+de: Chocolatey hat {0} {1} veröffentlicht, aber {2}, und die eingestellte Quelle führt {3} nicht.
+en: Chocolatey published {0} {1}, but {2}, and the configured source does not report the dependencies of {3} {4}.
+de: Chocolatey hat {0} {1} veröffentlicht, aber {2}, und die eingestellte Quelle meldet die Abhängigkeiten von {3} {4} nicht.
+en: Chocolatey published {0} {1}, but {2}, and the installed packages depend on each other.
+de: Chocolatey hat {0} {1} veröffentlicht, aber {2}, und die installierten Pakete hängen voneinander ab.
+en: Chocolatey published {0} {1}, but {2}, and {3} {4} does not pin one version of {5}.
+de: Chocolatey hat {0} {1} veröffentlicht, aber {2}, und {3} {4} legt keine einzelne Version von {5} fest.
+en: Chocolatey published {0} {1}, but {2}.
+de: Chocolatey hat {0} {1} veröffentlicht, aber {2}.
+en: Chocolatey published {0} {1}, but {2}. The update arrives with the next {3} package, which Chocolatey has not published yet.
+de: Chocolatey hat {0} {1} veröffentlicht, aber {2}. Das Update kommt mit dem nächsten Paket {3}, das Chocolatey noch nicht veröffentlicht hat.
+en: Chocolatey reported success, but it has no record of {0}
+de: Chocolatey meldet Erfolg, hat aber keinen Eintrag für {0}
+en: Chocolatey reported success, but {0} is still {1} instead of {2}
+de: Chocolatey meldet Erfolg, aber {0} steht weiterhin auf {1} statt auf {2}
+en: Chocolatey reports no newer package for this installation.
+de: Chocolatey meldet für diese Installation kein neueres Paket.
+en: Chocolatey upgrade failed (exit code {0}): {1}
+de: Das Chocolatey-Update ist fehlgeschlagen (Exitcode {0}): {1}
+en: Chocolatey's {0} {1} is installed and recorded.
+de: Chocolateys {0} {1} ist installiert und eingetragen.
+en: Close the following application processes before updating: {0}
+de: Schließen Sie vor dem Update diese Anwendungsprozesse: {0}
+en: Combined download length was {0}; expected {1}.
+de: Die gesamte Downloadlänge war {0}, erwartet wurde {1}.
+en: Content-addressed Zero Install feed recorded by the installed application
+de: Inhaltsadressierter Zero-Install-Feed, den die installierte Anwendung hinterlegt hat
+en: Could not enumerate {0}: {1}
+de: {0} konnte nicht aufgelistet werden: {1}
+en: Could not inspect {0}: {1}
+de: {0} konnte nicht untersucht werden: {1}
+en: Could not query {0}: {1}
+de: {0} konnte nicht abgefragt werden: {1}
+en: Could not read uninstall entry {0}: {1}
+de: Der Deinstallationseintrag {0} konnte nicht gelesen werden: {1}
+en: Current for this installation. The publisher is rolling {0} out gradually ({1} % of installations). The application has not stored its rollout ID yet, so it is offered once the rollout is complete.
+de: Für diese Installation aktuell. Der Hersteller verteilt {0} schrittweise ({1} % der Installationen). Die Anwendung hat ihre Verteilungs-ID noch nicht gespeichert, deshalb wird das Update angeboten, sobald die Verteilung abgeschlossen ist.
+en: Current for this installation. The publisher is rolling {0} out gradually ({1} % of installations). This installation's rollout position is {2} %, so the application's own updater does not offer it yet either; it is offered once the rollout reaches {3} %.
+de: Für diese Installation aktuell. Der Hersteller verteilt {0} schrittweise ({1} % der Installationen). Diese Installation liegt bei {2} %, deshalb bietet auch der eigene Updater der Anwendung es noch nicht an. Es wird angeboten, sobald die Verteilung {3} % erreicht.
+en: Dell's exact M46J9 AW3423DW monitor INF is the installed 1.1.0.0 generation. Dell's A00-00 label is the package release label, not the INF driver version. Monitor firmware is a separate workflow.
+de: Dells exakte Monitor-INF M46J9 für den AW3423DW ist die installierte Generation 1.1.0.0. Dells Bezeichnung A00-00 ist die Release-Bezeichnung des Pakets, nicht die Treiberversion der INF. Die Monitor-Firmware wird getrennt aktualisiert.
+en: Device-specific manufacturer driver checks; package versions are not compared with INF versions
+de: Gerätegenaue Treiberprüfung beim Hersteller, bei der Paketversionen nicht mit INF-Versionen verglichen werden
+en: Discovered from the updater metadata installed with the application; SHA-512 and the configured Windows publisher are required.
+de: Aus den Updater-Metadaten der Anwendung ermittelt. SHA-512 und der eingestellte Windows-Herausgeber sind Pflicht.
+en: Display icon path
+de: Pfad des Anzeigesymbols
+en: Driver package managed by manufacturer
+de: Treiberpaket, das der Hersteller verwaltet
+en: Each official updater performs the final connected-device firmware applicability check.
+de: Jeder offizielle Updater prüft am Ende selbst, ob die Firmware zum angeschlossenen Gerät passt.
+en: Exact Mozilla product, publisher, channel, language, and architecture match
+de: Exakte Übereinstimmung von Mozilla-Produkt, Herausgeber, Kanal, Sprache und Architektur
+en: Exact RARLAB product and publisher match against the producer download page
+de: Exakte Übereinstimmung von RARLAB-Produkt und Herausgeber mit der Downloadseite des Herstellers
+en: Exact WSL package identity, Microsoft's stable release and signed Windows update command
+de: Exakte WSL-Paketidentität, Microsofts stabiles Release und der signierte Windows-Updatebefehl
+en: Exact installed MSIX package-family and Store product identity
+de: Exakte installierte MSIX-Paketfamilie und Store-Produktidentität
+en: Executable version ignored
+de: Version der Programmdatei ignoriert
+en: Expected signer '{0}', found '{1}'.
+de: Erwartet wurde der Signierer „{0}“, gefunden wurde „{1}“.
+en: Explicit application policy requires {0}
+de: Die Anwendungsrichtlinie verlangt ausdrücklich {0}
+en: Explicit application policy selected {0}
+de: Die Anwendungsrichtlinie hat ausdrücklich {0} gewählt
+en: Explicit producer repository recipe with name and publisher correlation
+de: Ausdrückliches Rezept für das Hersteller-Repository mit Abgleich von Name und Herausgeber
+en: External application integration (manifest-only registration package)
+de: Externe Anwendungsintegration (Registrierungspaket nur mit Manifest)
+en: External update owner
+de: Externe Updatezuständigkeit
+en: External update source
+de: Externe Updatequelle
+en: Externally registered executable
+de: Extern registrierte Programmdatei
+en: Fallback catalog used only when no installed or producer-owned source claims the application
+de: Ausweichkatalog, der nur gilt, wenn keine installierte oder herstellereigene Quelle die Anwendung erkennt
+en: Firefox architecture {0} is unsupported.
+de: Die Firefox-Architektur {0} wird nicht unterstützt.
+en: Firefox default-profile locale preference
+de: Spracheinstellung im Firefox-Standardprofil
+en: Firefox installed-package locale
+de: Sprache des installierten Firefox-Pakets
+en: Firefox language could not be verified
+de: Die Firefox-Sprache konnte nicht geprüft werden
+en: Firefox language or architecture could not be verified; no installer was selected.
+de: Sprache oder Architektur von Firefox konnten nicht geprüft werden. Es wurde kein Installer ausgewählt.
+en: GOG Galaxy native updater
+de: Eigener Updater von GOG Galaxy
+en: GOG Galaxy owns its update channel; no downloaded vendor update is currently staged.
+de: GOG Galaxy verwaltet seinen Updatekanal selbst. Derzeit liegt kein heruntergeladenes Herstellerupdate bereit.
+en: GOG Galaxy reports native updater state '{0}' for {1}.
+de: GOG Galaxy meldet für {1} den Updater-Zustand „{0}“.
+en: GOG reports a downloaded update, but its staged GalaxyUpdater.exe is missing.
+de: GOG meldet ein heruntergeladenes Update, aber die bereitgelegte GalaxyUpdater.exe fehlt.
+en: GOG staged update {0} and Windows validated updater publisher '{1}', but the adjacent runtime dependency set has no producer-authenticated manifest. Automatic elevated execution is blocked; use GOG Galaxy's own update action.
+de: GOG hat das Update {0} bereitgelegt, und Windows hat den Herausgeber „{1}“ des Updaters bestätigt, aber die mitgelieferten Laufzeitdateien haben kein vom Hersteller beglaubigtes Manifest. Die automatische Ausführung mit Administratorrechten ist gesperrt. Verwenden Sie die Updatefunktion von GOG Galaxy.
+en: GOG's signed native updater reports no newer staged client.
+de: Der signierte Updater von GOG meldet keinen neueren bereitgelegten Client.
+en: GOG's staged metadata reports {0}, but its signed updater reports {1}.
+de: Die bereitgelegten Metadaten von GOG melden {0}, der signierte Updater meldet aber {1}.
+en: GOG's staged update metadata contains no version.
+de: Die bereitgelegten Updatemetadaten von GOG enthalten keine Version.
+en: GOG's staged update metadata could not be read: {0}
+de: Die bereitgelegten Updatemetadaten von GOG konnten nicht gelesen werden: {0}
+en: GitHub API returned {0} {1}.
+de: Die GitHub-API antwortete mit {0} {1}.
+en: GitHub did not provide a download link for the private release asset ({0}).
+de: GitHub hat für das private Release-Asset keinen Downloadlink geliefert ({0}).
+en: GitHub returned no response.
+de: GitHub hat nicht geantwortet.
+en: GitHub's newest {0} is {1}, which is not newer than the installed version.
+de: Das neueste {0} auf GitHub ist {1} und damit nicht neuer als die installierte Version.
+en: GitHub's prerelease channel for {0} could not be read ({1} {2}); the stable release is not a substitute for the installed prerelease.
+de: Der Vorabkanal von {0} auf GitHub konnte nicht gelesen werden ({1} {2}). Das stabile Release ersetzt die installierte Vorabversion nicht.
+en: IDM application updater
+de: Eigener Updater von IDM
+en: IVPN has a newer release, but the installed architecture or scope has no matching supported installer.
+de: IVPN hat ein neueres Release, aber für die installierte Architektur oder Installationsart gibt es keinen passenden Installer.
+en: IVPN signed manual update feed
+de: Signierter manueller Updatefeed von IVPN
+en: IVPN's manual update metadata failed verification against the public key pinned by IVPN's desktop client.
+de: Die manuellen Updatemetadaten von IVPN bestehen die Prüfung gegen den öffentlichen Schlüssel nicht, den der Desktop-Client von IVPN festlegt.
+en: IVPN's producer-signed manual update feed and official release hash
+de: Vom Hersteller signierter manueller Updatefeed von IVPN und offizieller Release-Hash
+en: IVPN's producer-signed manual update feed confirms the installed version is current.
+de: Der vom Hersteller signierte manuelle Updatefeed von IVPN bestätigt, dass die installierte Version aktuell ist.
+en: IVPN's signed manual feed reports a newer version, but the installed IVPN UI executable could not be bound for safe process shutdown; automatic installation is blocked.
+de: Der signierte manuelle Feed von IVPN meldet eine neuere Version, aber die installierte Programmdatei der IVPN-Oberfläche konnte nicht sicher zum Beenden zugeordnet werden. Die automatische Installation ist gesperrt.
+en: IVPN's signed manual feed reports a newer version, but the official release hash could not be retrieved. Retry the source check.
+de: Der signierte manuelle Feed von IVPN meldet eine neuere Version, aber der offizielle Release-Hash konnte nicht abgerufen werden. Prüfen Sie die Quelle erneut.
+en: IVPN's signed manual feed, official release SHA-256, and Authenticode publisher are all required before installation.
+de: Vor der Installation sind der signierte manuelle Feed von IVPN, der offizielle Release-SHA-256 und der Authenticode-Herausgeber Pflicht.
+en: IVPN's signed manual update feed could not be read: {0}
+de: Der signierte manuelle Updatefeed von IVPN konnte nicht gelesen werden: {0}
+en: IVPN's signed update metadata did not contain the exact Windows x64 version, download, and detached-signature URLs.
+de: Die signierten Updatemetadaten von IVPN enthielten nicht die exakte Version für Windows x64 sowie die URLs für Download und separate Signatur.
+en: IVPN's signed update metadata was malformed: {0}
+de: Die signierten Updatemetadaten von IVPN sind fehlerhaft: {0}
+en: Install or update date fallback
+de: Ersatzweise das Installations- oder Updatedatum
+en: Installation folder modified date
+de: Änderungsdatum des Installationsordners
+en: Installed Razer Synapse {0} owns driver servicing for this device. No separate driver update is claimed; repeated interfaces are collapsed into one INF package.
+de: Das installierte Razer Synapse {0} ist für die Treiber dieses Geräts zuständig. Ein eigenes Treiberupdate wird nicht gemeldet, und mehrfach vorhandene Schnittstellen werden zu einem INF-Paket zusammengefasst.
+en: Installed WinRAR language file
+de: Installierte WinRAR-Sprachdatei
+en: Installed application update metadata
+de: Updatemetadaten der installierten Anwendung
+en: Installed by Chocolatey package {0} together with its main application, which carries the package's updates.
+de: Vom Chocolatey-Paket {0} zusammen mit seiner Hauptanwendung installiert, die die Updates des Pakets mitbringt.
+en: Installed driver registrations: {0}
+de: Installierte Treiberregistrierungen: {0}
+en: Intel Management Engine components
+de: Komponenten der Intel Management Engine
+en: Intel Windows 11 Ethernet driver package
+de: Intel-Ethernet-Treiberpaket für Windows 11
+en: Intel Windows 11 package {0} contains applicable e1d.inf {1}; the installed I219 driver is current. The package release number is not compared with the INF driver version.
+de: Das Intel-Paket {0} für Windows 11 enthält die passende e1d.inf {1}, und der installierte I219-Treiber ist aktuell. Die Release-Nummer des Pakets wird nicht mit der Treiberversion der INF verglichen.
+en: Intel multi-language INF package
+de: Mehrsprachiges INF-Paket von Intel
+en: Intel package {0} is protected by Intel's published SHA-256; the exact I219 INF and Microsoft WHCP catalog are revalidated before pnputil installation.
+de: Das Intel-Paket {0} ist durch Intels veröffentlichten SHA-256 geschützt. Die exakte I219-INF und der Microsoft-WHCP-Katalog werden vor der Installation mit pnputil erneut geprüft.
+en: Intel provides a hardware-aware official scan for this component, but Intel DSA is not installed or integrated with NaxUpdater. No update is claimed.
+de: Intel bietet für diese Komponente eine offizielle hardwaregenaue Prüfung an, aber Intel DSA ist nicht installiert oder nicht in Nax-Updater eingebunden. Es wird kein Update gemeldet.
+en: Intel publishes Ethernet package {0}, but its exact Windows 11 I219 INF payload has not been independently mapped yet. No version mismatch is claimed.
+de: Intel veröffentlicht das Ethernet-Paket {0}, aber dessen exakte I219-INF für Windows 11 ist noch nicht eigenständig zugeordnet. Es wird keine Versionsabweichung gemeldet.
+en: Intel publishes a 10th/11th-generation RST package, but recommends OEM validation for customized storage/RAID drivers. Package and INF version schemes are not compared; no update is claimed.
+de: Intel veröffentlicht ein RST-Paket für die 10. und 11. Generation, empfiehlt für angepasste Speicher- und RAID-Treiber aber die Prüfung durch den Mainboard-Hersteller. Paket- und INF-Versionen werden nicht verglichen, und es wird kein Update gemeldet.
+en: Intel publishes generic Management Engine components, but its own guidance gives motherboard/OEM packages priority. The component INF version is not the umbrella package version; no update is claimed.
+de: Intel veröffentlicht allgemeine Komponenten der Management Engine, gibt nach eigenen Hinweisen aber den Paketen des Mainboard-Herstellers Vorrang. Die INF-Version der Komponente ist nicht die Version des Gesamtpakets, und es wird kein Update gemeldet.
+en: Intel's chipset package primarily installs device-identification INF files. Its package version is not comparable with this device INF version; no update is claimed.
+de: Intels Chipsatzpaket installiert vor allem INF-Dateien zur Geräteerkennung. Seine Paketversion ist mit der INF-Version dieses Geräts nicht vergleichbar, und es wird kein Update gemeldet.
+en: Intel's official 10th/11th-generation RST package was checked. Its umbrella package version is shown, but no update is claimed because storage/RAID applicability and OEM customization must be preserved.
+de: Intels offizielles RST-Paket für die 10. und 11. Generation wurde geprüft. Die Version des Gesamtpakets wird angezeigt, aber es wird kein Update gemeldet, weil die Eignung für Speicher und RAID und die Anpassungen des Mainboard-Herstellers erhalten bleiben müssen.
+en: Intel's official Chipset INF Utility {0} was checked for the grouped Intel chipset devices. This utility installs identification INFs; its package version is not a comparable driver version for each device, so no false per-component update is claimed.
+de: Intels offizielles Chipset INF Utility {0} wurde für die zusammengefassten Intel-Chipsatzgeräte geprüft. Es installiert INF-Dateien zur Geräteerkennung, und seine Paketversion ist keine vergleichbare Treiberversion je Gerät. Deshalb wird kein falsches Update je Komponente gemeldet.
+en: Intel's official Ethernet release metadata did not confirm I219 support.
+de: Intels offizielle Release-Metadaten für Ethernet bestätigen die Unterstützung für I219 nicht.
+en: Intel's official generic Management Engine package was checked for this 10th-generation platform. The package contains several component INFs with different versions, so its package version is shown without falsely comparing it to one component INF. MSI/OEM packages may retain motherboard customizations.
+de: Intels offizielles allgemeines Paket der Management Engine wurde für diese Plattform der 10. Generation geprüft. Das Paket enthält mehrere Komponenten-INFs mit unterschiedlichen Versionen, deshalb wird seine Paketversion angezeigt, ohne sie fälschlich mit einer einzelnen INF zu vergleichen. Pakete von MSI oder anderen Mainboard-Herstellern können deren Anpassungen enthalten.
+en: Language was not resolved
+de: Sprache nicht ermittelt
+en: Last-resort catalog, consulted only when no installed, producer-owned, Store, or WinGet source claims the application
+de: Letzter Ausweichkatalog, der nur gilt, wenn keine installierte, herstellereigene, Store- oder WinGet-Quelle die Anwendung erkennt
+en: MSI MAG Z490 TOMAHAWK audio
+de: Audio des MSI MAG Z490 TOMAHAWK
+en: MSI upgrade code
+de: MSI-Upgradecode
+en: MSIX installed location
+de: Installationsort des MSIX-Pakets
+en: MSIX package architecture
+de: Architektur des MSIX-Pakets
+en: MSIX package family
+de: MSIX-Paketfamilie
+en: MSIX package installed or updated date
+de: Installations- oder Updatedatum des MSIX-Pakets
+en: MSIX package role
+de: Rolle des MSIX-Pakets
+en: MSIX package version
+de: Version des MSIX-Pakets
+en: Macrium Reflect updater
+de: Updater von Macrium Reflect
+en: Macrium official patch releases
+de: Offizielle Patch-Releases von Macrium
+en: Macrium publishes a newer patch for this major version. The installed Reflect updater must apply it; no undocumented update command is executed.
+de: Macrium veröffentlicht für diese Hauptversion einen neueren Patch. Der installierte Reflect-Updater muss ihn anwenden, und Nax-Updater führt keinen undokumentierten Updatebefehl aus.
+en: Macrium redirected outside its official release host.
+de: Macrium hat außerhalb seines offiziellen Release-Hosts umgeleitet.
+en: Macrium's official patch release for the installed major version
+de: Offizieller Patch von Macrium für die installierte Hauptversion
+en: Macrium's official release for this major version is {0}; the installed version is current.
+de: Das offizielle Release von Macrium für diese Hauptversion ist {0}. Die installierte Version ist aktuell.
+en: Macrium's release redirect did not resolve.
+de: Die Release-Umleitung von Macrium ließ sich nicht auflösen.
+en: Macrium's response did not identify an official patch for the installed major version.
+de: Die Antwort von Macrium nennt keinen offiziellen Patch für die installierte Hauptversion.
+en: Microsoft Store already owns a queued deployment for this package.
+de: Der Microsoft Store hat für dieses Paket bereits eine Installation in der Warteschlange.
+en: Microsoft Store catalog connection failed: {0} {1}
+de: Die Verbindung zum Microsoft-Store-Katalog ist fehlgeschlagen: {0} {1}
+en: Microsoft Store catalog lookup returned {0}: {1}
+de: Die Abfrage im Microsoft-Store-Katalog ergab {0}: {1}
+en: Microsoft Store changed the applicable target from {0} to {1}; the approved update was not submitted.
+de: Der Microsoft Store hat das passende Ziel von {0} auf {1} geändert. Das freigegebene Update wurde nicht übergeben.
+en: Microsoft Store deployment returned {0}: {1}
+de: Die Installation über den Microsoft Store ergab {0}: {1}
+en: Microsoft Store has not moved this update for {0} minutes (no download or state progress). It stays in the Store queue and can continue there; Nax-Updater moved on without claiming success.
+de: Der Microsoft Store hat dieses Update seit {0} Minuten nicht weitergeführt (kein Download- oder Statusfortschritt). Es bleibt in der Store-Warteschlange und kann dort weiterlaufen. Nax-Updater hat ohne Erfolgsmeldung weitergemacht.
+en: Microsoft Store no longer exposes the approved package version.
+de: Der Microsoft Store bietet die freigegebene Paketversion nicht mehr an.
+en: Microsoft Store no longer exposes the exact version-bound update prepared for this package family.
+de: Der Microsoft Store bietet das für diese Paketfamilie vorbereitete versionsgenaue Update nicht mehr an.
+en: Microsoft Store no longer reports an applicable update for this package.
+de: Der Microsoft Store meldet für dieses Paket kein passendes Update mehr.
+en: Microsoft Store queue: {0} (0x{1}).
+de: Microsoft-Store-Warteschlange: {0} (0x{1}).
+en: Microsoft Store reports an applicable update for the exact installed package family.
+de: Der Microsoft Store meldet ein passendes Update für die exakte installierte Paketfamilie.
+en: Microsoft Store reports no applicable update for the installed package.
+de: Der Microsoft Store meldet kein passendes Update für das installierte Paket.
+en: Microsoft Store update catalog connection failed: {0} {1}
+de: Die Verbindung zum Updatekatalog des Microsoft Store ist fehlgeschlagen: {0} {1}
+en: Microsoft WSL release + native Windows updater
+de: WSL-Release von Microsoft und eigener Windows-Updater
+en: Microsoft did not return a stable WSL version.
+de: Microsoft hat keine stabile WSL-Version geliefert.
+en: Microsoft's WSL release metadata could not be retrieved.
+de: Die WSL-Release-Metadaten von Microsoft konnten nicht abgerufen werden.
+en: Microsoft's signed wsl.exe updates WSL from Microsoft's GitHub release using --update --web-download. Linux distributions are not unregistered or reinstalled. The installed WSL package version is verified afterward; the native updater may install a newer stable release.
+de: Microsofts signierte wsl.exe aktualisiert WSL mit --update --web-download aus Microsofts GitHub-Release. Linux-Distributionen werden weder abgemeldet noch neu installiert. Die installierte WSL-Paketversion wird danach geprüft, und der eigene Updater kann ein neueres stabiles Release installieren.
+en: Mirror redirects are allowed only for an installer with a published hash.
+de: Umleitungen auf Mirror-Server sind nur für Installer mit veröffentlichtem Hash erlaubt.
+en: Missing Store queue target.
+de: Das Ziel in der Store-Warteschlange fehlt.
+en: Mozilla Firefox maintenance component
+de: Wartungskomponente von Mozilla Firefox
+en: Mozilla Firefox updater
+de: Updater von Mozilla Firefox
+en: Mozilla SHA-256 verified source: {0}.
+de: Mit Mozillas SHA-256 geprüfte Quelle: {0}.
+en: Mozilla did not report a version for channel {0}.
+de: Mozilla hat für den Kanal {0} keine Version gemeldet.
+en: Mozilla does not publish a {0}/{1} installer for {2}; English fallback is disabled.
+de: Mozilla veröffentlicht keinen Installer für {0}/{1} in {2}. Ein Ausweichen auf Englisch ist abgeschaltet.
+en: Mozilla native updater
+de: Eigener Updater von Mozilla
+en: Mozilla official release archive
+de: Offizielles Release-Archiv von Mozilla
+en: Multiple Store products expose package family {0}.
+de: Mehrere Store-Produkte führen die Paketfamilie {0}.
+en: Multiple Store products expose the same installed package family.
+de: Mehrere Store-Produkte führen dieselbe installierte Paketfamilie.
+en: Multiple Store products matched installed package family {0}.
+de: Mehrere Store-Produkte passen zur installierten Paketfamilie {0}.
+en: Multiple equally authoritative providers claimed this application: {0}.
+de: Mehrere gleichrangige Quellen beanspruchen diese Anwendung: {0}.
+en: NVIDIA international multi-language installer
+de: Internationaler mehrsprachiger Installer von NVIDIA
+en: NVIDIA official WHQL driver catalog
+de: Offizieller WHQL-Treiberkatalog von NVIDIA
+en: NVIDIA's official SHA-256 sidecar did not identify the selected installer.
+de: Die offizielle SHA-256-Datei von NVIDIA nennt den ausgewählten Installer nicht.
+en: NVIDIA's official WHQL Game Ready catalog reports the installed driver as current.
+de: Der offizielle WHQL-Game-Ready-Katalog von NVIDIA meldet den installierten Treiber als aktuell.
+en: NVIDIA's official search returned no WHQL Game Ready driver.
+de: Die offizielle Suche von NVIDIA hat keinen WHQL-Game-Ready-Treiber geliefert.
+en: NVIDIA's series list no longer contains {0}.
+de: Die Serienliste von NVIDIA enthält {0} nicht mehr.
+en: Native Microsoft Store check completed for the exact package family; no applicable update.
+de: Die Prüfung über den Microsoft Store für die exakte Paketfamilie ist abgeschlossen. Es gibt kein passendes Update.
+en: Native Microsoft Store update verified against the exact package family, architecture and published version.
+de: Das Microsoft-Store-Update ist gegen die exakte Paketfamilie, Architektur und veröffentlichte Version geprüft.
+en: Native Store API: {0} (0x{1})
+de: Store-Schnittstelle: {0} (0x{1})
+en: Native-provider updates do not download an installer.
+de: Updates über den eigenen Updater einer Anwendung laden keinen Installer herunter.
+en: NaxUpdater can resume this existing operation or track it if already running, then independently reread the installed package version.
+de: Nax-Updater kann diesen laufenden Vorgang fortsetzen oder verfolgen und liest danach die installierte Paketversion selbst neu ein.
+en: NaxUpdater is still attached to its launching application's process job. Close NaxUpdater and launch it from the Start menu before updating running applications.
+de: Nax-Updater hängt noch am Prozessverbund der Anwendung, die es gestartet hat. Schließen Sie Nax-Updater und starten Sie es über das Startmenü, bevor Sie laufende Anwendungen aktualisieren.
+en: NaxUpdater manufacturer-driver view
+de: Herstellertreiber-Ansicht von Nax-Updater
+en: Newer installed registration
+de: Neuere installierte Registrierung
+en: Nextcloud client update server
+de: Updateserver des Nextcloud-Clients
+en: Nextcloud client update server on the channel configured in the client
+de: Updateserver des Nextcloud-Clients auf dem im Client eingestellten Kanal
+en: Nextcloud publishes its Windows MSI for x64 only; the installed architecture is not x64.
+de: Nextcloud veröffentlicht sein Windows-MSI nur für x64, und die installierte Architektur ist nicht x64.
+en: Nextcloud's update server confirms the installed client is current on the {0} channel.
+de: Der Updateserver von Nextcloud bestätigt, dass der installierte Client auf dem Kanal {0} aktuell ist.
+en: Nextcloud's update server could not be read: {0}
+de: Der Updateserver von Nextcloud konnte nicht gelesen werden: {0}
+en: Nextcloud's update server offers no newer client on the {0} channel.
+de: Der Updateserver von Nextcloud bietet auf dem Kanal {0} keinen neueren Client an.
+en: Nextcloud's update server offers {0} on the {1} channel; the GitHub asset SHA-256 and the Nextcloud GmbH signature are verified before installation.
+de: Der Updateserver von Nextcloud bietet {0} auf dem Kanal {1} an. Der SHA-256 des GitHub-Assets und die Signatur der Nextcloud GmbH werden vor der Installation geprüft.
+en: Nextcloud's update server offers {0}, but GitHub publishes no SHA-256 digest for {1} yet.
+de: Der Updateserver von Nextcloud bietet {0} an, aber GitHub veröffentlicht für {1} noch keinen SHA-256.
+en: Nextcloud's update server offers {0}, but not as a verifiable x64 MSI release asset.
+de: Der Updateserver von Nextcloud bietet {0} an, aber nicht als prüfbares x64-MSI im Release.
+en: Nextcloud's update server returned an unexpected response.
+de: Der Updateserver von Nextcloud hat unerwartet geantwortet.
+en: No compatible installer was returned by WinGet.
+de: WinGet hat keinen passenden Installer geliefert.
+en: No exact Chocolatey community package matched this application.
+de: Kein Chocolatey-Community-Paket passt exakt zu dieser Anwendung.
+en: No exact Microsoft Store product matched the installed package family.
+de: Kein Microsoft-Store-Produkt passt exakt zur installierten Paketfamilie.
+en: No exact Store catalog product was correlated with the installed package family.
+de: Der installierten Paketfamilie wurde kein exakt passendes Produkt im Store-Katalog zugeordnet.
+en: No exact catalog identity match was found.
+de: Es wurde keine exakt passende Katalogidentität gefunden.
+en: No installed device could be correlated with this driver package; the package was not marked current.
+de: Diesem Treiberpaket konnte kein installiertes Gerät zugeordnet werden, deshalb wurde es nicht als aktuell markiert.
+en: No installer configuration preserves this installation's per-user scope.
+de: Keine Installer-Einstellung erhält die Installation pro Benutzer.
+en: No producer installer configuration preserves the installed user/machine scope.
+de: Keine Installer-Einstellung des Herstellers erhält die installierte Installationsart (pro Benutzer oder für alle Benutzer).
+en: No producer installer matches the verified installed architecture.
+de: Kein Installer des Herstellers passt zur geprüften installierten Architektur.
+en: No provider selected
+de: Keine Quelle ausgewählt
+en: No release asset matched {0}.
+de: Kein Release-Asset passt zu {0}.
+en: No safe removal method is registered for this application.
+de: Für diese Anwendung ist kein sicherer Deinstallationsweg registriert.
+en: No selected implementation was reported for {0}.
+de: Für {0} wurde keine ausgewählte Implementierung gemeldet.
+en: No separate firmware updater was matched in Razer's current public catalog.
+de: Im aktuellen öffentlichen Katalog von Razer wurde kein eigener Firmware-Updater gefunden.
+en: No supported installed updater metadata was found.
+de: Es wurden keine unterstützten Updater-Metadaten der Installation gefunden.
+en: No usable application name was available to search Chocolatey.
+de: Für die Suche bei Chocolatey gab es keinen brauchbaren Anwendungsnamen.
+en: No verifiable update source
+de: Keine prüfbare Updatequelle
+en: No verified update source discovered
+de: Keine verifizierte Updatequelle gefunden
+en: Official GitHub release · {0}
+de: Offizielles GitHub-Release · {0}
+en: Official Nextcloud GitHub release and signed MSI
+de: Offizielles GitHub-Release von Nextcloud und signiertes MSI
+en: Official Node.js distribution
+de: Offizielle Node.js-Distribution
+en: Official Node.js distribution index with producer-published MSI SHA-256
+de: Offizieller Index der Node.js-Distribution mit vom Hersteller veröffentlichtem SHA-256 des MSI
+en: Official WinGet connection failed: {0}.
+de: Die Verbindung zur offiziellen WinGet-Quelle ist fehlgeschlagen: {0}.
+en: Official manufacturer driver checks
+de: Offizielle Treiberprüfung beim Hersteller
+en: Official publisher site
+de: Offizielle Herstellerseite
+en: Preferred update provider
+de: Bevorzugte Updatequelle
+en: Preferred update provider unavailable
+de: Bevorzugte Updatequelle nicht verfügbar
+en: Present PnP devices: {0}
+de: Vorhandene PnP-Geräte: {0}
+en: Preserved by GOG Galaxy's staged updater
+de: Bleibt durch den bereitgelegten Updater von GOG Galaxy erhalten
+en: Preserved by GOG Galaxy's updater
+de: Bleibt durch den Updater von GOG Galaxy erhalten
+en: Preserved by Macrium Reflect
+de: Bleibt durch Macrium Reflect erhalten
+en: Preserved by Microsoft Store/MSIX package
+de: Bleibt durch das Microsoft-Store- oder MSIX-Paket erhalten
+en: Preserved by Microsoft's WSL updater
+de: Bleibt durch Microsofts WSL-Updater erhalten
+en: Preserved by installed updater
+de: Bleibt durch den installierten Updater erhalten
+en: Preserved by the application's updater
+de: Bleibt durch den Updater der Anwendung erhalten
+en: Producer distribution metadata
+de: Distributionsmetadaten des Herstellers
+en: Producer-published multi-language MSI
+de: Vom Hersteller veröffentlichtes mehrsprachiges MSI
+en: Producer-signed multi-language Windows installer
+de: Vom Hersteller signierter mehrsprachiger Windows-Installer
+en: Producer-signed update metadata
+de: Vom Hersteller signierte Updatemetadaten
+en: Protected by Windows ({0})
+de: Durch Windows geschützt ({0})
+en: Provider contract validation
+de: Prüfung der Quellenregeln
+en: Publisher's official download site with its published installer hash
+de: Offizielle Downloadseite des Herstellers mit veröffentlichtem Installer-Hash
+en: Python install manager
+de: Python Install Manager
+en: Python install manager runtime identified by its own uninstall entry
+de: Python-Laufzeit des Install Managers, erkannt über ihren eigenen Deinstallationseintrag
+en: RARLAB official download
+de: Offizieller Download von RARLAB
+en: RARLAB redirected to an untrusted endpoint '{0}'.
+de: RARLAB hat auf die nicht vertrauenswürdige Adresse „{0}“ umgeleitet.
+en: RARLAB's official download page did not expose a matching x64 release.
+de: Die offizielle Downloadseite von RARLAB nennt kein passendes x64-Release.
+en: RARLAB's official download page lists {0} as its newest {1}; the installed WinRAR is current.
+de: Die offizielle Downloadseite von RARLAB nennt {0} als neueste {1}. Das installierte WinRAR ist aktuell.
+en: Razer Synapse + firmware catalog
+de: Razer Synapse und Firmware-Katalog
+en: Razer driver packages are grouped under Synapse instead of being repeated for every HID interface. Installed Synapse: {0}. {1}
+de: Die Treiberpakete von Razer werden unter Synapse zusammengefasst, statt für jede HID-Schnittstelle wiederholt zu werden. Installiertes Synapse: {0}. {1}
+en: Razer publishes device-specific firmware checks for: {0}.
+de: Razer veröffentlicht gerätegenaue Firmware-Prüfungen für: {0}.
+en: Razer publishes driver applicability through Synapse and its support channel, but Synapse was not detected. No update is claimed.
+de: Razer gibt passende Treiber über Synapse und seinen Support bekannt, aber Synapse wurde nicht gefunden. Es wird kein Update gemeldet.
+en: Realtek's guidance requires the motherboard-OEM audio package because a generic audio driver can omit customizations. No update is claimed.
+de: Realtek verlangt das Audiopaket des Mainboard-Herstellers, weil ein allgemeiner Audiotreiber dessen Anpassungen weglassen kann. Es wird kein Update gemeldet.
+en: Realtek's official PCIe catalog returned no standard Windows NDIS package.
+de: Realteks offizieller PCIe-Katalog hat kein Standard-NDIS-Paket für Windows geliefert.
+en: Realtek's official RTL8125-compatible PCIe catalog has a newer standard Windows NDIS package. Realtek requires its download page and license flow.
+de: Realteks offizieller PCIe-Katalog für RTL8125-kompatible Geräte hat ein neueres Standard-NDIS-Paket für Windows. Realtek verlangt dafür seine Downloadseite und die Zustimmung zur Lizenz.
+en: Realtek's official RTL8125-compatible PCIe catalog reports no newer standard Windows NDIS package.
+de: Realteks offizieller PCIe-Katalog für RTL8125-kompatible Geräte meldet kein neueres Standard-NDIS-Paket für Windows.
+en: Recipe-pinned installer language
+de: Im Rezept festgelegte Installersprache
+en: Refreshing the provider catalog timed out. Retry the check.
+de: Die Aktualisierung des Quellenkatalogs hat zu lange gedauert. Prüfen Sie erneut.
+en: Registered Windows extensions
+de: Registrierte Windows-Erweiterungen
+en: Registry display icon
+de: Anzeigesymbol aus der Registrierung
+en: Registry install location
+de: Installationsort aus der Registrierung
+en: Required application processes could not be closed.
+de: Die nötigen Anwendungsprozesse konnten nicht geschlossen werden.
+en: Resolved application executable
+de: Ermittelte Programmdatei der Anwendung
+en: Segment {0} length was {1}; expected {2}.
+de: Der Abschnitt {0} war {1} lang, erwartet wurde {2}.
+en: Selected by Windows Package Manager for the installed application
+de: Vom Windows-Paket-Manager für die installierte Anwendung ausgewählt
+en: Selected by choco.exe
+de: Von choco.exe ausgewählt
+en: Signed PnP drivers: {0}
+de: Signierte PnP-Treiber: {0}
+en: Signed updater and staged release state installed by GOG Galaxy
+de: Signierter Updater und bereitgelegtes Release, von GOG Galaxy installiert
+en: Store deployment failed (0x{0}).
+de: Die Store-Installation ist fehlgeschlagen (0x{0}).
+en: Store metadata redirected outside the official catalog.
+de: Die Store-Metadaten haben außerhalb des offiziellen Katalogs umgeleitet.
+en: Store package-family lookup returned too many candidates.
+de: Die Suche nach der Store-Paketfamilie lieferte zu viele Treffer.
+en: Store search found no product exposing package family {0}. {1}
+de: Die Store-Suche hat kein Produkt mit der Paketfamilie {0} gefunden. {1}
+en: TP-Link's exact Archer TBE400UH page returned no Windows driver version.
+de: Die exakte Seite von TP-Link für den Archer TBE400UH nennt keine Windows-Treiberversion.
+en: The Chocolatey community feed did not answer within {0} seconds, twice, on separate connections.
+de: Der Community-Feed von Chocolatey hat zweimal über getrennte Verbindungen nicht innerhalb von {0} Sekunden geantwortet.
+en: The Chocolatey update plan does not contain the approved package and version.
+de: Der Chocolatey-Updateplan enthält nicht das freigegebene Paket mit der freigegebenen Version.
+en: The Chocolatey update target is missing.
+de: Das Chocolatey-Updateziel fehlt.
+en: The GitHub CLI is not signed in, so the private release asset cannot be downloaded.
+de: Die GitHub-CLI ist nicht angemeldet, deshalb kann das private Release-Asset nicht heruntergeladen werden.
+en: The GitHub asset SHA-256 and Windows publisher signature are required before installation.
+de: Vor der Installation sind der SHA-256 des GitHub-Assets und die Windows-Signatur des Herstellers Pflicht.
+en: The GitHub release did not contain a version or assets.
+de: Das GitHub-Release enthielt keine Version oder keine Assets.
+en: The MSIX package identity is missing.
+de: Die MSIX-Paketidentität fehlt.
+en: The Microsoft Store product identity is incomplete.
+de: Die Microsoft-Store-Produktidentität ist unvollständig.
+en: The NVIDIA device is present, but its product series is not mapped to NVIDIA's official driver search.
+de: Das NVIDIA-Gerät ist vorhanden, aber seine Produktserie ist der offiziellen Treibersuche von NVIDIA nicht zugeordnet.
+en: The Nextcloud MSI installs machine-wide and does not preserve this installation's scope.
+de: Das Nextcloud-MSI installiert für alle Benutzer und erhält die Installationsart dieser Installation nicht.
+en: The Python install manager did not report this runtime's company.
+de: Der Python Install Manager hat den Anbieter dieser Laufzeit nicht gemeldet.
+en: The Python install manager did not report this runtime's version.
+de: Der Python Install Manager hat die Version dieser Laufzeit nicht gemeldet.
+en: The Python install manager does not list the managed runtime '{0}'.
+de: Der Python Install Manager führt die verwaltete Laufzeit „{0}“ nicht.
+en: The Python install manager reports {0} as the newest {1} runtime.
+de: Der Python Install Manager meldet {0} als neueste Laufzeit für {1}.
+en: The Python install manager that owns this runtime is not installed.
+de: Der Python Install Manager, zu dem diese Laufzeit gehört, ist nicht installiert.
+en: The Python install manager updates this runtime from python.org's signed index and verifies the package hash.
+de: Der Python Install Manager aktualisiert diese Laufzeit aus dem signierten Index von python.org und prüft den Hash des Pakets.
+en: The Store operation was canceled.
+de: Der Store-Vorgang wurde abgebrochen.
+en: The Store package target is missing.
+de: Das Ziel des Store-Pakets fehlt.
+en: The Store product does not match the publisher's identity.
+de: Das Store-Produkt passt nicht zur Identität des Herstellers.
+en: The Store queue action is not bound to the installed package identity and baseline version.
+de: Der Vorgang in der Store-Warteschlange ist nicht an die installierte Paketidentität und Ausgangsversion gebunden.
+en: The Store queue changed before execution. Scan again.
+de: Die Store-Warteschlange hat sich vor der Ausführung geändert. Prüfen Sie erneut.
+en: The Store queue exceeded the supported snapshot size.
+de: Die Store-Warteschlange ist größer als unterstützt.
+en: The Store queue returned a different package family.
+de: Die Store-Warteschlange lieferte eine andere Paketfamilie.
+en: The Store update was canceled.
+de: Das Store-Update wurde abgebrochen.
+en: The WSL release URL is not the expected Microsoft repository release.
+de: Die WSL-Release-URL gehört nicht zum erwarteten Release im Microsoft-Repository.
+en: The WinGet catalog index is installed but could not be read (it may have been replacing itself). WinGet was not checked; retry the scan.
+de: Der WinGet-Katalogindex ist installiert, konnte aber nicht gelesen werden (möglicherweise wurde er gerade ersetzt). WinGet wurde nicht geprüft. Prüfen Sie erneut.
+en: The WinGet fallback catalog could not be refreshed; currency is not being claimed. {0}
+de: Der WinGet-Ausweichkatalog konnte nicht aktualisiert werden, deshalb wird kein aktueller Stand gemeldet. {0}
+en: The WinGet source or version changed after approval.
+de: Die WinGet-Quelle oder die Version hat sich nach der Freigabe geändert.
+en: The WinGet target is missing.
+de: Das WinGet-Ziel fehlt.
+en: The WinGet update plan does not contain the approved official package and version.
+de: Der WinGet-Updateplan enthält nicht das freigegebene offizielle Paket mit der freigegebenen Version.
+en: The Windows elevation prompt was canceled.
+de: Die Windows-Abfrage für Administratorrechte wurde abgebrochen.
+en: The Windows elevation prompt was canceled. The prepared payload was not executed.
+de: Die Windows-Abfrage für Administratorrechte wurde abgebrochen. Das vorbereitete Paket wurde nicht ausgeführt.
+en: The Windows elevation prompt was cancelled.
+de: Die Windows-Abfrage für Administratorrechte wurde abgebrochen.
+en: The Zero Install CLI was not found for {0}.
+de: Die Zero-Install-CLI wurde für {0} nicht gefunden.
+en: The application to close launched NaxUpdater. Launch NaxUpdater from the Start menu so updating that application cannot terminate the updater.
+de: Die zu schließende Anwendung hat Nax-Updater gestartet. Starten Sie Nax-Updater über das Startmenü, damit das Update dieser Anwendung Nax-Updater nicht beendet.
+en: The application was inventoried, but no unambiguous catalog identity or installed updater protocol could be verified.
+de: Die Anwendung wurde erfasst, aber weder eine eindeutige Katalogidentität noch ein installierter Updater konnten geprüft werden.
+en: The approved WinGet identity or version does not match.
+de: Die freigegebene WinGet-Identität oder Version stimmt nicht.
+en: The approved WinGet installer variant is no longer applicable.
+de: Die freigegebene WinGet-Installervariante passt nicht mehr.
+en: The approved WinGet package is no longer present.
+de: Das freigegebene WinGet-Paket ist nicht mehr vorhanden.
+en: The approved WinGet target contains characters that cannot be passed to an elevated installer safely.
+de: Das freigegebene WinGet-Ziel enthält Zeichen, die nicht sicher an einen Installer mit Administratorrechten übergeben werden können.
+en: The approved WinGet version is no longer present.
+de: Die freigegebene WinGet-Version ist nicht mehr vorhanden.
+en: The assessment does not contain an applicable execution plan.
+de: Die Prüfung enthält keinen anwendbaren Ausführungsplan.
+en: The cached installer {0} does not match the release.
+de: Der zwischengespeicherte Installer {0} passt nicht zum Release.
+en: The download redirected to untrusted host '{0}'.
+de: Der Download wurde auf den nicht vertrauenswürdigen Host „{0}“ umgeleitet.
+en: The downloadable installer requires Authenticode but has no approved publisher identity.
+de: Der Installer verlangt Authenticode, hat aber keine freigegebene Herausgeberidentität.
+en: The downloadable update plan is missing its HTTPS artifact identity or release hash.
+de: Dem Updateplan fehlt die HTTPS-Adresse des Downloads oder der Release-Hash.
+en: The downloaded file does not exist.
+de: Die heruntergeladene Datei ist nicht vorhanden.
+en: The downloaded installer declares version {0}, not the approved {1}; it was not run.
+de: Der heruntergeladene Installer trägt die Version {0} statt der freigegebenen {1}. Er wurde nicht ausgeführt.
+en: The driver INF does not declare DriverVer.
+de: Die Treiber-INF gibt kein DriverVer an.
+en: The driver archive lacks an exact INF, hardware identity, or catalog signer policy.
+de: Dem Treiberarchiv fehlt eine exakte INF, eine Hardwarekennung oder eine Regel für den Katalogsignierer.
+en: The driver package is inventoried, but no exact manufacturer catalog identity is available. No action is offered.
+de: Das Treiberpaket wurde erfasst, aber es gibt keine exakte Identität im Herstellerkatalog. Es wird keine Aktion angeboten.
+en: The elevated native updater signature is invalid.
+de: Die Signatur des Updaters, der mit Administratorrechten laufen soll, ist ungültig.
+en: The exact TP-Link hardware-ID catalog page publishes package branch {0}; its Windows 11 branch corresponds to installed {1}.
+de: Die exakte Katalogseite von TP-Link für diese Hardwarekennung veröffentlicht den Paketzweig {0}. Sein Zweig für Windows 11 entspricht der installierten {1}.
+en: The exact TP-Link hardware-ID catalog page reports a newer stable Windows driver.
+de: Die exakte Katalogseite von TP-Link für diese Hardwarekennung meldet einen neueren stabilen Windows-Treiber.
+en: The exact nested MSI was not found in the verified archive.
+de: Das exakte MSI wurde im geprüften Archiv nicht gefunden.
+en: The exact nested driver INF was not found in the verified archive.
+de: Die exakte Treiber-INF wurde im geprüften Archiv nicht gefunden.
+en: The execution plan expired and must be checked again.
+de: Der Ausführungsplan ist abgelaufen und muss neu geprüft werden.
+en: The execution plan has no target version.
+de: Der Ausführungsplan hat keine Zielversion.
+en: The execution plan is not bound to a check generation and cannot be applied.
+de: Der Ausführungsplan ist an keine Prüfung gebunden und kann nicht angewendet werden.
+en: The execution plan is not bound to a stable installed-application correlation identity.
+de: Der Ausführungsplan ist an keine feste Identität der installierten Anwendung gebunden.
+en: The expected SHA-512 is invalid.
+de: Der erwartete SHA-512 ist ungültig.
+en: The fallback catalog has a release, but the installed version is not meaningful enough to compare or update safely.
+de: Der Ausweichkatalog hat ein Release, aber die installierte Version ist nicht aussagekräftig genug, um sicher zu vergleichen oder zu aktualisieren.
+en: The file does not contain an Authenticode signature.
+de: Die Datei enthält keine Authenticode-Signatur.
+en: The installed Firefox release was checked against Mozilla. Its shared maintenance service is at least as recent and is updated together with Firefox.
+de: Das installierte Firefox-Release wurde bei Mozilla geprüft. Sein gemeinsamer Wartungsdienst ist mindestens genauso aktuell und wird zusammen mit Firefox aktualisiert.
+en: The installed MSIX package family could not be read.
+de: Die installierte MSIX-Paketfamilie konnte nicht gelesen werden.
+en: The installed Macrium release line could not be verified.
+de: Die installierte Release-Linie von Macrium konnte nicht geprüft werden.
+en: The installed Nextcloud version could not be read.
+de: Die installierte Nextcloud-Version konnte nicht gelesen werden.
+en: The installed Node.js executable architecture could not be verified; an installer architecture will not be guessed.
+de: Die Architektur der installierten Node.js-Programmdatei konnte nicht geprüft werden, und die Installer-Architektur wird nicht geraten.
+en: The installed Node.js major version could not be established, so its release line cannot be preserved.
+de: Die installierte Node.js-Hauptversion konnte nicht ermittelt werden, deshalb kann ihre Release-Linie nicht beibehalten werden.
+en: The installed WSL package architecture does not match the native Windows updater.
+de: Die Architektur des installierten WSL-Pakets passt nicht zum Windows-Updater.
+en: The installed WinGet package changed after approval.
+de: Das installierte WinGet-Paket hat sich nach der Freigabe geändert.
+en: The installed native WSL updater was not found.
+de: Der installierte WSL-Updater wurde nicht gefunden.
+en: The installed package family is missing.
+de: Die installierte Paketfamilie fehlt.
+en: The installed package reports {0}, but Firefox actively requests {1}. The {2} installer will be used.
+de: Das installierte Paket meldet {0}, Firefox verlangt aber {1}. Es wird der Installer für {2} verwendet.
+en: The installed product code does not match the package selected by WinGet.
+de: Der installierte Produktcode passt nicht zu dem Paket, das WinGet ausgewählt hat.
+en: The installed update owner is {0}. No compatible version-check protocol is implemented for this owner; current status is unknown.
+de: Für Updates ist {0} zuständig. Für diese Zuständigkeit gibt es keine passende Versionsprüfung, deshalb ist der aktuelle Stand unbekannt.
+en: The installed updater feed did not contain a usable version and installer hash.
+de: Der Feed des installierten Updaters enthielt keine brauchbare Version mit Installer-Hash.
+en: The installed updater feed has no Windows installer for {0}.
+de: Der Feed des installierten Updaters hat keinen Windows-Installer für {0}.
+en: The installed updater metadata lacks a safe HTTPS download, SHA-512, or publisher identity; installation is blocked.
+de: Den Metadaten des installierten Updaters fehlt ein sicherer HTTPS-Download, ein SHA-512 oder die Herausgeberidentität. Die Installation ist gesperrt.
+en: The installed version could not be read.
+de: Die installierte Version konnte nicht gelesen werden.
+en: The installed version is newer than Chocolatey's {0} {1}; Chocolatey's record catches up when its package does.
+de: Die installierte Version ist neuer als Chocolateys {0} {1}. Chocolateys Eintrag zieht nach, sobald das Paket nachzieht.
+en: The installed version must be resolved before updating.
+de: Die installierte Version muss vor dem Update ermittelt werden.
+en: The installed version {0} is newer than the fallback catalog version {1}; the older catalog value is not presented as an available release.
+de: Die installierte Version {0} ist neuer als die Version {1} im Ausweichkatalog. Der ältere Katalogwert wird nicht als verfügbares Release angezeigt.
+en: The installed-version precondition no longer matches the checked application.
+de: Die vorausgesetzte installierte Version passt nicht mehr zur geprüften Anwendung.
+en: The installer was cancelled.
+de: Der Installer wurde abgebrochen.
+en: The journal path has no directory.
+de: Der Pfad des Journals hat keinen Ordner.
+en: The last verified Razer catalog mapping is shown because the live support page did not return complete machine-readable content.
+de: Es wird die zuletzt geprüfte Zuordnung aus dem Razer-Katalog angezeigt, weil die Supportseite keine vollständigen maschinenlesbaren Inhalte geliefert hat.
+en: The lease path has no directory.
+de: Der Pfad der Sperrdatei hat keinen Ordner.
+en: The live Razer catalog confirmed all matched releases.
+de: Der aktuelle Razer-Katalog hat alle zugeordneten Releases bestätigt.
+en: The native Microsoft Store check at {0} found no applicable update; the installed version and the Store catalog are unchanged since.
+de: Die Prüfung über den Microsoft Store um {0} hat kein passendes Update gefunden. Die installierte Version und der Store-Katalog sind seitdem unverändert.
+en: The native Microsoft Store update query exceeded 20 seconds. The scan will not repeat the same stalled service request for every app.
+de: Die Updateabfrage beim Microsoft Store hat länger als 20 Sekunden gedauert. Die Prüfung wiederholt die hängende Anfrage nicht für jede App.
+en: The native Store plan does not identify the approved package and version.
+de: Der Store-Plan nennt nicht das freigegebene Paket mit der freigegebenen Version.
+en: The native update plan does not identify its installed updater executable.
+de: Der Updateplan nennt die Programmdatei des installierten Updaters nicht.
+en: The native update provider executable is missing.
+de: Die Programmdatei des eigenen Updaters fehlt.
+en: The nested MSI did not match an approved Authenticode publisher.
+de: Das enthaltene MSI passt zu keinem freigegebenen Authenticode-Herausgeber.
+en: The nested driver INF path is unsafe.
+de: Der Pfad der enthaltenen Treiber-INF ist unsicher.
+en: The nested installer path is unsafe.
+de: Der Pfad des enthaltenen Installers ist unsicher.
+en: The official NVIDIA installer is protected by NVIDIA's published SHA-256 and Authenticode publisher.
+de: Der offizielle NVIDIA-Installer ist durch den von NVIDIA veröffentlichten SHA-256 und den Authenticode-Herausgeber geschützt.
+en: The official Node.js MSI hash and OpenJS Foundation Authenticode signature are required before installation.
+de: Vor der Installation sind der offizielle Hash des Node.js-MSI und die Authenticode-Signatur der OpenJS Foundation Pflicht.
+en: The official Node.js MSI installs machine-wide and does not preserve this installation's scope.
+de: Das offizielle Node.js-MSI installiert für alle Benutzer und erhält die Installationsart dieser Installation nicht.
+en: The official Node.js distribution index confirms the installed release line is current.
+de: Der offizielle Index der Node.js-Distribution bestätigt, dass die installierte Release-Linie aktuell ist.
+en: The official Node.js distribution index could not be read: {0}
+de: Der offizielle Index der Node.js-Distribution konnte nicht gelesen werden: {0}
+en: The official Node.js distribution index has no Windows {0} MSI on the installed major {1} release line.
+de: Der offizielle Index der Node.js-Distribution hat auf der installierten Hauptversion {1} kein Windows-MSI für {0}.
+en: The official Store catalog publishes no newer package for the exact installed package family and architecture.
+de: Der offizielle Store-Katalog veröffentlicht für die exakte installierte Paketfamilie und Architektur kein neueres Paket.
+en: The original RARLAB installer was hashed directly from the producer's HTTPS endpoint and must pass win.rar GmbH Authenticode verification before installation.
+de: Der Original-Installer von RARLAB wurde direkt von der HTTPS-Adresse des Herstellers gehasht und muss vor der Installation die Authenticode-Prüfung auf die win.rar GmbH bestehen.
+en: The outcome could not be saved in the update journal: {0}
+de: Das Ergebnis konnte nicht im Updatejournal gespeichert werden: {0}
+en: The package update plan does not contain an exact Store product and package-family identity.
+de: Der Paket-Updateplan enthält keine exakte Store-Produkt- und Paketfamilienidentität.
+en: The package version did not come from the official WinGet source.
+de: Die Paketversion stammt nicht aus der offiziellen WinGet-Quelle.
+en: The predefined WinGet source identity is invalid.
+de: Die vordefinierte WinGet-Quellidentität ist ungültig.
+en: The prepared Chocolatey package does not match the approved target.
+de: Das vorbereitete Chocolatey-Paket passt nicht zum freigegebenen Ziel.
+en: The prepared Store queue item differs from the approved identity.
+de: Der vorbereitete Eintrag in der Store-Warteschlange weicht von der freigegebenen Identität ab.
+en: The prepared WinGet package does not match the approved target.
+de: Das vorbereitete WinGet-Paket passt nicht zum freigegebenen Ziel.
+en: The prepared executable update payload is missing.
+de: Das vorbereitete Updatepaket fehlt.
+en: The prepared installer no longer exists.
+de: Der vorbereitete Installer ist nicht mehr vorhanden.
+en: The prepared installer no longer matches its verified release identity.
+de: Der vorbereitete Installer passt nicht mehr zu seinem geprüften Release.
+en: The prepared native Store package does not match the approved target.
+de: Das vorbereitete Store-Paket passt nicht zum freigegebenen Ziel.
+en: The prepared update payload changed after verification.
+de: Das vorbereitete Updatepaket hat sich nach der Prüfung geändert.
+en: The prepared update payload is not protected against replacement.
+de: Das vorbereitete Updatepaket ist nicht gegen Austausch geschützt.
+en: The previously observed Store queue item is no longer present. Scan again.
+de: Der zuvor gesehene Eintrag in der Store-Warteschlange ist nicht mehr vorhanden. Prüfen Sie erneut.
+en: The private release asset URL is not a GitHub API asset URL.
+de: Die URL des privaten Release-Assets ist keine Asset-URL der GitHub-API.
+en: The process did not start.
+de: Der Prozess ist nicht gestartet.
+en: The process-close plan is not bound to a verified executable path.
+de: Der Plan zum Schließen der Prozesse ist an keinen geprüften Programmpfad gebunden.
+en: The product-specific release feed could not be resolved: {0} {1}.
+de: Der Release-Feed für dieses Produkt konnte nicht aufgelöst werden: {0} {1}.
+en: The provider attached an execution plan to a status or applicability state that is not installable.
+de: Die Quelle hat einen Ausführungsplan an einen Stand gehängt, der nicht installierbar ist.
+en: The provider attached an execution plan to non-applicable status {0}.
+de: Die Quelle hat einen Ausführungsplan an den nicht anwendbaren Status {0} gehängt.
+en: The provider claims were equally authoritative and specific; installation is blocked until policy resolves them
+de: Die Quellen sind gleichrangig und gleich genau, deshalb ist die Installation gesperrt, bis eine Richtlinie entscheidet
+en: The provider returned an application or provider identity outside its registered claim.
+de: Die Quelle hat eine Anwendungs- oder Quellenidentität außerhalb ihrer registrierten Zuständigkeit geliefert.
+en: The published Store package changed after approval. Check for updates again.
+de: Das veröffentlichte Store-Paket hat sich nach der Freigabe geändert. Suchen Sie erneut nach Updates.
+en: The publisher lists {0}, but its published installer hash could not be read; installation is blocked until it can.
+de: Der Hersteller nennt {0}, aber sein veröffentlichter Installer-Hash konnte nicht gelesen werden. Die Installation ist gesperrt, bis das gelingt.
+en: The publisher ships unsigned installers; the GitHub asset SHA-256 is required before installation.
+de: Der Hersteller liefert unsignierte Installer. Vor der Installation ist der SHA-256 des GitHub-Assets Pflicht.
+en: The publisher's download does not name its version and only its signature can be checked, so the installer cannot be tied to this version.
+de: Der Download des Herstellers nennt seine Version nicht, und nur seine Signatur kann geprüft werden. Deshalb lässt sich der Installer nicht an diese Version binden.
+en: The publisher's download link is not an allowed HTTPS address.
+de: Der Downloadlink des Herstellers ist keine erlaubte HTTPS-Adresse.
+en: The publisher's download page could not be read: {0}
+de: Die Downloadseite des Herstellers konnte nicht gelesen werden: {0}
+en: The publisher's download page no longer lists the installer link.
+de: Die Downloadseite des Herstellers führt den Installer-Link nicht mehr.
+en: The publisher's installer does not match the installed architecture.
+de: Der Installer des Herstellers passt nicht zur installierten Architektur.
+en: The publisher's site lists {0} as its newest release.
+de: Die Herstellerseite nennt {0} als neuestes Release.
+en: The publisher's site offers {0}. It publishes no installer hash, so the exact {1} signature is the verified proof (signature-only).
+de: Die Herstellerseite bietet {0} an. Sie veröffentlicht keinen Installer-Hash, deshalb ist die exakte Signatur von {1} der geprüfte Nachweis (nur Signatur).
+en: The publisher's site offers {0}; its published {1} and the {2} signature are verified before installation.
+de: Die Herstellerseite bietet {0} an. Der veröffentlichte {1} und die Signatur von {2} werden vor der Installation geprüft.
+en: The publisher's site offers {0}; its published {1} is verified before installation (the publisher ships unsigned installers).
+de: Die Herstellerseite bietet {0} an. Der veröffentlichte {1} wird vor der Installation geprüft (der Hersteller liefert unsignierte Installer).
+en: The publisher's version source could not be read: {0}
+de: Die Versionsquelle des Herstellers konnte nicht gelesen werden: {0}
+en: The publisher's version source lists no matching release.
+de: Die Versionsquelle des Herstellers nennt kein passendes Release.
+en: The query timed out.
+de: Die Abfrage hat zu lange gedauert.
+en: The queue identity cannot be bound safely, or Windows reports that resuming it affects other packages.
+de: Der Eintrag in der Warteschlange lässt sich nicht sicher zuordnen, oder Windows meldet, dass das Fortsetzen andere Pakete betrifft.
+en: The registered uninstaller did not start.
+de: Das registrierte Deinstallationsprogramm ist nicht gestartet.
+en: The registered uninstaller no longer exists.
+de: Das registrierte Deinstallationsprogramm ist nicht mehr vorhanden.
+en: The release belongs to a different product.
+de: Das Release gehört zu einem anderen Produkt.
+en: The release is not a published stable release.
+de: Das Release ist kein veröffentlichtes stabiles Release.
+en: The release tag and installer version disagree; the installer was not approved.
+de: Release-Tag und Installer-Version stimmen nicht überein, deshalb wurde der Installer nicht freigegeben.
+en: The requested version is absent from the official WinGet source.
+de: Die gewünschte Version fehlt in der offiziellen WinGet-Quelle.
+en: The server did not honor byte range {0}-{1}.
+de: Der Server hat den Bytebereich {0}-{1} nicht eingehalten.
+en: The shared Microsoft Store queue service is not responding. Retry the scan after it recovers.
+de: Der gemeinsame Warteschlangendienst des Microsoft Store antwortet nicht. Prüfen Sie erneut, sobald er wieder läuft.
+en: The shared Microsoft Store queue service timed out. Other sources remain available.
+de: Der gemeinsame Warteschlangendienst des Microsoft Store hat zu lange gebraucht. Die anderen Quellen bleiben verfügbar.
+en: The shared Microsoft Store update service is not responding.
+de: Der gemeinsame Updatedienst des Microsoft Store antwortet nicht.
+en: The shared Microsoft Store update service timed out earlier in this scan. Retry the scan after it recovers.
+de: Der gemeinsame Updatedienst des Microsoft Store hat in dieser Prüfung schon einmal zu lange gebraucht. Prüfen Sie erneut, sobald er wieder läuft.
+en: The signer certificate could not be read: {0}
+de: Das Zertifikat des Signierers konnte nicht gelesen werden: {0}
+en: The underlying device drivers were checked against manufacturer sources. Package and INF versions are not interchangeable.
+de: Die zugehörigen Gerätetreiber wurden bei den Herstellern geprüft. Paket- und INF-Versionen sind nicht austauschbar.
+en: The uninstaller exited with code {0}.
+de: Das Deinstallationsprogramm endete mit dem Code {0}.
+en: The update check timed out after {0} seconds. Other applications were still checked.
+de: Die Updateprüfung wurde nach {0} Sekunden abgebrochen. Die anderen Anwendungen wurden trotzdem geprüft.
+en: The update feed this application checks itself ({0}) returns HTTP {1}, so the application cannot find updates through it either. No update can be verified until the publisher restores it.
+de: Der Updatefeed, den diese Anwendung selbst abfragt ({0}), antwortet mit HTTP {1}, deshalb findet auch die Anwendung darüber keine Updates. Bis der Hersteller ihn repariert, lässt sich kein Update prüfen.
+en: The update filename is unsafe.
+de: Der Dateiname des Updates ist unsicher.
+en: The update has no execution plan.
+de: Das Update hat keinen Ausführungsplan.
+en: The update journal could not be written, so the update was not started: {0}
+de: Das Updatejournal konnte nicht geschrieben werden, deshalb wurde das Update nicht gestartet: {0}
+en: The update offer changed or is no longer applicable. The application was not modified.
+de: Das Updateangebot hat sich geändert oder passt nicht mehr. Die Anwendung wurde nicht verändert.
+en: The update offer or installed state changed during preparation. The prepared payload was discarded and the application was not modified.
+de: Das Updateangebot oder der installierte Stand hat sich während der Vorbereitung geändert. Das vorbereitete Paket wurde verworfen, und die Anwendung wurde nicht verändert.
+en: The update plan does not contain a valid SHA-256 or SHA-512 hash.
+de: Der Updateplan enthält keinen gültigen SHA-256- oder SHA-512-Hash.
+en: The update plan is missing its HTTPS URL, filename, hash, or signer policy.
+de: Dem Updateplan fehlen die HTTPS-URL, der Dateiname, der Hash oder die Signaturregel.
+en: The update was canceled before the application could be changed.
+de: Das Update wurde abgebrochen, bevor die Anwendung verändert werden konnte.
+en: The updater exited successfully, but the installed version did not reach the promised target.
+de: Der Updater meldet Erfolg, aber die installierte Version hat das zugesagte Ziel nicht erreicht.
+en: The updater exited with code {0}.
+de: Der Updater endete mit dem Code {0}.
+en: The updater is not part of the expected Store-signed package.
+de: Der Updater gehört nicht zum erwarteten Store-signierten Paket.
+en: The updater process did not start.
+de: Der Updater-Prozess ist nicht gestartet.
+en: The updater requested a restart; the target version will be verified after Windows restarts.
+de: Der Updater verlangt einen Neustart. Die Zielversion wird nach dem Neustart von Windows geprüft.
+en: The verified archive does not identify its exact nested MSI.
+de: Das geprüfte Archiv nennt sein enthaltenes MSI nicht eindeutig.
+en: The verified archive does not identify its nested installer.
+de: Das geprüfte Archiv nennt seinen enthaltenen Installer nicht.
+en: The verified driver INF does not support expected hardware ID {0}.
+de: Die geprüfte Treiber-INF unterstützt die erwartete Hardwarekennung {0} nicht.
+en: The verified driver INF version is {0}; expected {1}.
+de: Die geprüfte Treiber-INF hat die Version {0}, erwartet wurde {1}.
+en: The verified driver archive does not provide a catalog signature policy.
+de: Das geprüfte Treiberarchiv hat keine Regel für die Katalogsignatur.
+en: The verified installer is missing.
+de: Der geprüfte Installer fehlt.
+en: The version source is unexpectedly large.
+de: Die Versionsquelle ist unerwartet groß.
+en: The {0} channel is left with Firefox's native updater.
+de: Der Kanal {0} bleibt beim eigenen Updater von Firefox.
+en: This Alienware monitor interface belongs to the exact AW3423DW support channel; it is not the monitor INF driver itself.
+de: Diese Schnittstelle des Alienware-Monitors gehört zum exakten Support für den AW3423DW und ist nicht der INF-Treiber des Monitors selbst.
+en: This MSI-specific component requires comparison through the exact motherboard support channel. No update is claimed.
+de: Diese MSI-spezifische Komponente muss über den Support des exakten Mainboards verglichen werden. Es wird kein Update gemeldet.
+en: This Store item cannot be resumed through this client.
+de: Dieser Store-Eintrag kann über diesen Client nicht fortgesetzt werden.
+en: This is not the installed WSL package.
+de: Das ist nicht das installierte WSL-Paket.
+en: This package is already in the Microsoft Store queue. Finish it there before retrying.
+de: Dieses Paket ist bereits in der Warteschlange des Microsoft Store. Schließen Sie es dort ab, bevor Sie es erneut versuchen.
+en: This source timed out; other compatible sources were still checked.
+de: Diese Quelle hat zu lange gebraucht. Die anderen passenden Quellen wurden trotzdem geprüft.
+en: Unknown installer architecture.
+de: Unbekannte Installer-Architektur.
+en: Unsigned installer; release hash verified
+de: Unsignierter Installer mit geprüftem Release-Hash
+en: Unsupported execution kind {0}.
+de: Nicht unterstützte Ausführungsart {0}.
+en: Update owner identified; this alone is not a version check
+de: Updatezuständigkeit erkannt, was allein keine Versionsprüfung ist
+en: Update provider check
+de: Prüfung der Updatequelle
+en: Updater metadata installed with the application
+de: Mit der Anwendung installierte Updater-Metadaten
+en: VMware virtual network driver
+de: Virtueller Netzwerktreiber von VMware
+en: Vendor multi-language installer
+de: Mehrsprachiger Installer des Herstellers
+en: WD Elements support
+de: Support für WD Elements
+en: WD Elements uses Microsoft's supported USB-storage/disk driver on Windows 11. WD documents an SES component that installs automatically when required and explicitly labels the downloadable SES package as legacy for Windows 10 and later. The official page also links WD utilities; no unnecessary legacy storage driver is offered as an update.
+de: WD Elements verwendet unter Windows 11 Microsofts unterstützten Treiber für USB-Speicher und Datenträger. WD beschreibt eine SES-Komponente, die sich bei Bedarf selbst installiert, und kennzeichnet das herunterladbare SES-Paket ausdrücklich als veraltet für Windows 10 und neuer. Die offizielle Seite verlinkt außerdem WD-Programme, und es wird kein unnötiger veralteter Speichertreiber als Update angeboten.
+en: Waiting was canceled after application began and installed state could not be re-read.
+de: Das Warten wurde nach Beginn der Installation abgebrochen, und der installierte Stand konnte nicht erneut gelesen werden.
+en: Waiting was canceled after application began; installed state was checked but the target could not be confirmed.
+de: Das Warten wurde nach Beginn der Installation abgebrochen. Der installierte Stand wurde geprüft, aber das Ziel konnte nicht bestätigt werden.
+en: WinGet correlated the installed product with {0}; the official package manager will verify and apply version {1}.
+de: WinGet hat das installierte Produkt {0} zugeordnet. Der offizielle Paket-Manager prüft und installiert die Version {1}.
+en: WinGet could not correlate this package with an installed application.
+de: WinGet konnte dieses Paket keiner installierten Anwendung zuordnen.
+en: WinGet does not track a resolvable installed version for this package, so its update-availability signal cannot be trusted.
+de: WinGet kennt für dieses Paket keine auflösbare installierte Version, deshalb ist seine Updatemeldung nicht verlässlich.
+en: WinGet fallback catalog
+de: WinGet-Ausweichkatalog
+en: WinGet reports a newer release but no applicable upgrade for this installation.
+de: WinGet meldet ein neueres Release, aber kein passendes Update für diese Installation.
+en: Windows Installer (MSI)
+de: Windows Installer (MSI)
+en: Windows Installer upgrade families {0}
+de: Upgradefamilien des Windows Installers {0}
+en: Windows Installer upgrade family
+de: Upgradefamilie des Windows Installers
+en: Windows Script Host shortcut support is unavailable.
+de: Die Verknüpfungsunterstützung des Windows Script Host ist nicht verfügbar.
+en: Windows Store has not confirmed completion. Check its download queue before retrying.
+de: Der Windows Store hat den Abschluss nicht bestätigt. Prüfen Sie seine Downloadliste, bevor Sie es erneut versuchen.
+en: Windows Store has not returned an applicable update for this installation.
+de: Der Windows Store hat für diese Installation kein passendes Update geliefert.
+en: Windows Store no longer returns the approved update.
+de: Der Windows Store liefert das freigegebene Update nicht mehr.
+en: Windows Store reports an update, but the public catalog does not identify a newer target. The sources disagree; no reinstall or downgrade is offered.
+de: Der Windows Store meldet ein Update, aber der öffentliche Katalog nennt kein neueres Ziel. Die Quellen widersprechen sich, deshalb wird weder eine Neuinstallation noch eine ältere Version angeboten.
+en: Windows Store returned a different product or package family.
+de: Der Windows Store hat ein anderes Produkt oder eine andere Paketfamilie geliefert.
+en: Windows Store returned an update, but its exact newer package version could not be verified.
+de: Der Windows Store hat ein Update geliefert, aber dessen exakte neuere Paketversion konnte nicht geprüft werden.
+en: Windows Store update failed (0x{0}).
+de: Das Windows-Store-Update ist fehlgeschlagen (0x{0}).
+en: Windows Store update state: {0} (0x{1}).
+de: Stand des Windows-Store-Updates: {0} (0x{1}).
+en: Windows desktop shell is unavailable.
+de: Die Windows-Desktopoberfläche ist nicht verfügbar.
+en: Windows has not completed this Store operation. Its deployment was left running; success has not been claimed.
+de: Windows hat diesen Store-Vorgang nicht abgeschlossen. Die Installation läuft weiter, und es wird kein Erfolg gemeldet.
+en: Windows rejected GOG's staged updater signature.
+de: Windows hat die Signatur des bereitgelegten GOG-Updaters abgelehnt.
+en: Windows rejected the Authenticode signature (0x{0}).
+de: Windows hat die Authenticode-Signatur abgelehnt (0x{0}).
+en: Windows rejected the Store package because this package identity is already installed with different contents (0x80073CFB). The installed application was preserved. No uninstall, downgrade, or repeated retry is performed; a corrected/newer publisher package or an explicitly approved repair is required.
+de: Windows hat das Store-Paket abgelehnt, weil diese Paketidentität bereits mit anderem Inhalt installiert ist (0x80073CFB). Die installierte Anwendung bleibt erhalten. Es wird weder deinstalliert noch auf eine ältere Version gewechselt noch wiederholt versucht. Nötig ist ein korrigiertes oder neueres Paket des Herstellers oder eine ausdrücklich freigegebene Reparatur.
+en: Windows reports that restarting this item would affect other packages; the operation was not started.
+de: Windows meldet, dass ein Neustart dieses Eintrags andere Pakete betreffen würde, deshalb wurde der Vorgang nicht gestartet.
+en: Zero Install application feed
+de: Anwendungsfeed von Zero Install
+en: Zero Install feed
+de: Feed von Zero Install
+en: Zero Install feed or CLI could not be resolved.
+de: Der Feed oder die CLI von Zero Install konnten nicht ermittelt werden.
+en: Zero Install native feed
+de: Eigener Feed von Zero Install
+en: Zero Install refresh exited with {0}.
+de: Die Aktualisierung von Zero Install endete mit {0}.
+en: Zero Install refresh was unavailable; cached signed selection {0} with content digest {1} was verified instead.
+de: Die Aktualisierung von Zero Install war nicht verfügbar, deshalb wurde stattdessen die zwischengespeicherte signierte Auswahl {0} mit dem Inhaltshash {1} geprüft.
+en: Zero Install selected content digest {0}.
+de: Zero Install hat den Inhaltshash {0} ausgewählt.
+en: Zero Install store
+de: Speicher von Zero Install
+en: an explicit version
+de: eine ausdrücklich angegebene Version
+en: neither the GitHub API (possibly rate limited) nor the GitHub CLI returned the release list
+de: weder die GitHub-API (möglicherweise wegen des Abfragelimits) noch die GitHub-CLI lieferten die Release-Liste
+en: no output was captured
+de: es wurde keine Ausgabe aufgezeichnet
+en: no output was captured.
+de: es wurde keine Ausgabe aufgezeichnet.
+en: python.org runtime
+de: Laufzeit von python.org
+en: python.org's index, as read by the Python install manager, has no entry for this runtime.
+de: Der Index von python.org, wie ihn der Python Install Manager liest, hat keinen Eintrag für diese Laufzeit.
+en: registered product code
+de: registrierter Produktcode
+en: release list empty
+de: Release-Liste leer
+en: release list unavailable
+de: Release-Liste nicht verfügbar
+en: release or beta
+de: Release oder Beta
+en: release or prerelease
+de: Release oder Vorabversion
+en: the installed {0} {1} requires {2} {3}
+de: das installierte {0} {1} verlangt {2} {3}
+en: unique name + publisher
+de: eindeutiger Name und Herausgeber
+en: version not reported
+de: Version nicht gemeldet
+en: winget.exe could not be started.
+de: winget.exe konnte nicht gestartet werden.
+en: {0} GitHub's immutable latest-release redirect confirms that the installed version is current.
+de: {0} Die unveränderliche Weiterleitung von GitHub auf das neueste Release bestätigt, dass die installierte Version aktuell ist.
+en: {0} GitHub's latest-release redirect reports {1}, but the API is required to verify its exact asset digest before installation.
+de: {0} Die Weiterleitung von GitHub auf das neueste Release meldet {1}, aber vor der Installation ist die API nötig, um den exakten Asset-Hash zu prüfen.
+en: {0} The installed package was not changed.
+de: {0} Das installierte Paket wurde nicht verändert.
+en: {0} The latest-release fallback could not resolve a version.
+de: {0} Auch über das neueste Release ließ sich keine Version ermitteln.
+en: {0} did not respond within {1} seconds.
+de: {0} hat nicht innerhalb von {1} Sekunden geantwortet.
+en: {0} driver package ({1} devices)
+de: Treiberpaket von {0} ({1} Geräte)
+en: {0} match to {1}; {2} reports the current version.
+de: Zuordnung zu {1} (Merkmal: {0}). {2} meldet die aktuelle Version.
+en: {0} mismatch. Expected {1}, received {2}.
+de: {0} stimmt nicht. Erwartet wurde {1}, erhalten wurde {2}.
+en: {0} was installed outside Chocolatey, whose record still says {1} {2}. Updating reinstalls {3} {4} through Chocolatey, as `choco upgrade` would, so its record matches.
+de: {0} wurde außerhalb von Chocolatey installiert, dessen Eintrag noch {1} {2} nennt. Das Update installiert {3} {4} über Chocolatey neu, wie es `choco upgrade` täte, damit der Eintrag stimmt.
+en: {0} · metadata belongs to an installer, uninstaller, component, or unrelated executable
+de: {0} · Die Metadaten gehören zu einem Installer, Deinstallationsprogramm, einer Komponente oder einer fremden Programmdatei
+en: release
+de: Release
+en: prerelease
+de: Vorabversion

@@ -196,4 +196,5 @@
   <data name="StopAfterCurrent"><value>Nach diesem Vorgang stoppen</value></data>
   <data name="RemovalWindowsComponent"><value>Windows verwaltet diese Systemkomponente. Nax-Updater bietet dafür keine direkte Paket-Deinstallation an. Geschützte Pakete werden nicht zwangsweise entfernt.</value></data>
   <data name="RemovalUnavailable"><value>Für diese Anwendung wurde keine unterstützte Deinstallationsmethode gefunden.</value></data>
+  <data name="RemovalFailedWithCode" xml:space="preserve"><value>Die Deinstallation ist mit dem Code {0} fehlgeschlagen.</value></data>
 </root>

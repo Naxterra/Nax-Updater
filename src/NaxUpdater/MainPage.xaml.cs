@@ -257,7 +257,7 @@ public sealed partial class MainPage : Page
         catch (Exception exception)
         {
             IssueBar.Title = LocalizationService.Get("InventoryScanFailed");
-            IssueBar.Message = exception.Message;
+            IssueBar.Message = LocalizationService.Text(exception.Message);
             IssueBar.Severity = InfoBarSeverity.Error;
             IssueBar.IsOpen = true;
             StatusText.Text = LocalizationService.Get("ScanDidNotComplete");
@@ -663,7 +663,7 @@ public sealed partial class MainPage : Page
             var result = await _applicationRemovalService.RemoveAsync(row.Source);
             if (!result.IsSuccess)
             {
-                throw new InvalidOperationException(result.Error ?? $"Removal failed with code {result.ExitCode}.");
+                throw new InvalidOperationException(result.Error ?? LocalizationService.Format("RemovalFailedWithCode", result.ExitCode));
             }
 
             await ScanAndCheckAsync();
@@ -683,7 +683,7 @@ public sealed partial class MainPage : Page
         catch (Exception exception)
         {
             UpdateBar.Title = LocalizationService.Format("UninstallFailedTitle", row.Name);
-            UpdateBar.Message = exception.Message;
+            UpdateBar.Message = LocalizationService.Text(exception.Message);
             UpdateBar.Severity = InfoBarSeverity.Error;
             UpdateBar.IsOpen = true;
         }
@@ -708,7 +708,7 @@ public sealed partial class MainPage : Page
     private void ShowUnexpectedFailure(string title, Exception exception)
     {
         UpdateBar.Title = title;
-        UpdateBar.Message = exception.Message;
+        UpdateBar.Message = LocalizationService.Text(exception.Message);
         UpdateBar.Severity = InfoBarSeverity.Error;
         UpdateBar.IsOpen = true;
     }
@@ -862,7 +862,7 @@ public sealed partial class MainPage : Page
         catch (Exception exception)
         {
             UpdateBar.Title = LocalizationService.Get("UpdateCheckFailed");
-            UpdateBar.Message = exception.Message;
+            UpdateBar.Message = LocalizationService.Text(exception.Message);
             UpdateBar.Severity = InfoBarSeverity.Error;
             UpdateBar.IsOpen = true;
             StatusText.Text = LocalizationService.Get("UpdateCheckDidNotComplete");
@@ -978,7 +978,7 @@ public sealed partial class MainPage : Page
         catch (Exception exception)
         {
             UpdateBar.Title = LocalizationService.Get("DriverCheckFailed");
-            UpdateBar.Message = exception.Message;
+            UpdateBar.Message = LocalizationService.Text(exception.Message);
             UpdateBar.Severity = InfoBarSeverity.Error;
             UpdateBar.IsOpen = true;
         }
@@ -1109,12 +1109,12 @@ public sealed partial class MainPage : Page
                 ? LocalizationService.Get("RestartRequired")
                 : transaction.IsSuccess
                     ? LocalizationService.Get("DriverUpdateCompleted")
-                    : transaction.Error ?? LocalizationService.Get("UpdateTransactionFailed");
+                    : LocalizationService.Text(transaction.Error) ?? LocalizationService.Get("UpdateTransactionFailed");
             UpdateBar.Severity = transaction.IsSuccess
                 ? InfoBarSeverity.Success
                 : transaction.RequiresRestart ? InfoBarSeverity.Warning : InfoBarSeverity.Error;
             if (transaction.JournalWarning is { } journalWarning)
-                UpdateBar.Message += Environment.NewLine + journalWarning;
+                UpdateBar.Message += Environment.NewLine + LocalizationService.Text(journalWarning);
             UpdateBar.IsOpen = true;
             _restartPending = transaction.RequiresRestart;
         }
@@ -1250,7 +1250,7 @@ public sealed partial class MainPage : Page
         UpdateProviderText.Text = $"{row.Provider} · {row.Status}";
         UpdateVersionText.Text = row.VersionChange;
         UpdateSourcesText.Text = string.Join(Environment.NewLine, (row.Source.SourceChecks ?? []).Select(source =>
-            $"{source.ProviderDisplayName}: {(source.Status is UpdateStatus.ManagedExternally or UpdateStatus.Unsupported ? LocalizationService.Get("StatusNotChecked") : UpdateRow.StatusText(source.Status, source.AvailabilityReason, source.RolloutThresholdPercent))}"));
+            $"{LocalizationService.Text(source.ProviderDisplayName)}: {(source.Status is UpdateStatus.ManagedExternally or UpdateStatus.Unsupported ? LocalizationService.Get("StatusNotChecked") : UpdateRow.StatusText(source.Status, source.AvailabilityReason, source.RolloutThresholdPercent))}"));
         UpdatePlatformText.Text = row.PlatformDetail;
         UpdateSecurityText.Text = row.SecurityDetail;
         UpdateReleaseText.Text = row.ReleaseNotes;
@@ -1415,7 +1415,7 @@ public sealed partial class MainPage : Page
                         ? row.Source.ExecutionPlan.Kind == UpdateExecutionKind.NativeStoreQueue || alreadyUpdated
                             ? LocalizationService.Format("StoreOperationCompleted", transaction.FreshAssessment?.InstalledVersion ?? "?")
                             : LocalizationService.Get("UpdateCompletedMessage")
-                        : transaction.Error ?? LocalizationService.Get("UpdateTransactionFailed");
+                        : LocalizationService.Text(transaction.Error) ?? LocalizationService.Get("UpdateTransactionFailed");
             UpdateBar.Severity = succeeded
                 ? InfoBarSeverity.Success
                 : transaction.RequiresRestart
@@ -1430,7 +1430,7 @@ public sealed partial class MainPage : Page
                 : transaction.Stage is UpdateTransactionStage.NoLongerApplicable or UpdateTransactionStage.CanceledBeforeChange ? UpdateRunState.NotApplicable
                 : UpdateRunState.Failed;
             if (transaction.JournalWarning is { } journalWarning)
-                UpdateBar.Message += Environment.NewLine + journalWarning;
+                UpdateBar.Message += Environment.NewLine + LocalizationService.Text(journalWarning);
             row.RunMessage = succeeded ? null : UpdateBar.Message;
             _runOutcomes[row.Source.ApplicationIdentity] = (row.RunState, row.RunMessage);
 
