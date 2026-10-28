@@ -1,6 +1,6 @@
 # Nax-Updater design
 
-Current as of 0.17.33. Updated with every release; the reasons behind each rule are in [DECISIONS.md](DECISIONS.md).
+Current as of 0.17.34. Updated with every release; the reasons behind each rule are in [DECISIONS.md](DECISIONS.md).
 
 ## Goal
 
@@ -65,6 +65,8 @@ A **superseded registration** (an entry named "Product - 12.0.30501" next to a c
 
 - `github`: repository, asset pattern, expected signer. Options: `unsigned` (GitHub asset digest only), `followInstalledPrerelease`, `privateRepository` (asset resolved through the API with the `gh` CLI token, sent only to `api.github.com`), `releaseTagPrefix`.
 - `official`: version page or feed, a regex for versions (highest wins), download and hash locations, expected signer, allowed hosts. Options: `versionFormat`, `downloadPageUrl`/`downloadPattern`, `fileName`, `nestedInstaller` (MSI inside a ZIP), `hashUrl`/`hashPattern`/`hashEncoding`, `rolloutPattern`, `stayOnInstalledMajor`, `architecture: neutral`, `allowMirrorRedirects`, `alwaysElevate`, `unsigned`, `signatureOnly`, `verifyInstallerVersion`.
+
+A `github` recipe matches the registered name exactly, followed at most by a trailing version and by the scope and bitness marks that Inno Setup appends in English or German ("(Aktueller Benutzer)"). `installerArguments` serve an all-users installation (elevated when `requiresElevation` is set) and `currentUserInstallerArguments` a per-user one, so an update keeps the installation in its scope. An installation whose scope no argument set serves is reported as not applicable.
 
 Every recipe is added only after a real download was verified against its hash and signer. When a publisher's signer changes, the update fails with "expected signer ..., found ..." and the pin is changed only after the new certificate is matched to the publisher's own legal records.
 

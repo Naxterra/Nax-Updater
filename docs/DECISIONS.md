@@ -2,6 +2,12 @@
 
 Why Nax-Updater works the way it does. Newest first; every release adds its decisions here and updates [DESIGN.md](DESIGN.md). Each entry names the decision, the evidence that led to it, and what was rejected.
 
+## 0.17.34 (2026-10-28)
+
+**Per-user Inno Setup registrations are matched with their scope mark.** Inno Setup installers that let the user choose the install scope append the scope and bitness to the registered name in the setup language, for example "Nax-Notepad (Aktueller Benutzer)". The repository recipe compared names exactly, so such an installation showed no verified source. The matcher now removes only these marks (English and German, as Inno Setup's message files write them) before it compares the name; any other parenthesized suffix still does not match.
+
+**Installers that support both scopes update each installation in its own scope.** Nax-Notepad and Nax-TaskManager install per user or for all users. Their recipes only carried per-user arguments, so an all-users installation was reported as "newer version known, not applicable". The recipes now pass `/ALLUSERS` with elevation for an all-users installation and `/CURRENTUSER` without elevation for a per-user one, so an update never moves an installation to the other scope. Nax-StartMenu has a recipe as well. Its installer stops and restarts the menu itself, so the recipe lists no processes to close.
+
 ## 0.17.33 (2026-10-28)
 
 **The Python install manager from python.org is recognized.** Python publishes its install manager through the Microsoft Store and as an MSIX that it signs itself. Only the Store package was trusted, so runtimes managed by the python.org package failed with "install manager not installed". The python.org family (`PythonSoftwareFoundation.PythonManager_3847v3x7pw1km`) is now trusted when it carries its own publisher signature: the family name is derived from the exact publisher name, and Windows validated the package signature at install.
