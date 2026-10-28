@@ -49,16 +49,20 @@ internal static class ReleaseReviewRegression
 
     private static async Task download_url_without_version_requires_the_installer_version(Action<bool, string> assert)
     {
-        OfficialSiteRecipe Template(string url, string? format) => new()
+        OfficialSiteRecipe Template(string url, string? format, string? linkPattern = null) => new()
         {
             Id = "t", DisplayNamePattern = "t", VersionUrl = "https://t.example/", VersionPattern = "t", DownloadUrl = url, VersionFormat = format,
+            DownloadPageUrl = linkPattern is null ? null : "https://t.example/download", DownloadPattern = linkPattern,
             AllowedHosts = ["t.example"], InstallerKind = UpdateExecutionKind.DownloadedExe
         };
         assert(OfficialSiteUpdateProvider.TemplateNamesVersion(Template("https://download.internetdownloadmanager.com/idman{maj}{min}build{build}.exe", "{maj}.{min}.{build}")) &&
                OfficialSiteUpdateProvider.TemplateNamesVersion(Template("https://us.download.nvidia.com/nvapp/client/{version}/NVIDIA_app_v{version}.exe", null)) &&
                !OfficialSiteUpdateProvider.TemplateNamesVersion(Template("https://t1.daumcdn.net/potplayer/PotPlayer/Version/Latest/PotPlayerSetup64.exe", "{yy}.{mm}.{dd}")) &&
                !OfficialSiteUpdateProvider.TemplateNamesVersion(Template("https://vendor64.example/win64/latest/setup.exe", null)) &&
-               !OfficialSiteUpdateProvider.TemplateNamesVersion(Template("https://javadl.oracle.com/webapps/download/AutoDL?BundleId={bundle}", "8.0.{update}0")),
+               !OfficialSiteUpdateProvider.TemplateNamesVersion(Template("https://javadl.oracle.com/webapps/download/AutoDL?BundleId={bundle}", "8.0.{update}0")) &&
+               !OfficialSiteUpdateProvider.TemplateNamesVersion(Template("https://t.example/{versionPath}/setup.exe", null)) &&
+               !OfficialSiteUpdateProvider.TemplateNamesVersion(Template("https://t.example/app{maj}{min}build{build}.exe", "{maj}.{min}.{build}", @"build(?<build>[0-9]+)\.exe")) &&
+               !OfficialSiteUpdateProvider.TemplateNamesVersion(Template("https://t.example/{version}/setup.exe", null, @"/(?<version>[0-9.]+)/setup\.exe")),
             "A download was judged as tied, or not tied, to its version by digits instead of by the recipe template.");
         var shipped = await UpdateProviderCatalogLoader.LoadAsync(Path.GetFullPath(Path.Combine(AppContext.BaseDirectory,
             "../../../../../../src/NaxUpdater/Configuration/update-providers.json")));

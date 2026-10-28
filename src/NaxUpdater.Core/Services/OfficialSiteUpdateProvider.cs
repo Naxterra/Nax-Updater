@@ -158,11 +158,20 @@ public sealed class OfficialSiteUpdateProvider(HttpClient httpClient, OfficialSi
     // for "{maj}.{min}.{build}"). Digits that merely happen to appear in a URL do not count.
     internal static bool TemplateNamesVersion(OfficialSiteRecipe recipe)
     {
-        if (recipe.DownloadUrl.Contains("{version", StringComparison.Ordinal)) return true;
+        // A link read from a second page fills its named groups after the version was built
+        // and can overwrite the very parts the URL is built from with that page's values.
+        var linkGroups = recipe.DownloadPattern is null
+            ? []
+            : Regex.Matches(recipe.DownloadPattern, @"\(\?<(?<name>[A-Za-z_][A-Za-z0-9_]*)>", RegexOptions.CultureInvariant)
+                .Select(static match => match.Groups["name"].Value).ToHashSet(StringComparer.Ordinal);
+        if ((recipe.DownloadUrl.Contains("{version}", StringComparison.Ordinal) || recipe.DownloadUrl.Contains("{version_}", StringComparison.Ordinal)) &&
+            !linkGroups.Contains("version"))
+            return true;
         if (recipe.VersionFormat is null) return false;
-        var parts = Regex.Matches(recipe.VersionFormat, @"\{[A-Za-z_][A-Za-z0-9_]*\}", RegexOptions.CultureInvariant)
-            .Select(static match => match.Value).ToArray();
-        return parts.Length > 0 && parts.All(part => recipe.DownloadUrl.Contains(part, StringComparison.Ordinal));
+        var parts = Regex.Matches(recipe.VersionFormat, @"\{(?<name>[A-Za-z_][A-Za-z0-9_]*)\}", RegexOptions.CultureInvariant)
+            .Select(static match => match.Groups["name"].Value).ToArray();
+        return parts.Length > 0 && parts.All(part =>
+            recipe.DownloadUrl.Contains("{" + part + "}", StringComparison.Ordinal) && !linkGroups.Contains(part));
     }
 
     private string? VersionOf(Match match)
@@ -177,7 +186,7 @@ public sealed class OfficialSiteUpdateProvider(HttpClient httpClient, OfficialSi
     private async Task<string> ReadAsync(string url, CancellationToken cancellationToken)
     {
         using var request = new HttpRequestMessage(HttpMethod.Get, url);
-        request.Headers.UserAgent.ParseAdd("NaxUpdater/0.17.30");
+        request.Headers.UserAgent.ParseAdd("NaxUpdater/0.17.31");
         using var response = await httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
         response.EnsureSuccessStatusCode();
         // Version sources are small documents; never read a large file by accident.

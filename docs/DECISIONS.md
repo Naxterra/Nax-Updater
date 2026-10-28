@@ -2,6 +2,10 @@
 
 Why Nax-Updater works the way it does. Newest first; every release adds its decisions here and updates [DESIGN.md](DESIGN.md). Each entry names the decision, the evidence that led to it, and what was rejected.
 
+## 0.17.31 (2026-10-28)
+
+**A download link read from a second page no longer counts as naming the version.** A recipe that reads its link from a download page fills the link's named groups after the version is built, so such a page could overwrite the version parts the URL is built from with older values, and a correctly signed older installer would have run without the version check. A signature-only URL now counts as tied to the version only through an exact `{version}` or `{version_}` placeholder, or through version parts that the download-page pattern does not capture. No shipped recipe was affected.
+
 ## 0.17.30 (2026-10-27)
 
 Fixes from the release review of 0.17.29. Each finding was confirmed in the source, by a probe or against live data before it was changed.
