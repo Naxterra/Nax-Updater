@@ -38,10 +38,24 @@ public sealed class GitHubReleaseUpdateProvider : IUpdateProvider
 
     // Installers often append the version to the registered name
     // ("Nax-TaskManager 2.0.0-alpha.23"); only a trailing version is accepted.
-    internal static bool MatchesDisplayName(string installed, string recipeName) =>
-        installed.Equals(recipeName, StringComparison.OrdinalIgnoreCase) ||
-        installed.StartsWith(recipeName + " ", StringComparison.OrdinalIgnoreCase) &&
-        Regex.IsMatch(installed[(recipeName.Length + 1)..], @"^v?\d+(?:\.\d+)*(?:-[0-9A-Za-z.]+)?$", RegexOptions.CultureInvariant);
+    // Inno Setup installers that let the user pick the install scope also append
+    // the scope and bitness in the setup language ("Nax-Notepad (Aktueller Benutzer)");
+    // only those marks (English and German, as in Inno Setup's message files) are removed.
+    internal static bool MatchesDisplayName(string installed, string recipeName)
+    {
+        var marks = Regex.Match(installed, @"^(?<name>.+?) \((?<marks>[^()]+)\)$", RegexOptions.CultureInvariant);
+        if (marks.Success && marks.Groups["marks"].Value.Split(", ").All(InnoSetupNameMarks.Contains))
+            installed = marks.Groups["name"].Value;
+        return installed.Equals(recipeName, StringComparison.OrdinalIgnoreCase) ||
+            installed.StartsWith(recipeName + " ", StringComparison.OrdinalIgnoreCase) &&
+            Regex.IsMatch(installed[(recipeName.Length + 1)..], @"^v?\d+(?:\.\d+)*(?:-[0-9A-Za-z.]+)?$", RegexOptions.CultureInvariant);
+    }
+
+    private static readonly HashSet<string> InnoSetupNameMarks = new(StringComparer.Ordinal)
+    {
+        "Current user", "All users", "32-bit", "64-bit",
+        "Aktueller Benutzer", "Alle Benutzer", "32 Bit", "64 Bit"
+    };
 
     public async Task<UpdateCheckResult> CheckAsync(InstalledApplication application, CancellationToken cancellationToken)
     {
@@ -315,7 +329,7 @@ public sealed class GitHubReleaseUpdateProvider : IUpdateProvider
             using var request = new HttpRequestMessage(
                 HttpMethod.Get,
                 $"https://api.github.com/repos/{recipe.Repository}/releases/latest");
-            request.Headers.UserAgent.ParseAdd("NaxUpdater/0.17.33");
+            request.Headers.UserAgent.ParseAdd("NaxUpdater/0.17.34");
             request.Headers.Accept.ParseAdd("application/vnd.github+json");
             try
             {
@@ -361,7 +375,7 @@ public sealed class GitHubReleaseUpdateProvider : IUpdateProvider
         using var request = new HttpRequestMessage(
             HttpMethod.Get,
             $"https://github.com/{recipe.Repository}/releases/latest");
-        request.Headers.UserAgent.ParseAdd("NaxUpdater/0.17.33");
+        request.Headers.UserAgent.ParseAdd("NaxUpdater/0.17.34");
         using var response = await httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
         var finalUri = response.RequestMessage?.RequestUri;
         var match = finalUri is null

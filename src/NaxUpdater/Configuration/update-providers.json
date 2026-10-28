@@ -131,10 +131,10 @@
       "unsigned": true,
       "privateRepository": true,
       "installerKind": "DownloadedExe",
-      "installerArguments": [ "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART", "/CURRENTUSER" ],
+      "installerArguments": [ "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART", "/ALLUSERS" ],
       "currentUserInstallerArguments": [ "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART", "/CURRENTUSER" ],
       "runningProcessNames": [ "nax-notepad" ],
-      "requiresElevation": false
+      "requiresElevation": true
     },
     {
       "id": "Naxterra.NaxRenamer",
@@ -152,6 +152,20 @@
       "requiresElevation": true
     },
     {
+      "id": "Naxterra.NaxStartMenu",
+      "displayName": "Nax-StartMenu",
+      "publisherContains": "Naxterra",
+      "repository": "Naxterra/Nax-StartMenu",
+      "assetNamePattern": "^NaxStartMenu-v(?<version>[0-9]+(?:\\.[0-9]+)+)-setup-win-x64\\.exe$",
+      "architecture": "x64",
+      "language": "neutral",
+      "unsigned": true,
+      "privateRepository": true,
+      "installerKind": "DownloadedExe",
+      "installerArguments": [ "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART", "/SP-" ],
+      "requiresElevation": true
+    },
+    {
       "id": "Naxterra.NaxTaskManager",
       "displayName": "Nax-TaskManager",
       "publisherContains": "Naxterra",
@@ -162,10 +176,10 @@
       "unsigned": true,
       "followInstalledPrerelease": true,
       "installerKind": "DownloadedExe",
-      "installerArguments": [ "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART", "/CURRENTUSER" ],
+      "installerArguments": [ "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART", "/ALLUSERS" ],
       "currentUserInstallerArguments": [ "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART", "/CURRENTUSER" ],
       "runningProcessNames": [ "Nax-TaskManager" ],
-      "requiresElevation": false
+      "requiresElevation": true
     },
     {
       "id": "Governikus.AusweisApp",

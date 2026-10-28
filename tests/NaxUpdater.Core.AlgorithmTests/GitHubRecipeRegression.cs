@@ -12,6 +12,13 @@ internal static class GitHubRecipeRegression
                !GitHubReleaseUpdateProvider.MatchesDisplayName("Nax-Copy Helper", "Nax-Copy") &&
                !GitHubReleaseUpdateProvider.MatchesDisplayName("Nax-TaskManagerX 2.0", "Nax-TaskManager"),
             "A recipe matched another product's name, or missed a version-suffixed registration.");
+        // per_user_inno_install_with_scope_mark_matches_its_recipe
+        assert(GitHubReleaseUpdateProvider.MatchesDisplayName("Nax-Notepad (Aktueller Benutzer)", "Nax-Notepad") &&
+               GitHubReleaseUpdateProvider.MatchesDisplayName("Nax-Notepad (Current user)", "Nax-Notepad") &&
+               GitHubReleaseUpdateProvider.MatchesDisplayName("Nax-Notepad 0.5.4 (All users, 64-bit)", "Nax-Notepad") &&
+               !GitHubReleaseUpdateProvider.MatchesDisplayName("Nax-Notepad (Portable)", "Nax-Notepad") &&
+               !GitHubReleaseUpdateProvider.MatchesDisplayName("Nax-Notepad Helper (Aktueller Benutzer)", "Nax-Notepad"),
+            "A per-user Inno Setup registration with its scope mark was not matched, or another suffix was accepted.");
 
         // An installed pre-release follows its channel; unsigned releases rely on the mandatory digest.
         var digest = new string('a', 64);
