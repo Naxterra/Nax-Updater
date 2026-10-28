@@ -9,7 +9,10 @@ namespace NaxUpdater.Core.Services;
 // (Chocolatey's "python") update the separate python.org installer instead.
 internal sealed class PythonInstallManagerUpdateProvider(ProcessQueryRunner processRunner) : IUpdateProvider
 {
+    // The manager comes from the Microsoft Store or directly from python.org (an MSIX signed
+    // by the Python Software Foundation); both are the same tool.
     internal const string PackageFamily = "PythonSoftwareFoundation.PythonManager_qbz5n2kfra8p0";
+    internal const string PythonOrgPackageFamily = "PythonSoftwareFoundation.PythonManager_3847v3x7pw1km";
     internal const string UninstallKeyPrefix = "pymanager-";
     private const string ReleaseNotes = "https://docs.python.org/3/using/windows.html";
     private readonly SemaphoreSlim _listGate = new(1, 1);
@@ -39,9 +42,11 @@ internal sealed class PythonInstallManagerUpdateProvider(ProcessQueryRunner proc
     public async Task<UpdateCheckResult> CheckAsync(InstalledApplication application, CancellationToken cancellationToken)
     {
         var id = InstallId(application)!;
-        var manager = StorePackagedExecutable.Resolve(PackageFamily, "pymanager.exe");
-        if (manager is null)
-            return Error(application, "The Store-signed Python install manager that owns this runtime is not installed.");
+        var managerFamily = new[] { PackageFamily, PythonOrgPackageFamily }
+            .FirstOrDefault(family => StorePackagedExecutable.Resolve(family, "pymanager.exe") is not null);
+        var manager = managerFamily is null ? null : StorePackagedExecutable.Resolve(managerFamily, "pymanager.exe");
+        if (manager is null || managerFamily is null)
+            return Error(application, "The Python install manager that owns this runtime is not installed.");
 
         var installed = await InstalledAsync(manager, cancellationToken);
         if (!installed.TryGetValue(id, out var runtime) || IsUnmanaged(runtime))
@@ -78,9 +83,9 @@ internal sealed class PythonInstallManagerUpdateProvider(ProcessQueryRunner proc
         var plan = new UpdateExecutionPlan(UpdateExecutionKind.NativeCommand, null, null, null, null, manager,
             ["install", "--update", "-y", $"{company}\\{tag}"], false, [],
             interpreters.Select(path => Path.GetFileNameWithoutExtension(path)).ToArray(),
-            RequireAuthenticode: false, StorePackageFamilyName: PackageFamily, RunningExecutablePaths: interpreters);
+            RequireAuthenticode: false, StorePackageFamilyName: managerFamily, RunningExecutablePaths: interpreters);
         return Result(application, latest, UpdateStatus.Available,
-            "The Store-signed Python install manager updates this runtime from python.org's signed index and verifies the package hash.", plan);
+            "The Python install manager updates this runtime from python.org's signed index and verifies the package hash.", plan);
     }
 
     private async Task<Dictionary<string, JsonElement>> InstalledAsync(string manager, CancellationToken token)

@@ -1220,6 +1220,22 @@ if (installedSignal is not null)
     Assert(!string.IsNullOrWhiteSpace(liveSignalUpdate.AvailableVersion), "Signal's installed updater feed returned no version.");
 }
 
+// A runtime of the Python install manager is checked through whichever manager is
+// installed: the Microsoft Store package or the one python.org signs directly.
+var managedPython = snapshot.Applications.FirstOrDefault(static app => PythonInstallManagerUpdateProvider.InstallId(app) is not null);
+var pythonManagerInstalled = new[] { PythonInstallManagerUpdateProvider.PackageFamily, PythonInstallManagerUpdateProvider.PythonOrgPackageFamily }
+    .Any(static family => new Windows.Management.Deployment.PackageManager().FindPackagesForUser(string.Empty, family).Any());
+if (managedPython is not null && pythonManagerInstalled)
+{
+    var pythonAssessment = await new PythonInstallManagerUpdateProvider(new ProcessQueryRunner()).CheckAsync(managedPython, CancellationToken.None);
+    Assert(pythonAssessment.Status != UpdateStatus.Error || !pythonAssessment.Message!.Contains("is not installed", StringComparison.Ordinal),
+        $"The installed Python install manager was not recognized: {pythonAssessment.Message}");
+}
+else
+{
+    Console.WriteLine("SKIPPED: no runtime of the Python install manager, or no manager, is installed.");
+}
+
 var liveStoreIdentities = 0;
 var storeDeployment = new StorePackageDeploymentService();
 var installedCamera = snapshot.Applications.FirstOrDefault(app =>

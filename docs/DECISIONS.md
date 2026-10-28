@@ -2,6 +2,10 @@
 
 Why Nax-Updater works the way it does. Newest first; every release adds its decisions here and updates [DESIGN.md](DESIGN.md). Each entry names the decision, the evidence that led to it, and what was rejected.
 
+## 0.17.33 (2026-10-28)
+
+**The Python install manager from python.org is recognized.** Python publishes its install manager through the Microsoft Store and as an MSIX that it signs itself. Only the Store package was trusted, so runtimes managed by the python.org package failed with "install manager not installed". The python.org family (`PythonSoftwareFoundation.PythonManager_3847v3x7pw1km`) is now trusted when it carries its own publisher signature: the family name is derived from the exact publisher name, and Windows validated the package signature at install.
+
 ## 0.17.32 (2026-10-28)
 
 **One Store app no longer has its own update path.** A special path read one publisher's own update manifest and bound extra processes for a single Store app. It was removed by the owner's decision, and that app is now checked by the generic Store path like every other Store app. The generic path now also marks the case in which the catalog lists a newer package but the Store offers nothing for this installation, so the details explain why no update is shown.

@@ -9,6 +9,15 @@ namespace NaxUpdater.Core.Services;
 // folder of the exact, Store-signed package family.
 internal static class StorePackagedExecutable
 {
+    // Packages that their publisher also distributes directly, signed with its own
+    // certificate (SignatureKind Developer). The family name is derived from the exact
+    // publisher name ("CN=Python Software Foundation, ..."), and Windows validated the
+    // package signature at install, so the family identifies the publisher as firmly.
+    private static readonly HashSet<string> PublisherSignedFamilies = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "PythonSoftwareFoundation.PythonManager_3847v3x7pw1km"
+    };
+
     public static string? Resolve(string packageFamilyName, string relativeExecutable)
     {
         foreach (var root in StoreSignedRoots(packageFamilyName))
@@ -33,8 +42,9 @@ internal static class StorePackagedExecutable
         {
             foreach (var package in new PackageManager().FindPackagesForUser(string.Empty, packageFamilyName))
             {
-                if (package.SignatureKind != PackageSignatureKind.Store ||
-                    !package.Id.FamilyName.Equals(packageFamilyName, StringComparison.OrdinalIgnoreCase)) continue;
+                var trustedSignature = package.SignatureKind == PackageSignatureKind.Store ||
+                    package.SignatureKind == PackageSignatureKind.Developer && PublisherSignedFamilies.Contains(packageFamilyName);
+                if (!trustedSignature || !package.Id.FamilyName.Equals(packageFamilyName, StringComparison.OrdinalIgnoreCase)) continue;
                 roots.Add(Path.GetFullPath(package.InstalledLocation.Path).TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar);
             }
         }
