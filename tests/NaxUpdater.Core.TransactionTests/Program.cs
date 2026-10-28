@@ -357,112 +357,50 @@ var uacCanceled = await new UpdateTransactionCoordinator(uacCanceledBackend, ver
 Assert(uacCanceled.Stage == UpdateTransactionStage.CanceledBeforeChange && !uacCanceled.IsSuccess,
     "A canceled UAC prompt was reported as a failed or completed installation.");
 
-using var manifestClient = new HttpClient(new StubHandler(_ => Json("""
+// A Store app is updated only when the Store itself offers an exact target version.
+using var catalogClient = new HttpClient(new StubHandler(_ => Json("{}")));
+var storeApp = CreateApplication() with
 {
-  "schemaVersion": 1,
-  "buildVersion": "2.0.0.0",
-  "storeProductId": "9PLM9XGG6VKS",
-  "packageIdentity": "OpenAI.Codex"
-}
-""")));
-var chatGpt = CreateApplication() with
-{
-    Identity = "msix:OpenAI.Codex_2p2nqsd0c76g0",
-    DisplayName = "ChatGPT",
-    Publisher = "OpenAI",
+    Identity = "msix:Fixture.StorePackage_123",
+    DisplayName = "Fixture Store App",
     InstalledVersion = "1.0.0.0",
     NormalizedVersion = "1.0.0.0",
     ManagementMode = ManagementMode.Msix,
-    PrimaryInstallPath = @"C:\Fixture\ChatGPT.exe"
+    PrimaryInstallPath = @"C:\Fixture\FixtureStore.exe"
 };
-var releaseOnly = await new MsixStoreUpdateProvider(
-        manifestClient,
-        new StubStore(new(true, false, "9PLM9XGG6VKS", null, null)))
-    .CheckAsync(chatGpt, CancellationToken.None);
-Assert(releaseOnly is
-{
-    Status: UpdateStatus.Current,
-    AvailableVersion: null,
-    Applicability: UpdateApplicability.NotRequired,
-    ExecutionPlan: null
-}, "Release evidence was promoted to an installable ChatGPT update without applicability.");
-var releaseOnlyThroughSelection = await new UpdateCheckService([
-        new MsixStoreUpdateProvider(
-            manifestClient,
-            new StubStore(new(true, false, "9PLM9XGG6VKS", null, null)))
+var noOffer = await new UpdateCheckService([
+        new MsixStoreUpdateProvider(catalogClient, new StubStore(new(true, false, "Fixture.Product", null, null)))
     ])
-    .CheckAsync(new(DateTimeOffset.UtcNow, [chatGpt], [], []));
-Assert(releaseOnlyThroughSelection.Results.Single() is
+    .CheckAsync(new(DateTimeOffset.UtcNow, [storeApp], [], []));
+Assert(noOffer.Results.Single() is
 {
     Status: UpdateStatus.Current,
     AvailableVersion: null,
-    Applicability: UpdateApplicability.NotRequired,
     ExecutionPlan: null
-}, "Provider selection erased ChatGPT's explicit not-applicable evidence.");
+}, "A Store app without a Store offer was presented as an update.");
 var storeApplicable = await new MsixStoreUpdateProvider(
-        manifestClient,
-        new StubStore(new(true, true, "9PLM9XGG6VKS", "2.0.0.0", null)))
-    .CheckAsync(chatGpt, CancellationToken.None);
+        catalogClient,
+        new StubStore(new(true, true, "Fixture.Product", "2.0.0.0", null)))
+    .CheckAsync(storeApp, CancellationToken.None);
 Assert(storeApplicable is
 {
     Status: UpdateStatus.Available,
+    AvailableVersion: "2.0.0.0",
     Applicability: UpdateApplicability.Applicable,
     ExecutionPlan.Kind: UpdateExecutionKind.StorePackage
 }, "Store applicability did not produce an exact Store transaction.");
-var differingTargets = await new MsixStoreUpdateProvider(
-        manifestClient,
-        new StubStore(new(true, true, "9PLM9XGG6VKS", "1.5.0.0", null)))
-    .CheckAsync(chatGpt, CancellationToken.None);
-Assert(differingTargets is
-{
-    Status: UpdateStatus.Available,
-    AvailableVersion: "1.5.0.0",
-    ExecutionPlan.Kind: UpdateExecutionKind.StorePackage
-}, "The Store route did not retain its own exact target when manifest and Store targets differed.");
-var productMismatch = await new MsixStoreUpdateProvider(
-        manifestClient,
-        new StubStore(new(true, true, "Different.Product", "2.0.0.0", null)))
-    .CheckAsync(chatGpt, CancellationToken.None);
-Assert(productMismatch is { Status: UpdateStatus.Error, ExecutionPlan: null },
-    "A Store product that conflicted with OpenAI's manifest identity was accepted.");
-
-using var currentManifestClient = new HttpClient(new StubHandler(_ => Json("""
-{
-  "schemaVersion": 1,
-  "buildVersion": "1.0.0.0",
-  "storeProductId": "9PLM9XGG6VKS",
-  "packageIdentity": "OpenAI.Codex"
-}
-""")));
-var storeNewerThanManifest = await new MsixStoreUpdateProvider(
-        currentManifestClient,
-        new StubStore(new(true, true, "9PLM9XGG6VKS", "2.0.0.0", null)))
-    .CheckAsync(chatGpt, CancellationToken.None);
-Assert(storeNewerThanManifest is
-{
-    Status: UpdateStatus.Available,
-    AvailableVersion: "2.0.0.0",
-    ExecutionPlan.Kind: UpdateExecutionKind.StorePackage
-}, "A current OpenAI manifest suppressed a genuine exact Store update.");
-
-var genericStoreApp = chatGpt with
-{
-    Identity = "msix:Fixture.StorePackage_123",
-    DisplayName = "Fixture Store App"
-};
 var targetlessStore = await new UpdateCheckService([
         new MsixStoreUpdateProvider(
-            manifestClient,
+            catalogClient,
             new StubStore(new(true, true, "Fixture.Product", null, null)))
     ])
-    .CheckAsync(new(DateTimeOffset.UtcNow, [genericStoreApp], [], []));
+    .CheckAsync(new(DateTimeOffset.UtcNow, [storeApp], [], []));
 Assert(targetlessStore.Results.Single() is
 {
     Status: UpdateStatus.NewerReleaseKnown,
     ExecutionPlan: null,
     IsInstallable: false
 }, "A Store offer without an exact target version exposed an enabled install action.");
-
 Console.WriteLine("NaxUpdater deterministic transaction tests passed.");
 
 static InstalledApplication CreateApplication() => new(

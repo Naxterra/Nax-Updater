@@ -140,7 +140,7 @@ public sealed class NativeStoreUpdateService : INativeStoreUpdateService
                     return new(-1, false, "Windows reports that restarting this item would affect other packages; the operation was not started.");
                 // Only after the user's Update/Update All action. A plain Restart()
                 // keeps the item's original no-forced-shutdown options, so a package
-                // service (e.g. ChatGPT's CodexSandboxService) keeps it failing with
+                // service (a packaged background service) keeps it failing with
                 // ERROR_PACKAGES_IN_USE. Re-request it with the approved apply options.
                 var forced = await _client.StartQueuedUpdateAsync(identity, cancellation);
                 if (forced is not null)
@@ -255,7 +255,7 @@ public sealed class NativeStoreUpdateService : INativeStoreUpdateService
 
     // Detection never installs or shuts anything down. An approved apply runs after
     // NaxUpdater closed the app's processes, and allows Windows to stop what it
-    // cannot close itself: packaged services (ChatGPT's CodexSandboxService runs as
+    // cannot close itself: packaged services (a packaged background service runs as
     // LocalSystem) otherwise block the deployment with ERROR_PACKAGES_IN_USE.
     internal static AppUpdateOptions QueryOptions(bool startApprovedUpdate = false) => new()
     {

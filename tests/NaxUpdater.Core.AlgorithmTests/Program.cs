@@ -243,36 +243,32 @@ try
     Assert(catalogTimeout.Results.Single().Status == UpdateStatus.Error &&
         catalogTimeout.Results.Single().Message!.Contains("timed out"), "Source refresh has no effective timeout.");
 
-    using (var rolloutClient = new HttpClient(new Handler(request =>
-        request.RequestUri!.Host == "persistent.oaistatic.com"
-        ? Json(new { schemaVersion = 1, buildVersion = "26.901.5003.0", storeProductId = "9PLM9XGG6VKS", packageIdentity = "OpenAI.Codex" })
-        : Json(new
+    // A newer package in the public catalog is no update while the Store offers none.
+    using (var rolloutClient = new HttpClient(new Handler(_ => Json(new
         {
             Product = new
             {
                 DisplaySkuAvailabilities = new[] { new { Sku = new { Properties = new { Packages = new[] {
-            new { PackageFamilyName = "OpenAI.Codex_2p2nqsd0c76g0", PackageFullName = "OpenAI.Codex_26.901.4073.0_x64__2p2nqsd0c76g0",
+            new { PackageFamilyName = "Contoso.Notes_2p2nqsd0c76g0", PackageFullName = "Contoso.Notes_26.901.5003.0_x64__2p2nqsd0c76g0",
                 Architectures = new[]{"x64"} } } } } } }
             }
         }))))
     {
-        var chatGpt = fixtureApp with
+        var storeApp = fixtureApp with
         {
-            Identity = "msix:OpenAI.Codex_2p2nqsd0c76g0",
-            DisplayName = "ChatGPT",
+            Identity = "msix:Contoso.Notes_2p2nqsd0c76g0",
+            DisplayName = "Contoso Notes",
             ManagementMode = ManagementMode.Msix,
             InstalledVersion = "26.901.4073.0",
             NormalizedVersion = "26.901.4073.0"
         };
         var rollout = await new MsixStoreUpdateProvider(rolloutClient, new NoStoreUpdate())
-            .CheckAsync(chatGpt, CancellationToken.None);
-        Assert(rollout.AvailabilityReason == UpdateAvailabilityReason.NoApplicableStoreUpdate &&
-            rollout.Status == UpdateStatus.Current && rollout.AvailableVersion is null && rollout.AnnouncedVersion == "26.901.5003.0",
-            "An announcement without an applicable offer was displayed as an update.");
-        Assert(!rollout.IsInstallable, "An unpublished Store package was presented as installable.");
+            .CheckAsync(storeApp, CancellationToken.None);
+        Assert(rollout.Status != UpdateStatus.Available && rollout.AvailableVersion is null && !rollout.IsInstallable,
+            "A catalog listing without a Store offer was displayed as an update.");
     }
-    var nativeTarget = new PublishedStorePackage("9PLM9XGG6VKS", "0010", "OpenAI.Codex_2p2nqsd0c76g0",
-        "26.901.5003.0", "OpenAI.Codex_26.901.5003.0_x64__2p2nqsd0c76g0", "x64");
+    var nativeTarget = new PublishedStorePackage("9ZZZFIXTURE1", "0010", "Contoso.Notes_2p2nqsd0c76g0",
+        "26.901.5003.0", "Contoso.Notes_26.901.5003.0_x64__2p2nqsd0c76g0", "x64");
     var nativeClient = new FakeNativeStore(nativeTarget);
     using (var wslClient = new HttpClient(new Handler(_ => Json(new
     {
@@ -325,8 +321,8 @@ try
         catch (InvalidOperationException) { Assert(true, "Preview release rejected."); }
     }
     foreach (var inconsistentName in new[] {
-        "OpenAI.Codex_26.901.5003.0_arm64__2p2nqsd0c76g0",
-        "OpenAI.Codex_26.901.5003.0_x64__differentpublisher" })
+        "Contoso.Notes_26.901.5003.0_arm64__2p2nqsd0c76g0",
+        "Contoso.Notes_26.901.5003.0_x64__differentpublisher" })
     {
         using var invalidPackage = JsonDocument.Parse(JsonSerializer.Serialize(new
         {
@@ -345,18 +341,17 @@ try
     }
     var nativeService = new NativeStoreUpdateService(nativeClient,
         (p, t) => Task.FromResult<PublishedStorePackage?>(p), (_, _) => Task.CompletedTask);
-    using (var nativeMetadata = new HttpClient(new Handler(request =>
-        request.RequestUri!.Host == "persistent.oaistatic.com"
-        ? Json(new { schemaVersion = 1, buildVersion = "26.901.5280.0", storeProductId = "9PLM9XGG6VKS", packageIdentity = "OpenAI.Codex" })
+    using (var nativeMetadata = new HttpClient(new Handler(request => request.RequestUri!.AbsolutePath.EndsWith("/lookup")
+        ? Json(new { Products = new[] { new { ProductId = "9ZZZFIXTURE1" } } })
         : Json(new
         {
             Product = new
             {
-                ProductId = "9PLM9XGG6VKS",
+                ProductId = "9ZZZFIXTURE1",
                 DisplaySkuAvailabilities = new[] {
             new { Sku = new { SkuId = "0010", Properties = new { Packages = new[] {
                 new { PackageFamilyName = nativeTarget.PackageFamilyName, PackageFullName = nativeTarget.PackageFullName, Architectures = new[]{"x64"} },
-                new { PackageFamilyName = nativeTarget.PackageFamilyName, PackageFullName = "OpenAI.Codex_26.901.5280.0_arm64__2p2nqsd0c76g0", Architectures = new[]{"arm64"} }
+                new { PackageFamilyName = nativeTarget.PackageFamilyName, PackageFullName = "Contoso.Notes_26.901.5280.0_arm64__2p2nqsd0c76g0", Architectures = new[]{"arm64"} }
             } } } } }
             }
         }))))
@@ -364,7 +359,7 @@ try
         var app = fixtureApp with
         {
             Identity = "msix:" + nativeTarget.PackageFamilyName,
-            DisplayName = "ChatGPT",
+            DisplayName = "Contoso Notes",
             ManagementMode = ManagementMode.Msix,
             InstalledVersion = "26.901.4073.0",
             NormalizedVersion = "26.901.4073.0",
@@ -372,8 +367,7 @@ try
         };
         var selected = (await new UpdateCheckService([new MsixStoreUpdateProvider(nativeMetadata, new NoStoreUpdate(), nativeService)])
             .CheckAsync(Snapshot(app))).Results.Single();
-        Assert(selected.IsInstallable && selected.AvailableVersion == "26.901.5003.0" &&
-            selected.AnnouncedVersion == "26.901.5280.0", "A later announcement still hides an already published Store update.");
+        Assert(selected.IsInstallable && selected.AvailableVersion == "26.901.5003.0", "An already published Store update was not offered.");
         Assert(selected.AvailabilityReason == UpdateAvailabilityReason.None &&
             selected.ExecutionPlan?.NativeStoreTarget == nativeTarget, "Published update selected the wrong architecture, SKU or availability reason.");
         var noOfferClient = new FakeNativeStore(nativeTarget) { ReturnNoOffer = true };
@@ -567,9 +561,9 @@ sealed class NoStoreUpdate : IStorePackageDeploymentService
 {
     public string? LastError => null;
     public Task<StoreUpdateAvailability> CheckForUpdateAsync(string family, string? name, string? publisher, string? version,
-        string? architecture, CancellationToken token) => Task.FromResult(new StoreUpdateAvailability(true, false, "9PLM9XGG6VKS", null, null));
+        string? architecture, CancellationToken token) => Task.FromResult(new StoreUpdateAvailability(true, false, "9ZZZFIXTURE1", null, null));
     public Task<StoreCatalogIdentity?> ResolveAsync(string family, string? name, string? publisher, CancellationToken token) =>
-        Task.FromResult<StoreCatalogIdentity?>(new("9PLM9XGG6VKS", name!, family, true));
+        Task.FromResult<StoreCatalogIdentity?>(new("9ZZZFIXTURE1", name!, family, true));
     public Task<UpdateExecutionResult> InstallOrUpdateAsync(string id, string family, string? name, string? publisher,
         string version, CancellationToken token) => throw new InvalidOperationException("Read-only rollout check tried to install.");
 }

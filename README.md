@@ -57,22 +57,21 @@ The current implementation includes:
 
 - filters Store SKU candidates by current Windows fulfillment availability; redemption-only, purchase-only, console-only and inactive variants are not sent to the native update API, while valid full/trial update routes and their real failures remain visible;
 - checks all compatible, non-blocked sources and retains their individual outcomes; unimplemented owner adapters no longer suppress working sources, while explicit source/channel policies and higher-authority verification failures remain binding;
-- exact Microsoft Store package-family lookup followed by native applicability checks across the matching SKUs for Store apps generally, not just ChatGPT; same-version queue items never trigger a reinstall, and unverified/failed queries are not labelled current;
+- exact Microsoft Store package-family lookup followed by native applicability checks across the matching SKUs for Store apps; same-version queue items never trigger a reinstall, and unverified/failed queries are not labelled current;
 - official same-major Macrium patch checks, manufacturer device checks for driver-package entries, and Firefox maintenance-component reconciliation with the checked Firefox installation;
 - separate update ownership and check results: ownership alone is not a version check. Unimplemented protocols remain "Not checked", and source failures remain visible (including Store products rejected by the native API);
 - no language column, language detail section, or language-based filtering in the update view; installer language preservation remains enforced, and successful no-update checks use the normal "Current" status;
 - WSL stable-release checks directly against Microsoft's GitHub repository, with the installed Microsoft-signed `wsl.exe --update --web-download` route and independent post-update version verification; generic Store ownership no longer hides an available WSL release;
-- shows "Current" after a successful Store check returns no applicable offer; catalog-only ChatGPT versions remain diagnostic evidence and are excluded from the available-version column and update counts; actual check errors remain errors;
+- shows "Current" after a successful Store check returns no applicable offer; catalog-only versions remain diagnostic evidence and are excluded from the available-version column and update counts; actual check errors remain errors;
 - an independent updater lifetime: when launched inside another application's Windows job, Nax-Updater requests a desktop-launched replacement and exits only after the replacement confirms it is outside that job;
 - process shutdown that protects the updater and its ancestors, refuses destructive work from a still-coupled host, and force-closes only executable instances bound to the approved plan, never arbitrary descendant process trees;
 - real disposable-process regression tests for desktop launch, host protection and preservation of unrelated descendants during forced shutdown;
-- selects the newest applicable published Store package independently of a later publisher announcement: a published intermediate ChatGPT build remains installable while the next build is still rolling out;
 - uses Windows' native Store update service when the WinGet Store catalog cannot resolve that offer; detection and preparation request a paused offer, while only the approved Apply step starts deployment;
 - revalidates the Store product, SKU, package family, architecture and published target before applying, waits for Store completion/error, and independently rereads the installed package version before reporting success. Windows Store owns the actual deployment and may serve a newer build; the published target is the minimum required installed version;
 - driver transaction identity based on present PnP devices rather than the replaceable INF name/version; recovery reads installed driver state locally and normalizes NVIDIA's Windows driver version to its public release number;
 - migration of older driver journals only when a unique matching live device can be established; a failed verification reports an affected operation without disabling unrelated application updates;
 - background provider discovery and catalog access, per-provider deadlines, a catalog-refresh deadline, progress counts and a cancel action, so slow native or network checks cannot hold the WinUI thread;
-- distinguishes OpenAI announcements from installable ChatGPT updates; neither an announcement nor a catalog listing alone is an update offer for the installed package;
+- treats a catalog listing alone as no update offer for the installed package;
 - regression tests for version padding, semantic build metadata, numeric prerelease ordering, compact release dates, architecture/scope mismatches, release/asset version disagreement, GitHub rate-limit recovery, truthful coverage, and the full WinGet transaction through a simulated package-manager boundary;
 - version comparison without fixed-width integer parsing, so long build identifiers cannot overflow the check or post-install verifier;
 - restored WinGet fallback installation through the official Windows Package Manager API, with installed product-code correlation and retained catalog, version, and installer variant through preparation and application;
@@ -88,7 +87,7 @@ The current implementation includes:
 - deny-write/delete locks and a final content hash across direct, extracted, and driver payloads from preparation through process completion;
 - a durable operation journal that recovers interrupted or reboot-pending transactions by rescanning and verifying installed state before any retry;
 - Store applicability based on the exact update catalog rather than display metadata, with forced Store installation removed entirely;
-- ChatGPT release evidence reconciled independently with its exact Store offer; generic localized UI buttons are no longer treated as a trusted update protocol;
+- generic localized UI buttons are not treated as a trusted update protocol;
 - GOG release detection without elevating its user-writable, unauthenticated adjacent runtime dependency set;
 - a refreshed WinGet fallback that asks the official package manager to verify and apply an applicable exact package version; it does not scrape installer YAML or invoke a configurable command-line source alias;
 - producer-hashed and Authenticode-bound EXE installers remain executable, including their normal Windows elevation prompt; their payload stays deny-write/delete locked through process completion;
@@ -105,7 +104,6 @@ The current implementation includes:
 - producer-first source reconciliation: compatible installed/native, producer, Store and allowed WinGet sources are checked; verified executable offers are selected with explicit policy and verification guards preserved, without crossing installation types;
 - WinGet remains a verified last-resort fallback through exact product-code, MSI upgrade-family, or package-family correlation; it cannot override a producer source and Scoop is no longer consulted;
 
-- ChatGPT checks against OpenAI's official Windows update manifest for the exact `OpenAI.Codex` package and Store product, instead of relying on WinGet's `Unknown` Store version;
 - generic application process handling before conventional installer deployment, including graceful close, forced process-tree termination when required, installation, and the final version rescan;
 - exact non-forced Store upgrade submission only after the Store update catalog confirms applicability and exposes a verifiable target version; `NoApplicableUpgrade` remains a failed/no-longer-applicable transaction;
 - a full-width driver workspace matching the applications and updates views: the fixed centered 1260-pixel island is removed, the device-name column remains bounded, and surplus ultra-wide space follows the action column;
@@ -138,7 +136,7 @@ The current implementation includes:
 - conservative Store package comparison that excludes encrypted duplicate bundles and rejects unrelated outer-bundle version schemes, preventing satellite revisions such as `.70` and calendar/rank bundle versions from becoming false application updates;
 - a direct **Update** row action only when Microsoft Store reports a real applicable upgrade; current or uncorrelated Store packages remain labelled as Store-managed without a misleading button;
 - a **newer release known** state when producer or Store metadata is newer but the exact Store update catalog does not expose a version-bound applicable upgrade;
-- launchable MSIX app-entry naming ahead of package identities, so Store packages such as `OpenAI.Codex` are presented by their user-facing app name, `ChatGPT`;
+- launchable MSIX app-entry naming ahead of package identities, so Store packages are presented by their user-facing app name rather than their package identity;
 - six-way parallel ranged downloads for installers of at least 64 MB when the server advertises byte-range support, followed by complete reconstruction and whole-file hash verification;
 - SHA-256-verified ZIP/NuGet packages containing an explicitly declared nested MSI, with exact-entry extraction, traversal rejection, and silent MSI execution;
 - a sequential **Update all** queue containing verified conventional updates followed only by Store/MSIX packages with a reported applicable upgrade, with shared Store connections and one final inventory/update rescan;
@@ -234,7 +232,7 @@ From this directory:
 dotnet build NaxUpdater.slnx
 dotnet run --project tests/NaxUpdater.Core.SmokeTests/NaxUpdater.Core.SmokeTests.csproj
 dotnet publish src/NaxUpdater/NaxUpdater.csproj -c Release -r win-x64 --self-contained true -o artifacts/NaxUpdater-win-x64
-./scripts/package-release.ps1 -Version 0.17.31
+./scripts/package-release.ps1 -Version 0.17.32
 ```
 
 The desktop project uses .NET 11, WinUI 3, and the Windows App SDK. It is not an Electron or WebView application.

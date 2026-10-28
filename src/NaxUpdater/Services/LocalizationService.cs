@@ -36,7 +36,6 @@ public static partial class LocalizationService
             ? Get("ProviderDriverWorkspace") : update.ProviderDisplayName;
         if (update.ProviderId == "unverified") return Get("ProviderUnverified");
         if (update.ProviderId == "msix-store") return Get("ProviderMsixStore");
-        if (update.ProviderId == "openai-codex-store") return Get("ProviderOpenAiStore");
         if (update.ProviderId == "installed-updater-metadata") return Get("ProviderInstalledMetadata");
         if (update.ProviderId == "gog-galaxy-native") return Get("ProviderGogGalaxyNative");
         if (update.ProviderId == "rarlab-winrar") return Get("ProviderWinRar");
@@ -63,9 +62,6 @@ public static partial class LocalizationService
             return Format("SupersededRegistrationMessage", UpdateCheckService.VersionedNameFamily(update.DisplayName) ?? update.DisplayName, update.AvailableVersion);
         if (update.AvailabilityReason == UpdateAvailabilityReason.AwaitingStoreOffer)
             return Format("StoreOfferPendingMessage", update.PublishedPackageVersion, update.InstalledVersion);
-        if (update.ProviderId == "openai-codex-store" && update.Status == UpdateStatus.Available &&
-            update.PublishedPackageVersion is not null)
-            return Format("StorePublishedUpdateAvailableMessage", update.AvailableVersion, update.AnnouncedVersion ?? update.AvailableVersion);
         if (update.AvailabilityReason == UpdateAvailabilityReason.AwaitingStorePublication)
             return Format("StorePublicationPendingMessage", update.AvailableVersion, update.PublishedPackageVersion, update.InstalledVersion);
         if (update.AvailabilityReason == UpdateAvailabilityReason.AwaitingReleaseVerification)
@@ -80,12 +76,6 @@ public static partial class LocalizationService
             UpdateStatus.Available => Get("ProviderMsixStoreAvailable"),
             UpdateStatus.Current => Get("ProviderMsixStoreCurrent"),
             _ => Get("ProviderMsixStoreNote")
-        };
-        if (update.ProviderId == "openai-codex-store") return update.Status switch
-        {
-            UpdateStatus.Available => Get("ProviderOpenAiStoreAvailable"),
-            UpdateStatus.NewerReleaseKnown => Get("ProviderOpenAiReleaseKnown"),
-            _ => Get("ProviderOpenAiStoreCurrent")
         };
         if (update.ProviderId == "gog-galaxy-native") return Get("ProviderGogGalaxyNativeNote");
         if (update.ProviderId == "winget-fallback") return update.Status switch

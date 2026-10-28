@@ -95,24 +95,6 @@ Assert(!normalStoreInstallOptions.Force &&
        !normalStoreInstallOptions.AllowUpgradeToUnknownVersion &&
        normalStoreInstallOptions.PackageInstallMode == Microsoft.Management.Deployment.PackageInstallMode.Silent,
     "The Store upgrade route is not configured for a silent, non-forced deployment.");
-using (var openAiManifestFixture = JsonDocument.Parse("""
-{
-  "schemaVersion": 1,
-  "buildVersion": "26.901.1978.0",
-  "storeProductId": "9PLM9XGG6VKS",
-  "packageIdentity": "OpenAI.Codex"
-}
-"""))
-{
-    var manifest = MsixStoreUpdateProvider.ParseOpenAiManifest(openAiManifestFixture.RootElement);
-    Assert(manifest is
-    {
-        BuildVersion: "26.901.1978.0",
-        StoreProductId: "9PLM9XGG6VKS",
-        PackageIdentity: "OpenAI.Codex"
-    },
-        "OpenAI's official Windows update manifest was not accepted for the exact ChatGPT Store identity.");
-}
 using (var intelClient = new HttpClient(new StubHttpMessageHandler(_ => new HttpResponseMessage(HttpStatusCode.OK)
 {
     Content = new StringContent("Intel(R) Network Connections Software, Release 31.2.2\nJuly 2026\nIntel(R) Ethernet Connection I219")
@@ -156,20 +138,20 @@ using (var storeFixture = JsonDocument.Parse("""
           "Properties": {
             "Packages": [
               {
-                "PackageFamilyName": "OpenAI.Codex_2p2nqsd0c76g0",
-                "PackageFullName": "OpenAI.Codex_26.825.5331.0_x64__2p2nqsd0c76g0",
+                "PackageFamilyName": "Contoso.Notes_2p2nqsd0c76g0",
+                "PackageFullName": "Contoso.Notes_26.825.5331.0_x64__2p2nqsd0c76g0",
                 "Architectures": ["x64"],
                 "PackageFormat": "Msix"
               },
               {
-                "PackageFamilyName": "OpenAI.Codex_2p2nqsd0c76g0",
-                "PackageFullName": "OpenAI.Codex_26.900.1.0_arm64__2p2nqsd0c76g0",
+                "PackageFamilyName": "Contoso.Notes_2p2nqsd0c76g0",
+                "PackageFullName": "Contoso.Notes_26.900.1.0_arm64__2p2nqsd0c76g0",
                 "Architectures": ["arm64"],
                 "PackageFormat": "Msix"
               },
               {
-                "PackageFamilyName": "OpenAI.Codex_2p2nqsd0c76g0",
-                "PackageFullName": "OpenAI.Codex_26.825.5331.70_neutral_~_2p2nqsd0c76g0",
+                "PackageFamilyName": "Contoso.Notes_2p2nqsd0c76g0",
+                "PackageFullName": "Contoso.Notes_26.825.5331.70_neutral_~_2p2nqsd0c76g0",
                 "Architectures": ["x64"],
                 "PackageFormat": "EAppxBundle"
               }
@@ -184,14 +166,14 @@ using (var storeFixture = JsonDocument.Parse("""
 {
     var storeVersion = MicrosoftStoreProductMetadataClient.ParseLatestPackageVersion(
         storeFixture.RootElement,
-        "OpenAI.Codex_2p2nqsd0c76g0",
+        "Contoso.Notes_2p2nqsd0c76g0",
         "x64",
         "26.825.4187.0");
-    Assert(storeVersion == "26.825.5331.0", $"Store package metadata selected {storeVersion} instead of the applicable x64 ChatGPT version.");
+    Assert(storeVersion == "26.825.5331.0", $"Store package metadata selected {storeVersion} instead of the applicable x64 Contoso Notes version.");
     Assert(MicrosoftStoreProductMetadataClient.IsNewer("26.825.4187.0", storeVersion),
-        "The observed ChatGPT Store transition was not detected as an update.");
+        "The observed Contoso Notes Store transition was not detected as an update.");
     Assert(!MicrosoftStoreProductMetadataClient.IsNewer("26.825.5331.0", storeVersion),
-        "The installed ChatGPT Store version was incorrectly reported as outdated.");
+        "The installed Contoso Notes Store version was incorrectly reported as outdated.");
 }
 using (var bundleVersionFixture = JsonDocument.Parse("""
 {
@@ -1236,112 +1218,6 @@ if (installedSignal is not null)
     Assert(liveSignalUpdate.Status is UpdateStatus.Current or UpdateStatus.Available,
         $"Signal's installed updater feed could not be checked: {liveSignalUpdate.Message}");
     Assert(!string.IsNullOrWhiteSpace(liveSignalUpdate.AvailableVersion), "Signal's installed updater feed returned no version.");
-}
-
-var installedChatGpt = snapshot.Applications.FirstOrDefault(app =>
-    app.Identity.Equals("msix:OpenAI.Codex_2p2nqsd0c76g0", StringComparison.OrdinalIgnoreCase));
-if (installedChatGpt is not null)
-{
-    Assert(installedChatGpt.DisplayName.Equals("ChatGPT", StringComparison.OrdinalIgnoreCase),
-        $"The OpenAI Store package is still shown as {installedChatGpt.DisplayName} instead of ChatGPT.");
-    var chatGptStore = new StorePackageDeploymentService();
-    var chatGptIdentity = await chatGptStore.ResolveAsync(
-        "OpenAI.Codex_2p2nqsd0c76g0",
-        installedChatGpt.DisplayName,
-        installedChatGpt.Publisher,
-        CancellationToken.None);
-    Assert(chatGptIdentity?.ProductId == "9PLM9XGG6VKS",
-        $"ChatGPT resolved to {chatGptIdentity?.ProductId ?? chatGptStore.LastError} instead of its exact current Store product.");
-    var chatGptAssessment = await new MsixStoreUpdateProvider().CheckAsync(installedChatGpt, CancellationToken.None);
-    Assert(chatGptAssessment.Status is UpdateStatus.Current or UpdateStatus.Available or UpdateStatus.NewerReleaseKnown or UpdateStatus.StoreQueued,
-        $"ChatGPT Store assessment failed: {chatGptAssessment.Status} · {chatGptAssessment.Message}");
-    Assert(chatGptAssessment.Status != UpdateStatus.Available ||
-           (chatGptAssessment.ExecutionPlan is not null && chatGptAssessment.IsInstallable),
-        "ChatGPT reports an update without an executable Store update plan.");
-    Assert(chatGptAssessment.Status is UpdateStatus.Available or UpdateStatus.StoreQueued ||
-           (chatGptAssessment.ExecutionPlan is null && !chatGptAssessment.IsInstallable),
-        "ChatGPT received a Store action even though no applicable update was reported.");
-    using var openAiManifestClient = new HttpClient(new StubHttpMessageHandler(_ => JsonResponse("""
-        {
-          "schemaVersion": 1,
-          "buildVersion": "26.901.1978.0",
-          "storeProductId": "9PLM9XGG6VKS",
-          "packageIdentity": "OpenAI.Codex"
-        }
-        """)));
-    var olderChatGpt = installedChatGpt with
-    {
-        InstalledVersion = "26.831.2377.0",
-        NormalizedVersion = "26.831.2377.0"
-    };
-    var releaseOnlyAssessment = await new MsixStoreUpdateProvider(
-            openAiManifestClient,
-            new StubStorePackageDeploymentService(new StoreUpdateAvailability(true, false, "9PLM9XGG6VKS", null, null)))
-        .CheckAsync(olderChatGpt, CancellationToken.None);
-    Assert(releaseOnlyAssessment is
-    {
-        ProviderId: "openai-codex-store",
-        Status: UpdateStatus.Current,
-        AvailableVersion: null,
-        Applicability: UpdateApplicability.NotRequired,
-        ExecutionPlan: null
-    } && !releaseOnlyAssessment.IsInstallable,
-        "OpenAI release evidence was incorrectly promoted to an applicable update without a fulfillment route.");
-    var storeApplicableAssessment = await new MsixStoreUpdateProvider(
-            openAiManifestClient,
-            new StubStorePackageDeploymentService(new StoreUpdateAvailability(true, true, "9PLM9XGG6VKS", "26.901.1978.0", null)))
-        .CheckAsync(olderChatGpt, CancellationToken.None);
-    Assert(storeApplicableAssessment is
-    {
-        Status: UpdateStatus.Available,
-        Applicability: UpdateApplicability.Applicable,
-        ExecutionPlan:
-        {
-            Kind: UpdateExecutionKind.StorePackage,
-            StoreProductId: "9PLM9XGG6VKS",
-            StorePackageFamilyName: "OpenAI.Codex_2p2nqsd0c76g0",
-            ProcessPolicy: UpdateProcessPolicy.CloseBeforeApply
-        } storePlan
-    } && storePlan.RunningProcessNames.Contains("ChatGPT", StringComparer.OrdinalIgnoreCase) &&
-                storePlan.RunningExecutablePaths is { Count: > 0 },
-        "A Store-applicable ChatGPT update did not receive an exact non-forced Store deployment plan.");
-    var officialManifestAssessment = await new MsixStoreUpdateProvider(
-            openAiManifestClient,
-            new StubStorePackageDeploymentService(new StoreUpdateAvailability(true, true, "9PLM9XGG6VKS", "26.901.1978.0", null)))
-        .CheckAsync(
-        olderChatGpt,
-        CancellationToken.None);
-    Assert(officialManifestAssessment is
-    {
-        ProviderId: "openai-codex-store",
-        Status: UpdateStatus.Available,
-        AvailableVersion: "26.901.1978.0",
-        ExecutionPlan:
-        {
-            Kind: UpdateExecutionKind.StorePackage,
-            StoreProductId: "9PLM9XGG6VKS",
-            StorePackageFamilyName: "OpenAI.Codex_2p2nqsd0c76g0"
-        } manifestPlan
-    } && manifestPlan.RunningProcessNames.Contains("ChatGPT", StringComparer.OrdinalIgnoreCase) &&
-                manifestPlan.RunningExecutablePaths is { Count: > 0 },
-        $"ChatGPT did not receive its applicable official-manifest Store plan: " +
-        $"{officialManifestAssessment.ProviderId} · {officialManifestAssessment.Status} · " +
-        $"{officialManifestAssessment.AvailableVersion} · {officialManifestAssessment.Message} · " +
-        $"{string.Join(',', officialManifestAssessment.ExecutionPlan?.RunningProcessNames ?? [])}");
-    var observedPreUpdateChatGpt = installedChatGpt with
-    {
-        InstalledVersion = "26.825.4187.0",
-        NormalizedVersion = "26.825.4187.0"
-    };
-    var observedPreUpdateAssessment = await new MsixStoreUpdateProvider().CheckAsync(observedPreUpdateChatGpt, CancellationToken.None);
-    Assert(observedPreUpdateAssessment.Status == UpdateStatus.StoreQueued
-           ? observedPreUpdateAssessment.IsInstallable && observedPreUpdateAssessment.ExecutionPlan?.Kind == UpdateExecutionKind.NativeStoreQueue && observedPreUpdateAssessment.AvailableVersion is null
-           : VersionOrder.Compare(observedPreUpdateAssessment.AnnouncedVersion, "26.825.4187.0") > 0 &&
-           (observedPreUpdateAssessment.Status == UpdateStatus.Available
-               ? observedPreUpdateAssessment.IsInstallable && VersionOrder.Compare(observedPreUpdateAssessment.AvailableVersion, "26.825.4187.0") > 0
-               : observedPreUpdateAssessment.Status == UpdateStatus.Current && observedPreUpdateAssessment.AvailableVersion is null &&
-                 observedPreUpdateAssessment.AvailabilityReason == UpdateAvailabilityReason.NoApplicableStoreUpdate),
-        $"Announcement metadata and applicable ChatGPT offers were not separated: {observedPreUpdateAssessment.Status} · {observedPreUpdateAssessment.AvailableVersion} · {observedPreUpdateAssessment.Message}");
 }
 
 var liveStoreIdentities = 0;

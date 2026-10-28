@@ -45,9 +45,6 @@
   <data name="SecurityMicrosoftStoreIdentity"><value>Verified Store catalog identity · deployed by Microsoft Store</value></data>
   <data name="ProviderMsixStoreAvailable"><value>The exact installed package family was correlated with Microsoft Store, which reports an applicable update. Nax-Updater will submit that update directly.</value></data>
   <data name="ProviderMsixStoreCurrent"><value>The exact installed package family was checked against Microsoft Store. No applicable update is currently reported.</value></data>
-  <data name="ProviderOpenAiStore"><value>OpenAI update manifest + Microsoft Store</value></data>
-  <data name="ProviderOpenAiStoreAvailable"><value>Microsoft Store confirms this exact target version as applicable to the installed OpenAI.Codex package family. Nax-Updater uses only the non-forced Store upgrade route and verifies the installed package version afterward.</value></data>
-  <data name="ProviderOpenAiStoreCurrent"><value>OpenAI's official Windows manifest reports that this package is current.</value></data>
   <data name="ProviderWinRar"><value>Official RARLAB download</value></data>
   <data name="ProviderWinRarAvailable"><value>RARLAB reports a newer release in the installed WinRAR language. Nax-Updater hashes the original producer download and requires the win.rar GmbH signature before installation.</value></data>
   <data name="ProviderWinRarCurrent"><value>RARLAB's official download page reports the installed WinRAR release as current.</value></data>
@@ -151,7 +148,6 @@
   <data name="SecurityMicrosoftStoreQueue"><value>Windows' own Microsoft Store queue item for {0} · deployed and verified by Microsoft Store, no separate installer</value></data>
   <data name="StatusAwaitingReleaseVerification"><value>Newer release known · verification pending, try rescanning shortly</value></data>
   <data name="AwaitingReleaseVerificationMessage"><value>The producer has published this release, but not yet its checksum and publisher signature — Nax-Updater refuses to install anything it cannot verify. This is usually resolved within minutes of the release going live; rescan to check again.</value></data>
-  <data name="ProviderOpenAiReleaseKnown"><value>OpenAI's official manifest reports a newer build, but Microsoft Store does not currently expose a version-bound applicable upgrade for this exact package family. No update will be attempted.</value></data>
   <data name="RevalidatingUpdate"><value>Rechecking {0} and its update offer…</value></data>
   <data name="ApplyingUpdate"><value>Applying the verified update for {0}…</value></data>
   <data name="VerifyingUpdate"><value>Verifying the installed version of {0}…</value></data>
@@ -187,8 +183,7 @@
   <data name="ProviderWsl"><value>Microsoft WSL release + native Windows updater</value></data>
   <data name="StoreOfferPendingMessage"><value>Microsoft publishes {0}; installed: {1}. Windows Store currently returns no applicable update offer for this installation. The catalog check completed. Recheck to enable installation once an offer is available.</value></data>
   <data name="ProviderWslNote"><value>The stable WSL version is checked directly against Microsoft's GitHub release. Signed Windows wsl.exe runs --update --web-download with administrator privileges. Linux distributions are neither unregistered nor reinstalled. The installed WSL version is checked independently afterward. Microsoft may supply a newer stable release.</value></data>
-  <data name="StorePublicationPendingMessage"><value>OpenAI announces {0}. Microsoft Store currently publishes {1} for this package; installed: {2}. The newer package is not yet available from the Store. Check again after publication.</value></data>
-  <data name="StorePublishedUpdateAvailableMessage"><value>Microsoft Store offers {0} for your installed package. OpenAI's latest announcement is {1}. Nax-Updater will apply the available Store update and verify the installed version afterward; a later announcement does not block this update.</value></data>
+  <data name="StorePublicationPendingMessage"><value>The publisher announces {0}. Microsoft Store currently publishes {1} for this package; installed: {2}. The newer package is not yet available from the Store. Check again after publication.</value></data>
   <data name="StatusStoreQueued"><value>In Store queue</value></data>
   <data name="StatusStoreUpdating"><value>Store updating</value></data>
   <data name="StatusStorePaused"><value>Paused in Store</value></data>

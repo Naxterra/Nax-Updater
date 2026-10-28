@@ -6,11 +6,6 @@ namespace NaxUpdater.Core.Services;
 
 public sealed class MsixStoreUpdateProvider : IUpdateProvider
 {
-    private const string OpenAiPackageFamily = "OpenAI.Codex_2p2nqsd0c76g0";
-    private const string OpenAiPackageIdentity = "OpenAI.Codex";
-    private const string OpenAiProductId = "9PLM9XGG6VKS";
-    private static readonly Uri OpenAiUpdateManifestUri = new(
-        "https://persistent.oaistatic.com/codex-app-prod/windows-store-update.json");
     private static readonly HttpClient SharedHttpClient = new() { Timeout = TimeSpan.FromSeconds(30) };
 
     private readonly IStorePackageDeploymentService _store;
@@ -46,9 +41,7 @@ public sealed class MsixStoreUpdateProvider : IUpdateProvider
         [ManagementMode.Msix]);
 
     public bool CanHandle(InstalledApplication application) => application.ManagementMode == ManagementMode.Msix;
-    public bool OwnsResultProviderId(string resultProviderId) =>
-        resultProviderId.Equals(Id, StringComparison.Ordinal) ||
-        resultProviderId.Equals("openai-codex-store", StringComparison.Ordinal);
+    public bool OwnsResultProviderId(string resultProviderId) => resultProviderId.Equals(Id, StringComparison.Ordinal);
 
     public async Task<UpdateCheckResult> CheckAsync(InstalledApplication application, CancellationToken cancellationToken)
     {
@@ -62,15 +55,6 @@ public sealed class MsixStoreUpdateProvider : IUpdateProvider
 
         if (_nativeStore is not null && await _nativeStore.ReadQueueAsync(packageFamily, cancellationToken) is { } queued)
             return QueueResult(application, queued);
-
-        if (packageFamily.Equals(OpenAiPackageFamily, StringComparison.OrdinalIgnoreCase))
-        {
-            var openAiResult = await CheckOpenAiManifestAsync(application, packageFamily, cancellationToken);
-            if (openAiResult is not null)
-            {
-                return openAiResult;
-            }
-        }
 
         var nativeAssessment = await CheckNativeCatalogAsync(application, packageFamily, cancellationToken);
         if (nativeAssessment is not null) return nativeAssessment;
@@ -151,8 +135,11 @@ public sealed class MsixStoreUpdateProvider : IUpdateProvider
                 if (found.Identity is null)
                 {
                     if (cacheKey is not null) _searchCache?.RecordNoUpdate(cacheKey);
+                    // The catalog may list a newer package; without a Store offer for this
+                    // installation it is not an update.
                     return Result(application, null, UpdateStatus.Current, null, product.Identity.ProductId,
-                        "Native Microsoft Store check completed for the exact package family; no applicable update.");
+                        "Native Microsoft Store check completed for the exact package family; no applicable update.")
+                        with { AvailabilityReason = UpdateAvailabilityReason.NoApplicableStoreUpdate };
                 }
                 var package = await new MicrosoftStoreProductMetadataClient(_httpClient).GetPublishedPackageAsync(found.Identity.ProductId,
                         packageFamily, PackageArchitecture(application), application.NormalizedVersion, cancellationToken, found.Identity.SkuId);
@@ -207,144 +194,6 @@ public sealed class MsixStoreUpdateProvider : IUpdateProvider
             with { AvailabilityReason = reason, Applicability = plan is null ? UpdateApplicability.Unknown : UpdateApplicability.Applicable };
     }
 
-    private async Task<UpdateCheckResult?> CheckOpenAiManifestAsync(
-        InstalledApplication application,
-        string packageFamily,
-        CancellationToken cancellationToken)
-    {
-        try
-        {
-            using var response = await _httpClient.GetAsync(OpenAiUpdateManifestUri, cancellationToken);
-            response.EnsureSuccessStatusCode();
-            var finalUri = response.RequestMessage?.RequestUri ?? OpenAiUpdateManifestUri;
-            if (finalUri.Scheme != Uri.UriSchemeHttps ||
-                !finalUri.Host.Equals(OpenAiUpdateManifestUri.Host, StringComparison.OrdinalIgnoreCase))
-            {
-                return null;
-            }
-
-            await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
-            using var document = await JsonDocument.ParseAsync(stream, cancellationToken: cancellationToken);
-            var manifest = ParseOpenAiManifest(document.RootElement);
-            if (manifest is null)
-            {
-                return null;
-            }
-
-            var nativeAssessment = await CheckNativeCatalogAsync(application, packageFamily, cancellationToken, manifest.StoreProductId);
-            if (nativeAssessment is not null)
-                return nativeAssessment with { ProviderId = "openai-codex-store", ProviderDisplayName = "OpenAI update manifest + Microsoft Store",
-                    AnnouncedVersion = manifest.BuildVersion, PublishedPackageVersion = nativeAssessment.AvailableVersion,
-                    AvailabilityReason = nativeAssessment.Status == UpdateStatus.Current ? UpdateAvailabilityReason.NoApplicableStoreUpdate : nativeAssessment.AvailabilityReason };
-
-            var storeAvailability = await _store.CheckForUpdateAsync(packageFamily, application.DisplayName,
-                application.Publisher, application.NormalizedVersion, PackageArchitecture(application), cancellationToken);
-            var storeApplicable = storeAvailability is { IsResolved: true, IsUpdateAvailable: true, ProductId: not null };
-            var storeProductMismatch = storeApplicable && storeAvailability.ProductId != manifest.StoreProductId;
-            var storeTargetNewer = storeApplicable && !string.IsNullOrWhiteSpace(storeAvailability.AvailableVersion) &&
-                VersionOrder.Compare(storeAvailability.AvailableVersion, application.NormalizedVersion) > 0;
-            var bindings = ChatGptProcessBindings(application);
-            UpdateExecutionPlan? plan = storeTargetNewer && !storeProductMismatch
-                ? new(UpdateExecutionKind.StorePackage, null, null, null, "Microsoft Store", null, [], false, [],
-                    bindings.Names, StoreProductId: storeAvailability.ProductId, StorePackageFamilyName: packageFamily,
-                    StorePublisher: application.Publisher, RunningExecutablePaths: bindings.Paths)
-                : null;
-            string? targetVersion = plan is null ? null : storeAvailability.AvailableVersion;
-            string? publishedVersion = null;
-            string? nativeError = null;
-            var nativeCheckFailed = false;
-            var nativeOfferChecked = false;
-            if (plan is null && !storeProductMismatch)
-            {
-                var metadata = new MicrosoftStoreProductMetadataClient(_httpClient);
-                try
-                {
-                    publishedVersion = await metadata.GetLatestPackageVersionAsync(manifest.StoreProductId, packageFamily,
-                        PackageArchitecture(application), application.NormalizedVersion, cancellationToken);
-                    if (_nativeStore is not null && !string.IsNullOrWhiteSpace(publishedVersion) &&
-                        VersionOrder.Compare(publishedVersion, application.NormalizedVersion) > 0)
-                    {
-                        var package = await metadata.GetPublishedPackageAsync(manifest.StoreProductId, packageFamily,
-                            PackageArchitecture(application), application.NormalizedVersion, cancellationToken);
-                        if (package is not null)
-                        {
-                            publishedVersion = package.Version;
-                            var offer = await _nativeStore.CheckAsync(package, cancellationToken);
-                            nativeOfferChecked = true;
-                            if (offer.IsAvailable)
-                            {
-                                targetVersion = package.Version;
-                                plan = new(UpdateExecutionKind.NativeStorePackage, null, null, null, "Microsoft Store", null,
-                                    [], false, [], bindings.Names, StoreProductId: package.ProductId,
-                                    StorePackageFamilyName: packageFamily, StorePublisher: application.Publisher,
-                                    RunningExecutablePaths: bindings.Paths, NativeStoreTarget: package);
-                            }
-                            else { nativeError = offer.Error; nativeCheckFailed = offer.CheckFailed; }
-                        }
-                        else { nativeError = "The published Store package could not be matched to the installed architecture."; nativeCheckFailed = true; }
-                    }
-                }
-                catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
-                catch (Exception exception) { nativeError = exception.Message; nativeCheckFailed = true; }
-            }
-
-            // Announcement/catalog versions are evidence, not updates for this
-            // installation. Only a confirmed applicable offer supplies a target.
-            var status = storeProductMismatch || nativeCheckFailed ? UpdateStatus.Error :
-                plan is not null ? UpdateStatus.Available :
-                storeApplicable && string.IsNullOrWhiteSpace(storeAvailability.AvailableVersion) ? UpdateStatus.Error :
-                nativeOfferChecked || storeAvailability.IsResolved ? UpdateStatus.Current : UpdateStatus.ManagedExternally;
-            var availableVersion = plan is not null ? targetVersion : null;
-            var message = storeProductMismatch
-                ? $"Microsoft Store resolved {storeAvailability.ProductId}, but OpenAI identifies {manifest.StoreProductId}."
-                : plan is not null
-                    ? $"Microsoft Store offers {targetVersion} for this installation. OpenAI's latest announcement is {manifest.BuildVersion}."
-                : nativeCheckFailed ? $"The Store update check failed: {nativeError}"
-                : status == UpdateStatus.Current ? "Windows Store returned no applicable update for this installation. Catalog-only versions are not counted as updates."
-                : status == UpdateStatus.Error ? "Windows Store returned an update without a verifiable target version."
-                : "An applicable Store update could not be determined for this installation.";
-            return new UpdateCheckResult(
-                application.Identity, application.DisplayName, application.NormalizedVersion, availableVersion,
-                status, "openai-codex-store", "OpenAI update manifest + Microsoft Store",
-                "application-managed", "Preserved by Microsoft Store/MSIX package", "provider-selected", "stable",
-                OpenAiUpdateManifestUri.ToString(), message, plan,
-                Applicability: plan is not null ? UpdateApplicability.Applicable :
-                    status == UpdateStatus.Current ? UpdateApplicability.NotRequired :
-                    status == UpdateStatus.Error ? UpdateApplicability.Unknown : UpdateApplicability.NotApplicable,
-                AvailabilityReason: status == UpdateStatus.Current ? UpdateAvailabilityReason.NoApplicableStoreUpdate : UpdateAvailabilityReason.None,
-                PublishedPackageVersion: publishedVersion,
-                AnnouncedVersion: manifest.BuildVersion);
-        }
-        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
-        {
-            throw;
-        }
-        catch
-        {
-            // Preserve the general Store metadata path if OpenAI's manifest is temporarily unavailable.
-            return null;
-        }
-    }
-
-    internal static OpenAiWindowsUpdateManifest? ParseOpenAiManifest(JsonElement root)
-    {
-        if (!root.TryGetProperty("schemaVersion", out var schema) || schema.GetInt32() != 1 ||
-            !root.TryGetProperty("buildVersion", out var buildVersionElement) ||
-            !root.TryGetProperty("storeProductId", out var productIdElement) ||
-            !root.TryGetProperty("packageIdentity", out var packageIdentityElement))
-        {
-            return null;
-        }
-        var buildVersion = buildVersionElement.GetString()?.Trim();
-        var productId = productIdElement.GetString()?.Trim();
-        var packageIdentity = packageIdentityElement.GetString()?.Trim();
-        return Version.TryParse(buildVersion, out _) &&
-               productId?.Equals(OpenAiProductId, StringComparison.Ordinal) == true &&
-               packageIdentity?.Equals(OpenAiPackageIdentity, StringComparison.Ordinal) == true
-            ? new OpenAiWindowsUpdateManifest(buildVersion!, productId, packageIdentity)
-            : null;
-    }
-
     private UpdateCheckResult Result(
         InstalledApplication application,
         UpdateExecutionPlan? plan,
@@ -384,8 +233,6 @@ public sealed class MsixStoreUpdateProvider : IUpdateProvider
     private static (IReadOnlyList<string> Names, IReadOnlyList<string> Paths) PackageProcessBindings(
         InstalledApplication application, string packageFamily)
     {
-        if (packageFamily.Equals(OpenAiPackageFamily, StringComparison.OrdinalIgnoreCase))
-            return ChatGptProcessBindings(application);
         var root = application.PrimaryInstallPath;
         if (string.IsNullOrWhiteSpace(root)) return ([], []);
         if (File.Exists(root) && Path.GetExtension(root).Equals(".exe", StringComparison.OrdinalIgnoreCase))
@@ -411,120 +258,4 @@ public sealed class MsixStoreUpdateProvider : IUpdateProvider
         var distinct = paths.Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
         return (distinct.Select(static path => Path.GetFileNameWithoutExtension(path)).ToArray(), distinct);
     }
-
-    private static (IReadOnlyList<string> Names, IReadOnlyList<string> Paths) ChatGptProcessBindings(
-        InstalledApplication application)
-    {
-        var names = new List<string>();
-        var paths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        var codexRoot = Path.GetFullPath(Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-            "OpenAI",
-            "Codex",
-            "bin")).TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar;
-        // For an MSIX app, PrimaryInstallPath is the package's installed root
-        // *directory* (e.g. "...\OpenAI.Codex_<version>_x64__<publisherId>"),
-        // not an executable - AddPath's own extension check silently rejects
-        // it, and Path.GetDirectoryName on a directory returns its *parent*
-        // (WindowsApps), not the package's own contents. Search inside the
-        // package root instead, where the manifest's app-list entry actually
-        // places "app\ChatGPT.exe" (and a packaged Codex.exe, if present).
-        if (!string.IsNullOrWhiteSpace(application.PrimaryInstallPath) && Directory.Exists(application.PrimaryInstallPath))
-        {
-            try
-            {
-                foreach (var chatGptPath in Directory.EnumerateFiles(application.PrimaryInstallPath, "ChatGPT.exe", SearchOption.AllDirectories).Take(8))
-                {
-                    AddPath("ChatGPT", chatGptPath, requireCodexRoot: false);
-                }
-                foreach (var packagedCodex in Directory.EnumerateFiles(application.PrimaryInstallPath, "Codex.exe", SearchOption.AllDirectories).Take(8))
-                {
-                    AddPath("Codex", packagedCodex, requireCodexRoot: false);
-                }
-            }
-            catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
-            {
-                // Dynamic process enumeration below can still bind a currently running helper.
-            }
-        }
-        else
-        {
-            // Defensive fallback if PrimaryInstallPath is ever a direct file
-            // path instead (e.g. a non-MSIX identity reusing this binding logic).
-            AddPath("ChatGPT", application.PrimaryInstallPath, requireCodexRoot: false);
-        }
-        try
-        {
-            if (Directory.Exists(codexRoot))
-            {
-                foreach (var codexPath in Directory.EnumerateFiles(codexRoot, "codex.exe", SearchOption.AllDirectories).Take(32))
-                {
-                    AddPath("Codex", codexPath, requireCodexRoot: true);
-                }
-            }
-        }
-        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
-        {
-            // Dynamic process enumeration below can still bind a currently running helper.
-        }
-        using var current = Process.GetCurrentProcess();
-        foreach (var processName in new[] { "ChatGPT", "Codex" })
-        {
-            foreach (var process in Process.GetProcessesByName(processName))
-            {
-                using (process)
-                {
-                    try
-                    {
-                        if (!process.HasExited && process.SessionId == current.SessionId)
-                        {
-                            AddPath(processName, process.MainModule?.FileName, requireCodexRoot: processName == "Codex");
-                        }
-                    }
-                    catch
-                    {
-                        // Inaccessible processes are not added to an automatic close plan.
-                    }
-                }
-            }
-        }
-        return (names, paths.ToArray());
-
-        void AddPath(string processName, string? path, bool requireCodexRoot)
-        {
-            if (string.IsNullOrWhiteSpace(path) || !Path.GetExtension(path).Equals(".exe", StringComparison.OrdinalIgnoreCase))
-            {
-                return;
-            }
-            try
-            {
-                var fullPath = Path.GetFullPath(path);
-                if (!Path.GetFileNameWithoutExtension(fullPath).Equals(processName, StringComparison.OrdinalIgnoreCase))
-                {
-                    return;
-                }
-                if (requireCodexRoot)
-                {
-                    if (!fullPath.StartsWith(codexRoot, StringComparison.OrdinalIgnoreCase))
-                    {
-                        return;
-                    }
-                }
-                if (!names.Contains(processName, StringComparer.OrdinalIgnoreCase))
-                {
-                    names.Add(processName);
-                }
-                paths.Add(fullPath);
-            }
-            catch
-            {
-                // Invalid paths cannot participate in automatic process control.
-            }
-        }
-    }
 }
-
-internal sealed record OpenAiWindowsUpdateManifest(
-    string BuildVersion,
-    string StoreProductId,
-    string PackageIdentity);

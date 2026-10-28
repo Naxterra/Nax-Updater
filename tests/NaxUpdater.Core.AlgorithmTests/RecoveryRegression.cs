@@ -10,7 +10,7 @@ internal static class RecoveryRegression
         var legacy = new UpdateOperationRecord(Guid.NewGuid(), "msix:" + family, "msix:fixture.store_publisher", "Fixture", "msix-store",
             "26.901.5280.0", null, "fixture", UpdateTransactionStage.FailedNeedsAttention, time, time, "0x80073D02");
         var current = new UpdateCheckResult(legacy.ApplicationIdentity, "Fixture", "26.901.6511.0", null, UpdateStatus.Current,
-            "openai-codex-store", "Microsoft Store", "neutral", "fixture", "x64", "stable", null, null, null,
+            "msix-store", "Microsoft Store", "neutral", "fixture", "x64", "stable", null, null, null,
             CorrelationKey: legacy.CorrelationKey);
         assert(UpdateRecoveryVerifier.HasReachedTarget(legacy, current.InstalledVersion, current),
             "An independently verified version increase did not recover the legacy null-target Store operation.");

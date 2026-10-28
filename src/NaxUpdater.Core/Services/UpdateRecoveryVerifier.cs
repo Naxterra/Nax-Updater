@@ -29,7 +29,7 @@ public static class UpdateRecoveryVerifier
         // operations. Support only that identifiable legacy case, not arbitrary
         // unversioned commands or a same-version servicing assumption.
         var queueOperation = operation.ExecutionKind == UpdateExecutionKind.NativeStoreQueue ||
-            operation.ExecutionKind is null && (operation.ProviderId is "msix-store" or "openai-codex-store");
+            operation.ExecutionKind is null && (operation.ProviderId is "msix-store");
         if (operation.ExecutionKind == UpdateExecutionKind.NativeStoreQueue && operation.StoreQueueTarget is null) return false;
         if (!queueOperation || !operation.ApplicationIdentity.StartsWith("msix:", StringComparison.OrdinalIgnoreCase) ||
             !Version.TryParse(operation.InstalledVersion, out var baseline) || !Version.TryParse(observedVersion, out var installed) ||
