@@ -2,6 +2,10 @@
 
 Why Nax-Updater works the way it does. Newest first; every release adds its decisions here and updates [DESIGN.md](DESIGN.md). Each entry names the decision, the evidence that led to it, and what was rejected.
 
+## 0.17.40 (2026-10-29)
+
+**Column headers are centered and the driver action column fits the German labels.** The plain-text column headers sat higher than the sortable ones in both lists, and the driver action buttons cut off German labels such as "Exakten Download öffnen". The headers are now vertically centered, the driver action column starts wider (the name column a little narrower), and each action button shows its full label as a tooltip. The status line no longer keeps saying that the manufacturer drivers are being checked after the check has finished or a removal has failed.
+
 ## 0.17.39 (2026-10-29)
 
 **A driver that asks for a restart still locks further changes.** Windows reports a staged driver package's version at once but keeps the old driver loaded until the restart, so the 0.17.38 rule (a verified target with a restart request is completed) would have let further driver or application changes start on top of an unfinished driver swap. Driver installs with exit code 1641 or 3010 therefore stay pending until Windows restarts, also after the application is restarted. An application row that completed with a restart request now says so in its own result.

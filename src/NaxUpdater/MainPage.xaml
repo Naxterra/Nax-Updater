@@ -143,8 +143,8 @@
                         <Button Grid.Column="0" Tag="Name" Style="{StaticResource ColumnHeaderButtonStyle}" HorizontalContentAlignment="Left" Click="SortHeader_Click">
                             <TextBlock x:Name="ApplicationHeaderText" Text="Application ↑" />
                         </Button>
-                        <TextBlock x:Uid="VersionHeader" Grid.Column="1" Text="Version" FontSize="12" FontWeight="SemiBold" Style="{StaticResource MutedTextStyle}" />
-                        <TextBlock x:Uid="UpdateOwnerHeader" Grid.Column="2" Text="Update owner" FontSize="12" FontWeight="SemiBold" Style="{StaticResource MutedTextStyle}" />
+                        <TextBlock x:Uid="VersionHeader" Grid.Column="1" Text="Version" FontSize="12" FontWeight="SemiBold" VerticalAlignment="Center" Style="{StaticResource MutedTextStyle}" />
+                        <TextBlock x:Uid="UpdateOwnerHeader" Grid.Column="2" Text="Update owner" FontSize="12" FontWeight="SemiBold" VerticalAlignment="Center" Style="{StaticResource MutedTextStyle}" />
                         <Button Grid.Column="3" Tag="InstallDate" Style="{StaticResource ColumnHeaderButtonStyle}" HorizontalContentAlignment="Left" Click="SortHeader_Click">
                             <TextBlock x:Name="InstallDateHeaderText" Text="Installed / updated" />
                         </Button>
@@ -330,12 +330,12 @@
                         <Button Grid.Column="0" Tag="Name" Style="{StaticResource ColumnHeaderButtonStyle}" HorizontalContentAlignment="Left" Click="UpdateResultSortHeader_Click">
                             <TextBlock x:Name="UpdateNameHeaderText" Text="Application" />
                         </Button>
-                        <TextBlock x:Uid="InstalledHeader" Grid.Column="1" Text="Installed" FontSize="12" FontWeight="SemiBold" Style="{StaticResource MutedTextStyle}" />
-                        <TextBlock x:Uid="AvailableHeader" Grid.Column="2" Text="Available" FontSize="12" FontWeight="SemiBold" Style="{StaticResource MutedTextStyle}" />
+                        <TextBlock x:Uid="InstalledHeader" Grid.Column="1" Text="Installed" FontSize="12" FontWeight="SemiBold" VerticalAlignment="Center" Style="{StaticResource MutedTextStyle}" />
+                        <TextBlock x:Uid="AvailableHeader" Grid.Column="2" Text="Available" FontSize="12" FontWeight="SemiBold" VerticalAlignment="Center" Style="{StaticResource MutedTextStyle}" />
                         <Button Grid.Column="3" Tag="Status" Style="{StaticResource ColumnHeaderButtonStyle}" HorizontalContentAlignment="Left" Click="UpdateResultSortHeader_Click">
                             <TextBlock x:Name="UpdateStatusHeaderText" Text="Status ↑" />
                         </Button>
-                        <TextBlock x:Uid="ActionHeader" Grid.Column="4" Text="Action" FontSize="12" FontWeight="SemiBold" Style="{StaticResource MutedTextStyle}" />
+                        <TextBlock x:Uid="ActionHeader" Grid.Column="4" Text="Action" FontSize="12" FontWeight="SemiBold" VerticalAlignment="Center" Style="{StaticResource MutedTextStyle}" />
                     </Grid>
                     <ListView x:Name="UpdatesList" Grid.Row="2" SelectionMode="Single" SelectionChanged="UpdatesList_SelectionChanged">
                         <ListView.ItemContainerStyle>
@@ -484,17 +484,17 @@
                             <TextBlock x:Name="DriverNameHeaderText" Text="Device" />
                         </Button>
                         <toolkit:GridSplitter Grid.Column="1" Width="12" HorizontalAlignment="Center" ResizeDirection="Columns" ResizeBehavior="PreviousAndNext" Background="Transparent" />
-                        <TextBlock x:Uid="InstalledHeader" Grid.Column="2" Text="Installed" FontSize="12" FontWeight="SemiBold" Style="{StaticResource MutedTextStyle}" />
+                        <TextBlock x:Uid="InstalledHeader" Grid.Column="2" Text="Installed" FontSize="12" FontWeight="SemiBold" VerticalAlignment="Center" Style="{StaticResource MutedTextStyle}" />
                         <toolkit:GridSplitter Grid.Column="3" Width="12" HorizontalAlignment="Center" ResizeDirection="Columns" ResizeBehavior="PreviousAndNext" Background="Transparent" />
-                        <TextBlock x:Uid="AvailableHeader" Grid.Column="4" Text="Available" FontSize="12" FontWeight="SemiBold" Style="{StaticResource MutedTextStyle}" />
+                        <TextBlock x:Uid="AvailableHeader" Grid.Column="4" Text="Available" FontSize="12" FontWeight="SemiBold" VerticalAlignment="Center" Style="{StaticResource MutedTextStyle}" />
                         <toolkit:GridSplitter Grid.Column="5" Width="12" HorizontalAlignment="Center" ResizeDirection="Columns" ResizeBehavior="PreviousAndNext" Background="Transparent" />
-                        <TextBlock x:Uid="DriverSourceHeader" Grid.Column="6" Text="Manufacturer source" FontSize="12" FontWeight="SemiBold" Style="{StaticResource MutedTextStyle}" />
+                        <TextBlock x:Uid="DriverSourceHeader" Grid.Column="6" Text="Manufacturer source" FontSize="12" FontWeight="SemiBold" VerticalAlignment="Center" Style="{StaticResource MutedTextStyle}" />
                         <toolkit:GridSplitter Grid.Column="7" Width="12" HorizontalAlignment="Center" ResizeDirection="Columns" ResizeBehavior="PreviousAndNext" Background="Transparent" />
                         <Button Grid.Column="8" Tag="Status" Style="{StaticResource ColumnHeaderButtonStyle}" HorizontalContentAlignment="Left" Click="DriverSortHeader_Click">
                             <TextBlock x:Name="DriverStatusHeaderText" Text="Status ↑" />
                         </Button>
                         <toolkit:GridSplitter Grid.Column="9" Width="12" HorizontalAlignment="Center" ResizeDirection="Columns" ResizeBehavior="PreviousAndNext" Background="Transparent" />
-                        <TextBlock x:Uid="ActionHeader" Grid.Column="10" Text="Action" FontSize="12" FontWeight="SemiBold" Style="{StaticResource MutedTextStyle}" />
+                        <TextBlock x:Uid="ActionHeader" Grid.Column="10" Text="Action" FontSize="12" FontWeight="SemiBold" VerticalAlignment="Center" Style="{StaticResource MutedTextStyle}" />
                     </Grid>
                     <Grid Grid.Row="2">
                         <Grid.RowDefinitions>
@@ -535,7 +535,7 @@
                                         <Border Grid.Column="8" Background="{Binding StatusBackground}" BorderBrush="{Binding StatusForeground}" BorderThickness="1" CornerRadius="10" Padding="7,3" HorizontalAlignment="Left" VerticalAlignment="Center">
                                             <TextBlock Text="{Binding Status}" Foreground="{Binding StatusForeground}" FontSize="11" TextWrapping="Wrap" />
                                         </Border>
-                                        <Button Grid.Column="10" Content="{Binding ActionText}" Visibility="{Binding ActionVisibility}" Click="DriverRowButton_Click" Padding="12,5" HorizontalAlignment="Stretch" VerticalAlignment="Center" Style="{StaticResource PurpleActionButtonStyle}" />
+                                        <Button Grid.Column="10" Content="{Binding ActionText}" ToolTipService.ToolTip="{Binding ActionText}" Visibility="{Binding ActionVisibility}" Click="DriverRowButton_Click" Padding="12,5" HorizontalAlignment="Stretch" VerticalAlignment="Center" Style="{StaticResource PurpleActionButtonStyle}" />
                                     </Grid>
                                 </DataTemplate>
                             </ListView.ItemTemplate>

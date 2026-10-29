@@ -323,12 +323,12 @@ public sealed class UpdateRow : INotifyPropertyChanged
 
 public sealed class DriverColumnLayout : INotifyPropertyChanged
 {
-    private GridLength _nameWidth = new(300);
+    private GridLength _nameWidth = new(280);
     private GridLength _installedWidth = new(125);
     private GridLength _availableWidth = new(175);
     private GridLength _sourceWidth = new(200);
-    private GridLength _statusWidth = new(240);
-    private GridLength _actionWidth = new(165);
+    private GridLength _statusWidth = new(230);
+    private GridLength _actionWidth = new(215);
 
     public GridLength NameWidth { get => _nameWidth; private set => Set(ref _nameWidth, value); }
     public GridLength InstalledWidth { get => _installedWidth; private set => Set(ref _installedWidth, value); }

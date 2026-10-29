@@ -693,6 +693,7 @@ public sealed partial class MainPage : Page
             UpdateBar.Message = LocalizationService.Text(exception.Message);
             UpdateBar.Severity = InfoBarSeverity.Error;
             UpdateBar.IsOpen = true;
+            StatusText.Text = UpdateBar.Title;
         }
         finally
         {
@@ -981,9 +982,12 @@ public sealed partial class MainPage : Page
                 ? InfoBarSeverity.Warning
                 : available > 0 ? InfoBarSeverity.Success : InfoBarSeverity.Informational;
             UpdateBar.IsOpen = true;
+            // The status line said "checking" until now; it shows the result instead.
+            StatusText.Text = UpdateBar.Title;
         }
         catch (Exception exception)
         {
+            StatusText.Text = LocalizationService.Get("DriverCheckFailed");
             UpdateBar.Title = LocalizationService.Get("DriverCheckFailed");
             UpdateBar.Message = LocalizationService.Text(exception.Message);
             UpdateBar.Severity = InfoBarSeverity.Error;
