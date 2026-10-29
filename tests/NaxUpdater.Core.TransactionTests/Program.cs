@@ -358,6 +358,15 @@ var verifiedReboot = await new UpdateTransactionCoordinator(verifiedRebootBacken
     .ApplyAsync(offer, Path.GetTempPath());
 Assert(verifiedReboot.IsSuccess && verifiedReboot.RestartRecommended && !verifiedReboot.RequiresRestart,
     "An update whose target was verified was held as pending a restart because the installer asked for one.");
+// verified_driver_with_restart_request_stays_pending: Windows reports a staged driver's
+// version before the restart loads it, so a driver keeps further changes locked.
+var driverOffer = offer with { ProviderId = "manufacturer-driver:fixture" };
+var driverInstalled = installed with { ProviderId = "manufacturer-driver:fixture" };
+var driverRebootBackend = new ScriptedBackend([driverOffer, driverOffer, driverInstalled], new(3010, true, null));
+var driverReboot = await new UpdateTransactionCoordinator(driverRebootBackend, verificationAttempts: 1)
+    .ApplyAsync(driverOffer, Path.GetTempPath());
+Assert(driverReboot.RequiresRestart && !driverReboot.IsSuccess,
+    "A driver whose installer asked for a restart was counted as completed before Windows restarted.");
 var uacCanceledBackend = new ScriptedBackend([offer, offer, offer], new(1223, false, "UAC canceled", NotStarted: true));
 var uacCanceled = await new UpdateTransactionCoordinator(uacCanceledBackend, verificationAttempts: 1)
     .ApplyAsync(offer, Path.GetTempPath());

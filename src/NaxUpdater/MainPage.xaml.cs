@@ -155,7 +155,10 @@ public sealed partial class MainPage : Page
             var reachedTarget = UpdateRecoveryVerifier.HasReachedTarget(interruptedOperation, observedVersion, recoveredAssessment);
             // A restart request only blocks further changes while the target is not yet
             // installed; an update that already reached it is recorded as completed below.
-            if (waitingForRestart && !reachedTarget)
+            // A driver stays blocking until Windows restarts, because its new version is
+            // reported before the new driver is loaded.
+            if (waitingForRestart && (!reachedTarget ||
+                interruptedOperation.ProviderId.StartsWith("manufacturer-driver:", StringComparison.Ordinal)))
             {
                 _restartPending = true;
                 RefreshMassUpdateButton();
@@ -1440,7 +1443,8 @@ public sealed partial class MainPage : Page
                 : UpdateRunState.Failed;
             if (transaction.JournalWarning is { } journalWarning)
                 UpdateBar.Message += Environment.NewLine + LocalizationService.Text(journalWarning);
-            row.RunMessage = succeeded ? null : UpdateBar.Message;
+            row.RunMessage = !succeeded ? UpdateBar.Message
+                : transaction.RestartRecommended ? LocalizationService.Get("UpdateCompletedRestartRecommended") : null;
             _runOutcomes[row.Source.ApplicationIdentity] = (row.RunState, row.RunMessage);
 
             if (rescanAfterSuccess)

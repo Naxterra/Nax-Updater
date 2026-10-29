@@ -309,9 +309,18 @@ public sealed class UpdateTransactionCoordinator
             if (ReachedTarget(freshAssessment, observed) && (!repairOnly || execution.IsSuccess) ||
                 execution.IsSuccess && ReconciledStoreQueue(freshAssessment, observed))
             {
-                // The target is verified, so a restart request (1641, 3010) does not make the
-                // update pending: it succeeded, and Windows replaces files in use at the next
-                // restart. Only an unverified target waits for the restart (below).
+                // The target is verified, so a restart request (1641, 3010) does not make an
+                // application update pending: it succeeded, and Windows replaces files in use at
+                // the next restart. A driver is different: Windows reports the staged package at
+                // once but keeps the old driver loaded until the restart, so it stays pending and
+                // keeps further changes locked. An unverified target always waits (below).
+                if (execution.ExitCode is 1641 or 3010 &&
+                    freshAssessment.ProviderId.StartsWith("manufacturer-driver:", StringComparison.Ordinal))
+                {
+                    report(UpdateTransactionStage.PendingReboot, 1);
+                    return new(UpdateTransactionStage.PendingReboot, observed, execution,
+                        "The updater requested a restart; the target version will be verified after Windows restarts.");
+                }
                 try { await _backend.ReleaseCompletedPayloadAsync(freshAssessment, appliedPayload); }
                 catch (Exception exception) when (exception is IOException or UnauthorizedAccessException) { }
                 report(UpdateTransactionStage.Succeeded, 1);
