@@ -351,6 +351,13 @@ Assert(reboot.Stage == UpdateTransactionStage.PendingReboot &&
        reboot.RequiresRestart &&
        !reboot.IsSuccess,
     "A reboot-pending update was incorrectly counted as completed before post-restart verification.");
+// verified_target_with_restart_request_counts_as_completed: an MSI that installs the
+// target but returns 3010 (files in use) is done; it must not stop Update All.
+var verifiedRebootBackend = new ScriptedBackend([offer, offer, installed], new(3010, true, null));
+var verifiedReboot = await new UpdateTransactionCoordinator(verifiedRebootBackend, verificationAttempts: 1)
+    .ApplyAsync(offer, Path.GetTempPath());
+Assert(verifiedReboot.IsSuccess && verifiedReboot.RestartRecommended && !verifiedReboot.RequiresRestart,
+    "An update whose target was verified was held as pending a restart because the installer asked for one.");
 var uacCanceledBackend = new ScriptedBackend([offer, offer, offer], new(1223, false, "UAC canceled", NotStarted: true));
 var uacCanceled = await new UpdateTransactionCoordinator(uacCanceledBackend, verificationAttempts: 1)
     .ApplyAsync(offer, Path.GetTempPath());

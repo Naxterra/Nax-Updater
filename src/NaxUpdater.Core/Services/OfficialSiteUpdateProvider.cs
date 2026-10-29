@@ -186,7 +186,7 @@ public sealed class OfficialSiteUpdateProvider(HttpClient httpClient, OfficialSi
     private async Task<string> ReadAsync(string url, CancellationToken cancellationToken)
     {
         using var request = new HttpRequestMessage(HttpMethod.Get, url);
-        request.Headers.UserAgent.ParseAdd("NaxUpdater/0.17.37");
+        request.Headers.UserAgent.ParseAdd("NaxUpdater/0.17.38");
         using var response = await httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
         response.EnsureSuccessStatusCode();
         // Version sources are small documents; never read a large file by accident.

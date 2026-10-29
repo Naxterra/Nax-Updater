@@ -309,16 +309,14 @@ public sealed class UpdateTransactionCoordinator
             if (ReachedTarget(freshAssessment, observed) && (!repairOnly || execution.IsSuccess) ||
                 execution.IsSuccess && ReconciledStoreQueue(freshAssessment, observed))
             {
-                var completedStage = execution.ExitCode is 1641 or 3010
-                    ? UpdateTransactionStage.PendingReboot
-                    : UpdateTransactionStage.Succeeded;
-                if (completedStage == UpdateTransactionStage.Succeeded)
-                {
-                    try { await _backend.ReleaseCompletedPayloadAsync(freshAssessment, appliedPayload); }
-                    catch (Exception exception) when (exception is IOException or UnauthorizedAccessException) { }
-                }
-                report(completedStage, 1);
-                return new(completedStage, observed, execution, null);
+                // The target is verified, so a restart request (1641, 3010) does not make the
+                // update pending: it succeeded, and Windows replaces files in use at the next
+                // restart. Only an unverified target waits for the restart (below).
+                try { await _backend.ReleaseCompletedPayloadAsync(freshAssessment, appliedPayload); }
+                catch (Exception exception) when (exception is IOException or UnauthorizedAccessException) { }
+                report(UpdateTransactionStage.Succeeded, 1);
+                return new(UpdateTransactionStage.Succeeded, observed, execution, null,
+                    RestartRecommended: execution.ExitCode is 1641 or 3010);
             }
             if (execution.IsSuccess && execution.ExitCode is 1641 or 3010)
             {

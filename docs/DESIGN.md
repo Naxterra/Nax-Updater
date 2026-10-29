@@ -1,6 +1,6 @@
 # Nax-Updater design
 
-Current as of 0.17.37. Updated with every release; the reasons behind each rule are in [DECISIONS.md](DECISIONS.md).
+Current as of 0.17.38. Updated with every release; the reasons behind each rule are in [DECISIONS.md](DECISIONS.md).
 
 ## Goal
 
@@ -37,6 +37,8 @@ Hard requirements:
 ## While updates run
 
 The update list stays reachable from the application view while a change runs, and the details panel follows the selected row's live state and failure reason. One gate covers every change to the machine: updates, Update All, driver installs and removals. While it is held no other change can start (removal is checked before its dialogs and again after confirmation, and holds the same transaction lease as updates). A language change is saved and the restart waits for the gate; closing the window is deferred the same way, and the window closes on its own afterwards.
+
+An installer exit code 1641 or 3010 (restart requested) after a verified target counts as a completed update with a restart note, and Update All continues. Only an update whose target is not yet verified waits for the restart; it blocks further changes until Windows has restarted or the target is found installed.
 
 The update and driver lists stay enabled, so they can be scrolled and every row's details read during an update; only the row actions and "Alle aktualisieren" are locked. Each row in a run shows its own state in the status column (in Warteschlange, wird vorbereitet, Anwendung wird geschlossen, wird installiert, wird geprüft, then aktualisiert, fehlgeschlagen, nicht mehr anwendbar, Neustart erforderlich or übersprungen). Outcomes stay on the rows after the closing rescan until the next manual scan; a failed row shows its reason above the provider notes. A row that is still installable after a reported success shows the remaining offer instead of "aktualisiert".
 

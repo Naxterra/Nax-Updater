@@ -34,6 +34,8 @@ public sealed partial class MainPage : Page
     private bool _stopBatch;
     private CancellationTokenSource? _operationCancellation;
     private bool _restartPending;
+    // An update of this run asked for a Windows restart (verified or still pending).
+    private bool _restartRecommended;
     // One gate for everything that changes the machine (updates, driver installs,
     // removals). While it is held, no other change may start, and a language
     // restart or window close waits until it is released.
@@ -122,16 +124,6 @@ public sealed partial class MainPage : Page
             var bootedAt = DateTimeOffset.UtcNow - TimeSpan.FromMilliseconds(Environment.TickCount64);
             var waitingForRestart = interruptedOperation.Stage == UpdateTransactionStage.PendingReboot &&
                                     bootedAt <= interruptedOperation.UpdatedAt;
-            if (waitingForRestart)
-            {
-                _restartPending = true;
-                RefreshMassUpdateButton();
-                UpdateBar.Title = LocalizationService.Format("UpdateRestartRequiredTitle", interruptedOperation.DisplayName);
-                UpdateBar.Message = LocalizationService.Get("RestartRequired");
-                UpdateBar.Severity = InfoBarSeverity.Warning;
-                UpdateBar.IsOpen = true;
-                return;
-            }
             string? observedVersion;
             if (interruptedOperation.ProviderId.StartsWith("manufacturer-driver:", StringComparison.Ordinal))
             {
@@ -161,6 +153,18 @@ public sealed partial class MainPage : Page
             var recoveredAssessment = _allUpdates.Select(row => row.Source).FirstOrDefault(update =>
                 update.ApplicationIdentity.Equals(interruptedOperation.ApplicationIdentity, StringComparison.OrdinalIgnoreCase));
             var reachedTarget = UpdateRecoveryVerifier.HasReachedTarget(interruptedOperation, observedVersion, recoveredAssessment);
+            // A restart request only blocks further changes while the target is not yet
+            // installed; an update that already reached it is recorded as completed below.
+            if (waitingForRestart && !reachedTarget)
+            {
+                _restartPending = true;
+                RefreshMassUpdateButton();
+                UpdateBar.Title = LocalizationService.Format("UpdateRestartRequiredTitle", interruptedOperation.DisplayName);
+                UpdateBar.Message = LocalizationService.Get("RestartRequired");
+                UpdateBar.Severity = InfoBarSeverity.Warning;
+                UpdateBar.IsOpen = true;
+                return;
+            }
             var changeMayHaveStarted = interruptedOperation.Stage is
                 UpdateTransactionStage.Applying or
                 UpdateTransactionStage.Verifying or
@@ -1105,14 +1109,14 @@ public sealed partial class MainPage : Page
                 : transaction.RequiresRestart
                     ? LocalizationService.Format("UpdateRestartRequiredTitle", row.Name)
                     : LocalizationService.Format("DriverNotUpdatedTitle", row.Name);
-            UpdateBar.Message = transaction.RequiresRestart
+            UpdateBar.Message = transaction.RequiresRestart || transaction.RestartRecommended
                 ? LocalizationService.Get("RestartRequired")
                 : transaction.IsSuccess
                     ? LocalizationService.Get("DriverUpdateCompleted")
                     : LocalizationService.Text(transaction.Error) ?? LocalizationService.Get("UpdateTransactionFailed");
-            UpdateBar.Severity = transaction.IsSuccess
-                ? InfoBarSeverity.Success
-                : transaction.RequiresRestart ? InfoBarSeverity.Warning : InfoBarSeverity.Error;
+            UpdateBar.Severity = transaction.RequiresRestart || transaction.RestartRecommended
+                ? InfoBarSeverity.Warning
+                : transaction.IsSuccess ? InfoBarSeverity.Success : InfoBarSeverity.Error;
             if (transaction.JournalWarning is { } journalWarning)
                 UpdateBar.Message += Environment.NewLine + LocalizationService.Text(journalWarning);
             UpdateBar.IsOpen = true;
@@ -1287,6 +1291,7 @@ public sealed partial class MainPage : Page
         _massUpdateBusy = true;
         _stopBatch = false;
         _restartPending = false;
+        _restartRecommended = false;
         _runOutcomes.Clear();
         foreach (var row in queue) row.RunState = UpdateRunState.Queued;
         RefreshMassUpdateButton();
@@ -1320,7 +1325,8 @@ public sealed partial class MainPage : Page
             await ScanAsync();
             await CheckUpdatesAsync(showWorkspace: true);
             UpdateBar.Title = LocalizationService.Get("MassUpdateCompleteTitle");
-            UpdateBar.Message = LocalizationService.Format("MassUpdateCompleteMessage", completed, failed);
+            UpdateBar.Message = LocalizationService.Format("MassUpdateCompleteMessage", completed, failed) +
+                (_restartRecommended ? Environment.NewLine + LocalizationService.Get("MassUpdateRestartRecommended") : string.Empty);
             UpdateBar.Severity = failed == 0 ? InfoBarSeverity.Success : InfoBarSeverity.Warning;
             UpdateBar.IsOpen = true;
         }
@@ -1414,7 +1420,9 @@ public sealed partial class MainPage : Page
                     : succeeded
                         ? row.Source.ExecutionPlan.Kind == UpdateExecutionKind.NativeStoreQueue || alreadyUpdated
                             ? LocalizationService.Format("StoreOperationCompleted", transaction.FreshAssessment?.InstalledVersion ?? "?")
-                            : LocalizationService.Get("UpdateCompletedMessage")
+                            : transaction.RestartRecommended
+                                ? LocalizationService.Get("UpdateCompletedRestartRecommended")
+                                : LocalizationService.Get("UpdateCompletedMessage")
                         : LocalizationService.Text(transaction.Error) ?? LocalizationService.Get("UpdateTransactionFailed");
             UpdateBar.Severity = succeeded
                 ? InfoBarSeverity.Success
@@ -1425,6 +1433,7 @@ public sealed partial class MainPage : Page
                     : InfoBarSeverity.Error;
             UpdateBar.IsOpen = true;
             _restartPending = transaction.RequiresRestart;
+            _restartRecommended |= transaction.RestartRecommended || transaction.RequiresRestart;
             row.RunState = succeeded ? UpdateRunState.Succeeded
                 : transaction.RequiresRestart ? UpdateRunState.RestartRequired
                 : transaction.Stage is UpdateTransactionStage.NoLongerApplicable or UpdateTransactionStage.CanceledBeforeChange ? UpdateRunState.NotApplicable

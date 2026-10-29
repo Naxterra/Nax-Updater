@@ -197,4 +197,6 @@
   <data name="RemovalWindowsComponent"><value>Windows manages this system component. Nax-Updater does not offer direct package removal for it. Protected packages will not be forcibly removed.</value></data>
   <data name="RemovalUnavailable"><value>No supported uninstall method was found for this application.</value></data>
   <data name="RemovalFailedWithCode" xml:space="preserve"><value>Removal failed with code {0}.</value></data>
+  <data name="UpdateCompletedRestartRecommended" xml:space="preserve"><value>The update is installed and verified. The installer asked for a Windows restart so that files in use are replaced.</value></data>
+  <data name="MassUpdateRestartRecommended" xml:space="preserve"><value>At least one installer asked for a Windows restart. Restart Windows when convenient.</value></data>
 </root>

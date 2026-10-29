@@ -2,6 +2,10 @@
 
 Why Nax-Updater works the way it does. Newest first; every release adds its decisions here and updates [DESIGN.md](DESIGN.md). Each entry names the decision, the evidence that led to it, and what was rejected.
 
+## 0.17.38 (2026-10-29)
+
+**A verified update whose installer asks for a restart is completed, and Update All goes on.** LibreOffice's MSI installed 26.8.2 and returned 3010 because files were in use. The update was held as pending a restart, counted as failed, and Update All stopped, so the two remaining updates were skipped. When the installed version is verified at the target, the restart request now only adds a note, and a journal entry left waiting for a restart no longer blocks changes once its target is installed. An update whose target cannot be verified before the restart still waits for it and still stops further changes.
+
 ## 0.17.37 (2026-10-28)
 
 **Translating a message never fails.** The translation runs inside the interface's error handlers, so an exception there would end the application. A text that cannot be translated within the time limit, or whose template does not format, is shown in English. Values inside a template are limited in length and never cross a sentence, clause or line boundary, and only a bounded number of translated texts is cached.

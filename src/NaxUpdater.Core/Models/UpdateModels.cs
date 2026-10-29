@@ -110,7 +110,10 @@ public sealed record UpdateTransactionResult(
     string? Error,
     IReadOnlyList<string>? RemainingProcessNames = null,
     // Set when the outcome is valid but the update journal could not be written.
-    string? JournalWarning = null)
+    string? JournalWarning = null,
+    // The target version is verified, but the installer asked for a restart (exit code
+    // 1641 or 3010), usually to replace files that were in use.
+    bool RestartRecommended = false)
 {
     public bool IsSuccess => Stage == UpdateTransactionStage.Succeeded;
     public bool RequiresRestart => Stage == UpdateTransactionStage.PendingReboot;
