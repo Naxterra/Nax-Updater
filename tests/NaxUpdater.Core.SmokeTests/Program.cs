@@ -1553,8 +1553,18 @@ if (HasDriverRegistration("VID_1532"))
 }
 var intelSourceOnlyRows = liveManufacturerDrivers.Results
     .Where(static result => result.Driver.Provider.Contains("Intel", StringComparison.OrdinalIgnoreCase) &&
-                            result.Driver.HardwareId?.Contains("VEN_8086&DEV_15BC", StringComparison.OrdinalIgnoreCase) != true)
+                            result.Driver.HardwareId?.Contains("VEN_8086&DEV_15BC", StringComparison.OrdinalIgnoreCase) != true &&
+                            !IsComparedIntelPackage(result))
     .ToArray();
+// The chipset utility and the RST storage driver are compared with Intel's package versions.
+Assert(liveManufacturerDrivers.Results.Where(IsComparedIntelPackage).All(static result =>
+        result.Status is ManufacturerDriverStatus.Current or ManufacturerDriverStatus.Available or ManufacturerDriverStatus.OfficialSourceOnly &&
+        result.ExecutableUpdate is null && result.AvailableVersion is not null &&
+        result.SourceUri?.Host.Contains("intel.com", StringComparison.OrdinalIgnoreCase) == true),
+    "An Intel chipset or RST row was offered for direct installation or lacked Intel's package version.");
+static bool IsComparedIntelPackage(ManufacturerDriverResult result) =>
+    result.Driver.Identity.EndsWith(":intel:chipset", StringComparison.OrdinalIgnoreCase) ||
+    result.Driver.Identity.EndsWith(":intel:rst", StringComparison.OrdinalIgnoreCase);
 Assert(intelSourceOnlyRows.All(static result =>
         result.Status == ManufacturerDriverStatus.OfficialSourceOnly &&
         result.SourceUri?.Host.Contains("intel.com", StringComparison.OrdinalIgnoreCase) == true &&
