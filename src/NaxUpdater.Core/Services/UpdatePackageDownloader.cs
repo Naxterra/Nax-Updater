@@ -383,7 +383,7 @@ public sealed class UpdatePackageDownloader(
         }
         // A signature-only archive is not signed itself; the nested MSI's exact
         // publisher signature is verified after extraction, before it runs.
-        if (plan.SignatureOnly && plan.Kind == UpdateExecutionKind.DownloadedZipMsi)
+        if (plan.SignatureOnly && plan.Kind is UpdateExecutionKind.DownloadedZipMsi or UpdateExecutionKind.DownloadedZipExe)
         {
             return new FileVerification(true, "Archive; the nested MSI publisher is verified before installation", null);
         }
@@ -466,7 +466,7 @@ public sealed class UpdatePackageDownloader(
     // without a User-Agent with 403 Forbidden, so every download names the updater.
     internal static HttpRequestMessage Identified(HttpRequestMessage request)
     {
-        if (request.Headers.UserAgent.Count == 0) request.Headers.UserAgent.ParseAdd("NaxUpdater/0.17.44");
+        if (request.Headers.UserAgent.Count == 0) request.Headers.UserAgent.ParseAdd("NaxUpdater/0.17.45");
         return request;
     }
 

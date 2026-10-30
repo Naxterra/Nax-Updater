@@ -33,7 +33,10 @@ public enum UpdateExecutionKind
     WingetPackage,
     NativeStorePackage,
     NativeStoreQueue,
-    ChocolateyPackage
+    ChocolateyPackage,
+    // A signed installer EXE inside a manufacturer's ZIP (TP-Link's driver packages). Added at
+    // the end, because journals store the kind as a number.
+    DownloadedZipExe
 }
 
 // Source priority, highest first: the producer's own update protocol or site,

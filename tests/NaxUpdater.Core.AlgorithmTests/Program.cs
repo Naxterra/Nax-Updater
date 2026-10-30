@@ -479,6 +479,7 @@ try
     await KyoceraRegression.RunAsync(Assert);
     DriverCatalogRegression.Run(Assert);
     await IntelPackageRegression.RunAsync(Assert);
+    TpLinkRegression.Run(Assert);
     await ReleaseReviewRegression.RunAsync(Assert);
     // WinGet's COM server exits after installing a fresh catalog package; only its
     // "server gone" RPC errors are retried on a new server.

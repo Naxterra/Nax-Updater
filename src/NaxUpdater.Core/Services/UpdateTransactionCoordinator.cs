@@ -81,6 +81,7 @@ public sealed class DefaultUpdateTransactionBackend(
                     UpdateExecutionKind.DownloadedExe or
                     UpdateExecutionKind.DownloadedMsi or
                     UpdateExecutionKind.DownloadedZipMsi or
+                    UpdateExecutionKind.DownloadedZipExe or
                     UpdateExecutionKind.DownloadedZipDriver))
             {
                 installer = await packageDownloader.DownloadAndVerifyAsync(update, cacheRoot, progress, cancellationToken);
@@ -562,6 +563,7 @@ public static class UpdatePlanValidator
             UpdateExecutionKind.DownloadedExe or
             UpdateExecutionKind.DownloadedMsi or
             UpdateExecutionKind.DownloadedZipMsi or
+            UpdateExecutionKind.DownloadedZipExe or
             UpdateExecutionKind.DownloadedZipDriver
                 when plan.DownloadUri is null ||
                      plan.DownloadUri.Scheme != Uri.UriSchemeHttps ||
@@ -576,19 +578,24 @@ public static class UpdatePlanValidator
             UpdateExecutionKind.DownloadedExe or
             UpdateExecutionKind.DownloadedMsi or
             UpdateExecutionKind.DownloadedZipMsi or
+            UpdateExecutionKind.DownloadedZipExe or
             UpdateExecutionKind.DownloadedZipDriver
                 when plan.AllowHashVerifiedRedirects &&
                      string.IsNullOrWhiteSpace(plan.Sha256) && string.IsNullOrWhiteSpace(plan.Sha512)
                 => "Mirror redirects are allowed only for an installer with a published hash.",
             UpdateExecutionKind.DownloadedExe or
             UpdateExecutionKind.DownloadedMsi or
-            UpdateExecutionKind.DownloadedZipMsi
+            UpdateExecutionKind.DownloadedZipMsi or
+            UpdateExecutionKind.DownloadedZipExe
                 when plan.RequireAuthenticode &&
                      string.IsNullOrWhiteSpace(plan.ExpectedSigner) &&
                      plan.ExpectedSigners is not { Count: > 0 }
                 => "The downloadable installer requires Authenticode but has no approved publisher identity.",
             UpdateExecutionKind.DownloadedZipMsi when string.IsNullOrWhiteSpace(plan.NestedInstallerRelativePath)
                 => "The verified archive does not identify its exact nested MSI.",
+            // The nested EXE runs elevated, so it must carry the exact publisher signature.
+            UpdateExecutionKind.DownloadedZipExe when string.IsNullOrWhiteSpace(plan.NestedInstallerRelativePath) || !plan.RequireAuthenticode
+                => "The verified archive does not identify its signed nested installer.",
             UpdateExecutionKind.DownloadedZipDriver
                 when string.IsNullOrWhiteSpace(plan.NestedInstallerRelativePath) ||
                      string.IsNullOrWhiteSpace(plan.ExpectedHardwareId) ||

@@ -421,6 +421,49 @@ public sealed partial class ManufacturerDriverService(HttpClient httpClient)
         }
     }
 
+    // TP-Link publishes no hash for its driver packages. The owner allowed packages from the
+    // manufacturer's own HTTPS server whose installer carries the manufacturer's exact
+    // signature: the ZIP holds one Inno Setup installer signed by "TP-Link Systems Inc.",
+    // and its file name names the driver version. Beta packages are never offered.
+    internal UpdateCheckResult? TpLinkOffer(InstalledHardwareDriver driver, string html, string available, string displayed)
+    {
+        var link = TpLinkPackageRegex().Matches(html)
+            .Where(match => match.Groups["version"].Value == available && !match.Value.Contains("beta", StringComparison.OrdinalIgnoreCase))
+            .Select(static match => match.Value)
+            .OrderByDescending(static url => url, StringComparer.Ordinal)
+            .FirstOrDefault();
+        if (link is null || !Uri.TryCreate(link, UriKind.Absolute, out var uri)) return null;
+        var plan = new UpdateExecutionPlan(
+            UpdateExecutionKind.DownloadedZipExe,
+            uri,
+            Path.GetFileName(Uri.UnescapeDataString(uri.AbsolutePath)),
+            null,
+            "TP-Link Systems Inc.",
+            null,
+            ["/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART"],
+            true,
+            ["static.tp-link.com"],
+            [],
+            RequireAuthenticode: true,
+            SignatureOnly: true,
+            NestedInstallerRelativePath: "SetupInstall.exe");
+        return new UpdateCheckResult(
+            driver.Identity,
+            driver.DeviceName,
+            driver.InstalledVersion,
+            displayed,
+            UpdateStatus.Available,
+            "manufacturer-driver:tp-link",
+            "TP-Link Archer TBE400UH",
+            "neutral",
+            "TP-Link driver installer",
+            "x64",
+            "stable",
+            TpLinkTbe400Uh.AbsoluteUri,
+            "TP-Link publishes no hash for this package; its installer must carry TP-Link's exact Authenticode signature, and the package comes from TP-Link's own server.",
+            plan);
+    }
+
     internal async Task<ManufacturerDriverResult> CheckTpLinkAsync(
         InstalledHardwareDriver driver,
         CancellationToken cancellationToken)
@@ -449,7 +492,7 @@ public sealed partial class ManufacturerDriverService(HttpClient httpClient)
                     "TP-Link Archer TBE400UH",
                     TpLinkTbe400Uh,
                     "The exact TP-Link hardware-ID catalog page reports a newer stable Windows driver.",
-                    null)
+                    TpLinkOffer(driver, html, available, comparableAvailable))
                 : Current(driver, comparableAvailable, "TP-Link Archer TBE400UH", TpLinkTbe400Uh,
                     $"The exact TP-Link hardware-ID catalog page publishes package branch {available}; its Windows 11 branch corresponds to installed {driver.InstalledVersion}.");
         }
@@ -581,7 +624,7 @@ public sealed partial class ManufacturerDriverService(HttpClient httpClient)
         try
         {
             using var request = new HttpRequestMessage(HttpMethod.Get, uri);
-            request.Headers.UserAgent.ParseAdd("NaxUpdater/0.17.44");
+            request.Headers.UserAgent.ParseAdd("NaxUpdater/0.17.45");
             using var response = await httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, timeout.Token);
             response.EnsureSuccessStatusCode();
             return await response.Content.ReadAsStringAsync(timeout.Token);
@@ -1172,6 +1215,9 @@ public sealed partial class ManufacturerDriverService(HttpClient httpClient)
 
     [GeneratedRegex(@"(?:50|51)02\.\d+\.\d+\.\d+", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
     private static partial Regex TpLinkVersionRegex();
+
+    [GeneratedRegex(@"https://static\.tp-link\.com/upload/driver/[^""<>]*?(?<version>5\d{3}\.\d+\.\d+\.\d+)\.zip", RegexOptions.CultureInvariant)]
+    private static partial Regex TpLinkPackageRegex();
 
     [GeneratedRegex(@"Release\s+(?<version>\d+(?:\.\d+)+).*?(?<date>20\d{2}-\d{2}-\d{2}|July\s+20\d{2})", RegexOptions.IgnoreCase | RegexOptions.Singleline | RegexOptions.CultureInvariant)]
     private static partial Regex IntelEthernetReleaseRegex();

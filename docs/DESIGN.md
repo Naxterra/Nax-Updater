@@ -1,6 +1,6 @@
 # Nax-Updater design
 
-Current as of 0.17.44. Updated with every release; the reasons behind each rule are in [DECISIONS.md](DECISIONS.md).
+Current as of 0.17.45. Updated with every release; the reasons behind each rule are in [DECISIONS.md](DECISIONS.md).
 
 ## Goal
 
@@ -85,7 +85,7 @@ A same-version repair (Chocolatey reinstalling a version that was installed outs
 Exceptions, each modelled explicitly in the plan:
 
 - **Unsigned publisher** (`unsigned`): the hash alone, and only when the publisher ships no signed builds.
-- **Signature only** (`signatureOnly`, `SignatureOnly` plan flag): for publishers that publish no hash. The exact pinned signer is required; the validator accepts this only with `RequireAuthenticode` and a named signer, never for drivers. For a ZIP the nested MSI's signer is checked before it runs. Payloads the signature does not cover (external unsigned cabinets) are not allowed. A signature proves the publisher but not the version, so when the recipe does not build the download URL from the version through an exact `{version}` or `{version_}` placeholder or version parts that a download-page pattern cannot overwrite (or when the recipe sets `verifyInstallerVersion`), the installer's own version resource must match the approved version before it runs, and a cached signature-only installer is never reused. Mirror redirects are allowed only for an installer with a published hash.
+- **Signature only** (`signatureOnly`, `SignatureOnly` plan flag): for publishers that publish no hash. The exact pinned signer is required; the validator accepts this only with `RequireAuthenticode` and a named signer. A driver package qualifies only as a signed installer from the manufacturer's own HTTPS server (TP-Link's `DownloadedZipExe`), never as a bare INF without a hash. For a ZIP the nested MSI's signer is checked before it runs. Payloads the signature does not cover (external unsigned cabinets) are not allowed. A signature proves the publisher but not the version, so when the recipe does not build the download URL from the version through an exact `{version}` or `{version_}` placeholder or version parts that a download-page pattern cannot overwrite (or when the recipe sets `verifyInstallerVersion`), the installer's own version resource must match the approved version before it runs, and a cached signature-only installer is never reused. Mirror redirects are allowed only for an installer with a published hash.
 - **WinGet and Store**: the platform owns download integrity; Nax-Updater validates the exact package identity, architecture, installer type and locale before submitting. A queued Store update is shown as Windows' own queue item for the exact package family, without an installer hash.
 
 After a verified successful update, its cached installer is deleted with its empty folders, because it can never be needed again. Driver packages are kept for rollbacks.

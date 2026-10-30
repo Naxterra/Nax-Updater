@@ -299,7 +299,7 @@ public sealed class UpdateExecutionService
         IReadOnlyList<PreparedContentLock>? contentLocks = null;
         try
         {
-            if (plan.Kind is UpdateExecutionKind.DownloadedZipMsi or UpdateExecutionKind.DownloadedZipDriver)
+            if (plan.Kind is UpdateExecutionKind.DownloadedZipMsi or UpdateExecutionKind.DownloadedZipExe or UpdateExecutionKind.DownloadedZipDriver)
             {
                 if (string.IsNullOrWhiteSpace(plan.NestedInstallerRelativePath))
                 {
@@ -328,7 +328,7 @@ public sealed class UpdateExecutionService
                     executableInstallerPath = nestedPayload.Path;
                     contentLocks = nestedPayload.ContentLocks;
                 }
-                if (plan.Kind == UpdateExecutionKind.DownloadedZipMsi && plan.RequireAuthenticode)
+                if (plan.Kind is UpdateExecutionKind.DownloadedZipMsi or UpdateExecutionKind.DownloadedZipExe && plan.RequireAuthenticode)
                 {
                     var signers = ExpectedSigners(plan);
                     if (signers.Count == 0 || !signers.Any(signer =>
@@ -512,7 +512,7 @@ public sealed class UpdateExecutionService
 
         var startInfo = plan.Kind switch
         {
-            UpdateExecutionKind.DownloadedExe => new ProcessStartInfo(prepared.ExecutablePath),
+            UpdateExecutionKind.DownloadedExe or UpdateExecutionKind.DownloadedZipExe => new ProcessStartInfo(prepared.ExecutablePath),
             UpdateExecutionKind.DownloadedMsi or UpdateExecutionKind.DownloadedZipMsi =>
                 new ProcessStartInfo(Path.Combine(Environment.SystemDirectory, "msiexec.exe")),
             UpdateExecutionKind.DownloadedZipDriver =>

@@ -1153,3 +1153,9 @@ en: Intel's Chipset INF Utility {0} is newer than the installed {1}.{2}
 de: Intels Chipset INF Utility {0} ist neuer als die installierte {1}.{2}
 en: Intel's Chipset INF Utility {0} is installed ({1}).{2}
 de: Intels Chipset INF Utility {0} ist installiert ({1}).{2}
+en: The verified archive does not identify its signed nested installer.
+de: Das geprüfte Archiv nennt keinen signierten enthaltenen Installer.
+en: TP-Link publishes no hash for this package; its installer must carry TP-Link's exact Authenticode signature, and the package comes from TP-Link's own server.
+de: TP-Link veröffentlicht für dieses Paket keinen Hash. Sein Installer muss TP-Links exakte Authenticode-Signatur tragen, und das Paket kommt von TP-Links eigenem Server.
+same: TP-Link driver installer
+same: TP-Link Systems Inc.
