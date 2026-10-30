@@ -215,17 +215,17 @@ using (var manufacturerClient = new HttpClient(new StubHttpMessageHandler(reques
     {
         return new HttpResponseMessage(HttpStatusCode.OK)
         {
-            Content = new StringContent("<LookupValue><Name>GeForce RTX 50 Series</Name><Value>131</Value></LookupValue>")
+            // TypeID=2 lists the series, TypeID=3 the products of a series.
+            Content = new StringContent(request.RequestUri.Query.Contains("TypeID=3", StringComparison.Ordinal)
+                ? "<LookupValue><Name>NVIDIA GeForce RTX 5080</Name><Value>1065</Value></LookupValue>"
+                : "<LookupValue><Name>GeForce RTX 50 Series</Name><Value>131</Value></LookupValue>")
         };
     }
     return new HttpResponseMessage(HttpStatusCode.OK)
     {
         Content = new StringContent("""
-            <tr id="driverList">
-              <td><a href='//www.nvidia.com/download/driverResults.aspx/123456/en-us'>GeForce Game Ready Driver</a></td>
-              <td class="gridItem">999.99</td>
-            </tr>
-            """, Encoding.UTF8, "text/html")
+            {"Success":"1","IDS":[{"downloadInfo":{"ID":"123456","Version":"999.99","IsWHQL":"1","IsBeta":"0","IsCRD":"0","IsFeaturePreview":"0","Name":"GeForce%20Game%20Ready%20Driver"}}]}
+            """, Encoding.UTF8, "application/json")
     };
 })))
 {
