@@ -199,4 +199,5 @@
   <data name="RemovalFailedWithCode" xml:space="preserve"><value>Die Deinstallation ist mit dem Code {0} fehlgeschlagen.</value></data>
   <data name="UpdateCompletedRestartRecommended" xml:space="preserve"><value>Das Update ist installiert und geprüft. Der Installer hat einen Windows-Neustart angefordert, damit Dateien ersetzt werden, die in Benutzung waren.</value></data>
   <data name="MassUpdateRestartRecommended" xml:space="preserve"><value>Mindestens ein Installer hat einen Windows-Neustart angefordert. Starten Sie Windows bei Gelegenheit neu.</value></data>
+  <data name="OpenPageFailedTitle" xml:space="preserve"><value>Die Seite konnte nicht geöffnet werden</value></data>
 </root>

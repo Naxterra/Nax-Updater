@@ -2,6 +2,18 @@
 
 Why Nax-Updater works the way it does. Newest first; every release adds its decisions here and updates [DESIGN.md](DESIGN.md). Each entry names the decision, the evidence that led to it, and what was rejected.
 
+## 0.17.43 (2026-10-30)
+
+**Direct driver updates read the signer of the driver catalog.** A driver package is verified through the signature of its catalog file (.cat), a signed PKCS #7 message that Windows accepts. The signer was read only from signed program files, so the Intel I219 update stopped with "The file does not contain an Authenticode signature". The signer is now read from the catalog's CMS signature.
+
+**NVIDIA's driver service replaces its old search page.** The old search page still listed 617.42 as newest while NVIDIA's driver service listed 621.01, so an installed 621.01 was compared with an older driver. The service is asked for the exact product, and only final WHQL Game Ready drivers count.
+
+**Intel chipset and RST rows compare versions.** The chipset row now compares the installed Chipset INF Utility with Intel's package. The RST row compares the storage controller's driver with the driver inside Intel's RST 18.7.6 package, whose readme lists the 10th generation SATA controller. Windows' inbox driver 15.44 is older, so Intel's package is offered as its download page, because replacing the boot storage driver is left to Intel's installer.
+
+**SAP Cloud Connector is checked on SAP's development tools page.** SAP hands out the installer only after its license is accepted on that page. The new recipe option `licenseAcceptanceRequired` reports a newer release with SAP's page and never downloads it, because Nax-Updater does not accept terms on the owner's behalf.
+
+**Download pages open reliably, and Kyocera checks are bounded.** "Exakten Download öffnen" did nothing when Windows' launcher declined, so the shell opens the page then, and a failure is shown. Kyocera's support site gets the same 10-second limit and 8 MB size limit as other manufacturer sites, a failed Kyocera download is tried again for the next row, every installed printer model counts, and a failed printer-driver query is reported instead of reading as "no printer".
+
 ## 0.17.42 (2026-10-30)
 
 **Kyocera printers and their utilities are checked against Kyocera's own support site.** The Kyocera entries appeared as applications without a source, and the printer itself was missing from the driver view because a network printer has no present PnP device. Kyocera's regional download pages load their driver lists dynamically, but the global user support page that they link to publishes one JSON file per model with versions and download addresses. The KX driver now appears in the driver view, and the utilities are checked against the same model file. Kyocera publishes no hashes, so newer packages are reported with their exact download page and are not installed automatically.

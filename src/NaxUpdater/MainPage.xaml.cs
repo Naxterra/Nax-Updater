@@ -17,7 +17,7 @@ public sealed partial class MainPage : Page
     private readonly ApplicationInventoryService _inventoryService;
     // Some publisher servers refuse requests without a User-Agent (403), so the shared
     // client always sends one; requests that set their own keep it.
-    private readonly HttpClient _httpClient = new() { Timeout = TimeSpan.FromSeconds(30), DefaultRequestHeaders = { { "User-Agent", "NaxUpdater/0.17.42" } } };
+    private readonly HttpClient _httpClient = new() { Timeout = TimeSpan.FromSeconds(30), DefaultRequestHeaders = { { "User-Agent", "NaxUpdater/0.17.43" } } };
     private readonly UpdateExecutionService _updateExecutionService = new();
     private readonly ApplicationRemovalService _applicationRemovalService = new();
     private readonly ApplicationIconService _applicationIconService = new();
@@ -1059,6 +1059,25 @@ public sealed partial class MainPage : Page
             DriverActionColumn.ActualWidth);
     }
 
+    // Launcher.LaunchUriAsync can return false in an unpackaged app without opening anything,
+    // so the shell opens the page then, and a failure is shown instead of doing nothing.
+    private async Task OpenInBrowserAsync(Uri page)
+    {
+        if (page.Scheme != Uri.UriSchemeHttps) return;
+        try
+        {
+            if (await Launcher.LaunchUriAsync(page)) return;
+            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(page.AbsoluteUri) { UseShellExecute = true });
+        }
+        catch (Exception exception) when (exception is System.ComponentModel.Win32Exception or InvalidOperationException or UnauthorizedAccessException)
+        {
+            UpdateBar.Title = LocalizationService.Get("OpenPageFailedTitle");
+            UpdateBar.Message = page.AbsoluteUri + Environment.NewLine + LocalizationService.Text(exception.Message);
+            UpdateBar.Severity = InfoBarSeverity.Error;
+            UpdateBar.IsOpen = true;
+        }
+    }
+
     private async void DriverRowButton_Click(object sender, RoutedEventArgs e)
     {
         if (_updateBusy || _massUpdateBusy || _restartPending || sender is not Button { DataContext: ManufacturerDriverRow row })
@@ -1068,9 +1087,9 @@ public sealed partial class MainPage : Page
         DriversList.SelectedItem = row;
         if (!row.CanUpdate)
         {
-            if (row.Source.SourceUri is not null)
+            if (row.Source.SourceUri is { } page)
             {
-                await Launcher.LaunchUriAsync(row.Source.SourceUri);
+                await OpenInBrowserAsync(page);
             }
             return;
         }

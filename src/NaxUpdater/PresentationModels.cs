@@ -382,7 +382,9 @@ public sealed class ManufacturerDriverRow(ManufacturerDriverResult source, Drive
             }.Where(static value => !string.IsNullOrWhiteSpace(value)));
     public string Installed => IsRazerSuite
         ? LocalizationService.Format("DriverInstalledSynapse", Source.Driver.InstalledVersion)
-        : IsIntelPackageGroup
+        // Chipset and RST rows carry a comparable version (the installed Chipset INF Utility,
+        // the storage driver); the Management Engine group has several unrelated versions.
+        : Source.Driver.Identity.EndsWith(":intel:management-engine", StringComparison.OrdinalIgnoreCase)
             ? LocalizationService.Format("DriverInstalledComponentSet", Source.Driver.DeviceCount)
             : Source.Driver.InstalledVersion;
     public string Available => IsRazerSuite

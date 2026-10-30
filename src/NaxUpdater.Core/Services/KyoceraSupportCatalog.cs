@@ -17,15 +17,43 @@ public sealed record KyoceraModel(string Name, string Id, string ProjectId, Uri 
 public sealed partial class KyoceraSupportCatalog(HttpClient httpClient)
 {
     private static readonly Uri SupportRoot = new("https://www.kyoceradocumentsolutions.com/support_product/");
+    // Like every manufacturer site, Kyocera's may only cost its own rows a bounded wait.
+    internal static readonly TimeSpan RequestTimeout = TimeSpan.FromSeconds(10);
+    private const long MaxDocumentBytes = 8 * 1024 * 1024;
     private readonly ConcurrentDictionary<string, Task<KyoceraModel?>> _models = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Lock _indexLock = new();
     private Task<JsonDocument>? _index;
 
-    public Task<KyoceraModel?> FindModelAsync(string modelName, CancellationToken cancellationToken) =>
-        _models.GetOrAdd(modelName, name => LoadModelAsync(name, cancellationToken));
-
-    private async Task<KyoceraModel?> LoadModelAsync(string modelName, CancellationToken cancellationToken)
+    // The download is shared by every Kyocera row of a check, so it runs under its own time
+    // limit, not under the token of the row that started it; each caller only stops waiting
+    // when its own token is canceled. A failed download is dropped, so the next row retries.
+    public async Task<KyoceraModel?> FindModelAsync(string modelName, CancellationToken cancellationToken)
     {
-        var index = await (_index ??= LoadJsonAsync(new Uri(SupportRoot, "js/index.json"), cancellationToken));
+        var load = _models.GetOrAdd(modelName, LoadModelAsync);
+        try
+        {
+            return await load.WaitAsync(cancellationToken);
+        }
+        catch when (load.IsFaulted || load.IsCanceled)
+        {
+            _models.TryRemove(new KeyValuePair<string, Task<KyoceraModel?>>(modelName, load));
+            throw;
+        }
+    }
+
+    private Task<JsonDocument> IndexAsync()
+    {
+        lock (_indexLock)
+        {
+            if (_index is null || _index.IsFaulted || _index.IsCanceled)
+                _index = LoadJsonAsync(new Uri(SupportRoot, "js/index.json"));
+            return _index;
+        }
+    }
+
+    private async Task<KyoceraModel?> LoadModelAsync(string modelName)
+    {
+        var index = await IndexAsync();
         string? id = null;
         string? projectId = null;
         foreach (var entry in index.RootElement.GetProperty("models").EnumerateArray())
@@ -36,7 +64,7 @@ public sealed partial class KyoceraSupportCatalog(HttpClient httpClient)
             break;
         }
         if (id is null || projectId is null || !DigitsRegex().IsMatch(id) || !DigitsRegex().IsMatch(projectId)) return null;
-        using var model = await LoadJsonAsync(new Uri(SupportRoot, $"js/models/{id}.json"), cancellationToken);
+        using var model = await LoadJsonAsync(new Uri(SupportRoot, $"js/models/{id}.json"));
         var language = CultureInfo.CurrentUICulture.TwoLetterISOLanguageName.Equals("de", StringComparison.OrdinalIgnoreCase) ? "de" : "en";
         return new KyoceraModel(modelName, id, projectId, new Uri(SupportRoot, $"model_{language}.html?m={id}&p={projectId}"), ParseDownloads(model.RootElement));
     }
@@ -103,12 +131,31 @@ public sealed partial class KyoceraSupportCatalog(HttpClient httpClient)
         return drivers;
     }
 
-    private async Task<JsonDocument> LoadJsonAsync(Uri uri, CancellationToken cancellationToken)
+    private async Task<JsonDocument> LoadJsonAsync(Uri uri)
     {
-        using var response = await httpClient.GetAsync(uri, cancellationToken);
-        response.EnsureSuccessStatusCode();
-        await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
-        return await JsonDocument.ParseAsync(stream, cancellationToken: cancellationToken);
+        using var timeout = new CancellationTokenSource(RequestTimeout);
+        try
+        {
+            using var response = await httpClient.GetAsync(uri, HttpCompletionOption.ResponseHeadersRead, timeout.Token);
+            response.EnsureSuccessStatusCode();
+            if (response.Content.Headers.ContentLength > MaxDocumentBytes)
+                throw new InvalidDataException("Kyocera's support data is unexpectedly large.");
+            await using var stream = await response.Content.ReadAsStreamAsync(timeout.Token);
+            using var buffer = new MemoryStream();
+            var chunk = new byte[81920];
+            int read;
+            while ((read = await stream.ReadAsync(chunk, timeout.Token)) > 0)
+            {
+                if (buffer.Length + read > MaxDocumentBytes) throw new InvalidDataException("Kyocera's support data is unexpectedly large.");
+                buffer.Write(chunk, 0, read);
+            }
+            buffer.Position = 0;
+            return await JsonDocument.ParseAsync(buffer, cancellationToken: timeout.Token);
+        }
+        catch (OperationCanceledException) when (timeout.IsCancellationRequested)
+        {
+            throw new TimeoutException($"Kyocera's support site did not answer within {RequestTimeout.TotalSeconds:0} seconds.");
+        }
     }
 
     private static string? Text(JsonElement element, string property) =>

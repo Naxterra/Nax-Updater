@@ -9,8 +9,15 @@ namespace NaxUpdater.Core.Services;
 // not installed automatically.
 public sealed class KyoceraUtilityUpdateProvider(KyoceraSupportCatalog catalog, Func<IReadOnlyList<string>>? installedModels = null) : IUpdateProvider
 {
-    private readonly Lazy<IReadOnlyList<string>> _models = new(() => installedModels?.Invoke() ??
-        KyoceraSupportCatalog.InstalledKxDrivers().Select(static driver => driver.Model).Distinct(StringComparer.OrdinalIgnoreCase).ToArray());
+    // The printer models, or why they could not be read (a stopped print spooler must not
+    // read as "no Kyocera printer").
+    private readonly Lazy<(IReadOnlyList<string> Models, string? Error)> _models = new(() =>
+    {
+        if (installedModels is not null) return (installedModels(), null);
+        var issues = new List<string>();
+        var models = KyoceraSupportCatalog.InstalledKxDrivers(issues).Select(static driver => driver.Model).Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
+        return (models, models.Length == 0 && issues.Count > 0 ? string.Join(" ", issues) : null);
+    });
 
     public string Id => "kyocera-support";
     public UpdateProviderDescriptor Descriptor { get; } = new(UpdateProviderAuthority.ProducerRelease, 100,
@@ -22,22 +29,30 @@ public sealed class KyoceraUtilityUpdateProvider(KyoceraSupportCatalog catalog, 
 
     public async Task<UpdateCheckResult> CheckAsync(InstalledApplication application, CancellationToken cancellationToken)
     {
-        if (_models.Value.Count == 0)
+        var (models, readError) = _models.Value;
+        if (readError is not null)
+            return Result(application, null, UpdateStatus.Error, null, $"The installed printer drivers could not be read: {readError}");
+        if (models.Count == 0)
             return Result(application, null, UpdateStatus.Unsupported, null,
                 "No Kyocera KX printer driver is installed, so the printer model whose support page lists this application is unknown.");
         var key = KyoceraSupportCatalog.ProductKey(application.DisplayName);
         KyoceraModel? listedOn = null;
-        foreach (var modelName in _models.Value)
+        (KyoceraModel Model, KyoceraDownload Download)? newest = null;
+        // Every installed model counts, so one model's older listing cannot hide a newer
+        // release that another model's page carries.
+        foreach (var modelName in models)
         {
             var model = await catalog.FindModelAsync(modelName, cancellationToken);
             if (model is null) continue;
             listedOn ??= model;
-            var download = model.Downloads
-                .Where(item => item.Name.EndsWith(".exe", StringComparison.OrdinalIgnoreCase) &&
-                               KyoceraSupportCatalog.ProductKey(item.Product) == key)
-                .OrderByDescending(static item => item.Version, Comparer<string>.Create(VersionOrder.Compare))
-                .FirstOrDefault();
-            if (download is null) continue;
+            foreach (var download in model.Downloads.Where(item => item.Name.EndsWith(".exe", StringComparison.OrdinalIgnoreCase) &&
+                                                                   KyoceraSupportCatalog.ProductKey(item.Product) == key))
+                if (newest is null || VersionOrder.Compare(download.Version, newest.Value.Download.Version) > 0)
+                    newest = (model, download);
+        }
+        if (newest is { } found)
+        {
+            var (model, download) = found;
             var comparison = VersionOrder.Compare(download.Version, application.NormalizedVersion);
             return comparison > 0
                 ? Result(application, model, UpdateStatus.NewerReleaseKnown, download.Version,

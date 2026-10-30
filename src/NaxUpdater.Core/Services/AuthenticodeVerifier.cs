@@ -91,7 +91,21 @@ public sealed class NativeAuthenticodeVerifier : IAuthenticodeVerifier
     {
         if (X509Certificate2.GetCertContentType(filePath) != X509ContentType.Authenticode)
         {
-            throw new System.Security.Cryptography.CryptographicException("The file does not contain an Authenticode signature.");
+            // A driver catalog (.cat) is a signed PKCS #7 message, not a signed program file
+            // (Windows reports its content type as unknown). WinVerifyTrust accepts it, and
+            // its signer is the CMS signer certificate.
+            var catalog = new System.Security.Cryptography.Pkcs.SignedCms();
+            try
+            {
+                catalog.Decode(File.ReadAllBytes(filePath));
+            }
+            catch (System.Security.Cryptography.CryptographicException)
+            {
+                throw new System.Security.Cryptography.CryptographicException("The file does not contain an Authenticode signature.");
+            }
+            return catalog.SignerInfos is [{ Certificate: { } signer }, ..]
+                ? new X509Certificate2(signer)
+                : throw new System.Security.Cryptography.CryptographicException("The catalog does not name its signer.");
         }
 #pragma warning disable SYSLIB0057 // .NET runtime guidance for extracting an Authenticode signer on Windows.
         return new X509Certificate2(filePath);

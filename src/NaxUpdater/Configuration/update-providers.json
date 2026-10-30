@@ -336,6 +336,19 @@
       "requiresElevation": true
     },
     {
+      "id": "SAP.CloudConnector",
+      "displayNamePattern": "^Cloud Connector$",
+      "publisherContains": "SAP",
+      "versionUrl": "https://tools.hana.ondemand.com/",
+      "versionPattern": "additional/sapcc-(?<version>[0-9]+\\.[0-9]+\\.[0-9]+)-windows-x64\\.msi\"",
+      "releaseNotesUrl": "https://tools.hana.ondemand.com/#cloud",
+      "licenseAcceptanceRequired": true,
+      "downloadUrl": "https://tools.hana.ondemand.com/additional/sapcc-{version}-windows-x64.msi",
+      "allowedHosts": [ "tools.hana.ondemand.com" ],
+      "installerKind": "DownloadedMsi",
+      "requiresElevation": true
+    },
+    {
       "id": "XBMCFoundation.Kodi",
       "displayNamePattern": "^Kodi$",
       "publisherContains": "XBMC",

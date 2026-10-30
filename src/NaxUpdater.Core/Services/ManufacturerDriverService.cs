@@ -77,12 +77,7 @@ public sealed partial class ManufacturerDriverService(HttpClient httpClient)
                 "2618.9.30.0",
                 "Intel's official generic Management Engine package was checked for this 10th-generation platform. The package contains several component INFs with different versions, so its package version is shown without falsely comparing it to one component INF. MSI/OEM packages may retain motherboard customizations.");
         if (driver.Identity.EndsWith(":intel:rst", StringComparison.OrdinalIgnoreCase))
-            return OfficialSourceOnly(
-                driver,
-                "Intel Rapid Storage Technology",
-                IntelRapidStorageTenEleven,
-                "18.7.6.1010.3",
-                "Intel's official 10th/11th-generation RST package was checked. Its umbrella package version is shown, but no update is claimed because storage/RAID applicability and OEM customization must be preserved.");
+            return CheckIntelRst(driver);
         if (driver.Identity.EndsWith(":razer:suite", StringComparison.OrdinalIgnoreCase))
             return await CheckRazerSuiteAsync(driver, razerSynapseVersion, cancellationToken);
         if (IsNvidiaDisplayDriver(driver)) return await CheckNvidiaAsync(driver, cancellationToken);
@@ -97,7 +92,8 @@ public sealed partial class ManufacturerDriverService(HttpClient httpClient)
 
     internal async Task<ManufacturerDriverResult> CheckIntelChipsetPackageAsync(
         InstalledHardwareDriver driver,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        string? installedChipsetVersion = null)
     {
         const string fallbackVersion = "10.1.20658.8883";
         var version = fallbackVersion;
@@ -121,12 +117,38 @@ public sealed partial class ManufacturerDriverService(HttpClient httpClient)
             // is retained rather than turning every grouped chipset component into an error.
         }
 
-        return OfficialSourceOnly(
-            driver,
-            "Intel Chipset Device Software",
-            IntelChipsetSoftware,
-            version,
-            $"Intel's official Chipset INF Utility {version} was checked for the grouped Intel chipset devices. This utility installs identification INFs; its package version is not a comparable driver version for each device, so no false per-component update is claimed.");
+        // The utility registers itself as "SetupChipset" with its package version, which is
+        // compared with Intel's package; the identification INFs inside carry other versions.
+        var installedPackage = installedChipsetVersion ?? ReadInstalledProgramVersion("SetupChipset");
+        if (installedPackage is null)
+            return OfficialSourceOnly(
+                driver,
+                "Intel Chipset Device Software",
+                IntelChipsetSoftware,
+                version,
+                $"Intel's official Chipset INF Utility {version} was checked for the grouped Intel chipset devices. This utility installs identification INFs; its package version is not a comparable driver version for each device, so no false per-component update is claimed.");
+        return VersionOrder.Compare(version, installedPackage) > 0
+            ? new ManufacturerDriverResult(driver with { InstalledVersion = installedPackage }, ManufacturerDriverStatus.Available, version,
+                "Intel Chipset Device Software", IntelChipsetSoftware,
+                $"Intel's Chipset INF Utility {version} is newer than the installed {installedPackage}.", null)
+            : Current(driver with { InstalledVersion = installedPackage }, version, "Intel Chipset Device Software", IntelChipsetSoftware,
+                $"Intel's Chipset INF Utility {version} is installed ({installedPackage}).");
+    }
+
+    // Intel's RST 18.7.6.1010.3 (the last release for 10th and 11th generation platforms,
+    // April 2023) lists the 10th generation SATA AHCI/RAID controller in its readme. Its
+    // driver version is the package version without the build suffix. Windows ships the
+    // older iaStorAV 15.44 inbox driver for the same controller. Replacing the boot storage
+    // driver is left to Intel's own installer, so a newer package is offered as its page.
+    internal static ManufacturerDriverResult CheckIntelRst(InstalledHardwareDriver driver)
+    {
+        const string package = "18.7.6.1010.3";
+        const string driverVersion = "18.7.6.1010";
+        return VersionOrder.Compare(driverVersion, driver.InstalledVersion) > 0
+            ? new ManufacturerDriverResult(driver, ManufacturerDriverStatus.Available, package, "Intel Rapid Storage Technology", IntelRapidStorageTenEleven,
+                $"Intel's RST package {package} for 10th and 11th generation platforms supports this SATA controller and contains driver {driverVersion}; the installed driver is {driver.InstalledVersion}. Intel's installer replaces the storage driver, so it is not run directly.", null)
+            : Current(driver, package, "Intel Rapid Storage Technology", IntelRapidStorageTenEleven,
+                $"Intel's RST package {package} contains driver {driverVersion}; the installed storage driver {driver.InstalledVersion} is current.");
     }
 
     internal async Task<ManufacturerDriverResult> CheckRazerSuiteAsync(
@@ -203,16 +225,24 @@ public sealed partial class ManufacturerDriverService(HttpClient httpClient)
                 throw new InvalidDataException($"NVIDIA's series list no longer contains {seriesName}.");
             }
             var seriesId = seriesMatch.Groups["id"].Value;
-            var searchUri = new Uri($"https://www.nvidia.com/Download/processFind.aspx?dtcid=1&lang=en-us&lid=1&osid=57&psid={seriesId}&whql=1");
-            var html = await GetStringAsync(searchUri, cancellationToken);
-            var match = NvidiaResultRegex().Match(html);
-            if (!match.Success)
+            // NVIDIA's old search page (processFind.aspx) stopped at 617.42 while its driver
+            // service already listed 621.01, so the driver service is asked, for the exact
+            // product of the series.
+            var products = await GetStringAsync(new Uri($"https://www.nvidia.com/Download/API/lookupValueSearch.aspx?TypeID=3&ParentID={seriesId}"), cancellationToken);
+            var productMatch = Regex.Match(products, $@"<Name>{Regex.Escape(driver.DeviceName.Trim())}</Name>\s*<Value>(?<id>[0-9]+)</Value>", RegexOptions.CultureInvariant | RegexOptions.IgnoreCase);
+            if (!productMatch.Success)
+            {
+                throw new InvalidDataException($"NVIDIA's product list no longer contains {driver.DeviceName}.");
+            }
+            var lookup = new Uri("https://gfwsl.geforce.com/services_toolkit/services/com/nvidia/services/AjaxDriverService.php" +
+                $"?func=DriverManualLookup&psid={seriesId}&pfid={productMatch.Groups["id"].Value}&osID=57&languageCode=1033&isWHQL=1&dch=1&upCRD=0&qnf=0&sort1=0&numberOfResults=10");
+            var newest = NewestGameReadyDriver(await GetStringAsync(lookup, cancellationToken));
+            if (newest is null)
             {
                 throw new InvalidDataException("NVIDIA's official search returned no WHQL Game Ready driver.");
             }
 
-            var availableVersion = match.Groups["version"].Value;
-            var resultId = match.Groups["id"].Value;
+            var (availableVersion, resultId) = newest.Value;
             var installedVersion = NormalizeNvidiaVersion(driver.InstalledVersion);
             var detailsUri = NvidiaDetailsUri(resultId, CultureInfo.CurrentUICulture.Name);
             if (VersionOrder.Compare(availableVersion, installedVersion) <= 0)
@@ -370,7 +400,10 @@ public sealed partial class ManufacturerDriverService(HttpClient httpClient)
                 : Current(driver, kx.Version, source, listed.SupportPage,
                     $"Kyocera's support page for the {model} lists KX driver {kx.Version}; the installed KX driver is current.");
         }
-        catch (Exception exception) when (exception is HttpRequestException or TaskCanceledException or System.Text.Json.JsonException or InvalidOperationException or KeyNotFoundException)
+        // A canceled check stays canceled; a slow or broken Kyocera site only fails this row.
+        catch (Exception exception) when (exception is HttpRequestException or TimeoutException or InvalidDataException or
+            System.Text.Json.JsonException or InvalidOperationException or KeyNotFoundException ||
+            exception is OperationCanceledException && !cancellationToken.IsCancellationRequested)
         {
             return Error(driver, source, fallback, exception.Message);
         }
@@ -536,7 +569,7 @@ public sealed partial class ManufacturerDriverService(HttpClient httpClient)
         try
         {
             using var request = new HttpRequestMessage(HttpMethod.Get, uri);
-            request.Headers.UserAgent.ParseAdd("NaxUpdater/0.17.42");
+            request.Headers.UserAgent.ParseAdd("NaxUpdater/0.17.43");
             using var response = await httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, timeout.Token);
             response.EnsureSuccessStatusCode();
             return await response.Content.ReadAsStringAsync(timeout.Token);
@@ -600,7 +633,14 @@ public sealed partial class ManufacturerDriverService(HttpClient httpClient)
         candidates.AddRange(ReadInstalledDriverRegistrations(issues));
         // Network printers have no present PnP device, so their KX driver is read from the
         // print spooler's driver list.
-        return [.. AggregateDriverPackages(candidates), .. ReadKyoceraPrinterDrivers(issues)];
+        // A USB-connected Kyocera printer also has a PnP row; the KX row replaces it.
+        var printers = ReadKyoceraPrinterDrivers(issues);
+        var packages = AggregateDriverPackages(candidates);
+        return printers.Count == 0
+            ? packages
+            : [.. packages.Where(static driver => !(driver.DeviceClass.Equals("Printer", StringComparison.OrdinalIgnoreCase) &&
+                    (driver.Manufacturer.Contains("Kyocera", StringComparison.OrdinalIgnoreCase) || driver.Provider.Contains("Kyocera", StringComparison.OrdinalIgnoreCase)))),
+               .. printers];
     }
 
     private static Dictionary<string, SignedDriverData> ReadSignedDrivers(ICollection<string> issues)
@@ -720,6 +760,12 @@ public sealed partial class ManufacturerDriverService(HttpClient httpClient)
             var name = FriendlyPackageName(group.Key, representative, memberNames);
             var hardwareId = items.Select(static item => item.HardwareId)
                 .FirstOrDefault(static value => !string.IsNullOrWhiteSpace(value));
+            if (group.Key.Equals("intel:rst", StringComparison.OrdinalIgnoreCase))
+                representative = representative with
+                {
+                    InstalledVersion = items.Select(static item => item.InstalledVersion)
+                        .OrderByDescending(static version => version, Comparer<string>.Create(VersionOrder.Compare)).First()
+                };
             results.Add(representative with
             {
                 Identity = DriverUpdateIdentity.ForGroup(group.Key, items),
@@ -961,6 +1007,26 @@ public sealed partial class ManufacturerDriverService(HttpClient httpClient)
             ? NvidiaDriverHomeDe
             : NvidiaDriverHomeEn;
 
+    // The newest final WHQL Game Ready driver in NVIDIA's driver service answer; betas,
+    // Studio (CRD) and feature-preview drivers are skipped.
+    internal static (string Version, string Id)? NewestGameReadyDriver(string json)
+    {
+        using var document = System.Text.Json.JsonDocument.Parse(json);
+        if (!document.RootElement.TryGetProperty("IDS", out var ids) || ids.ValueKind != System.Text.Json.JsonValueKind.Array) return null;
+        (string Version, string Id)? newest = null;
+        foreach (var entry in ids.EnumerateArray())
+        {
+            if (!entry.TryGetProperty("downloadInfo", out var info)) continue;
+            string Field(string name) => info.TryGetProperty(name, out var value) && value.ValueKind == System.Text.Json.JsonValueKind.String ? value.GetString() ?? "" : "";
+            var version = Field("Version");
+            if (Field("IsWHQL") != "1" || Field("IsBeta") != "0" || Field("IsCRD") != "0" || Field("IsFeaturePreview") is not ("0" or "") ||
+                !Uri.UnescapeDataString(Field("Name")).Contains("Game Ready", StringComparison.OrdinalIgnoreCase) ||
+                !Regex.IsMatch(version, @"^[0-9]{3}\.[0-9]{2}$") || !Regex.IsMatch(Field("ID"), "^[0-9]+$")) continue;
+            if (newest is null || VersionOrder.Compare(version, newest.Value.Version) > 0) newest = (version, Field("ID"));
+        }
+        return newest;
+    }
+
     internal static Uri NvidiaDetailsUri(string resultId, string? cultureName)
     {
         var region = cultureName?.StartsWith("de", StringComparison.OrdinalIgnoreCase) == true
@@ -1078,9 +1144,6 @@ public sealed partial class ManufacturerDriverService(HttpClient httpClient)
 
     [GeneratedRegex(@"GeForce\s+RTX\s+(?<generation>[2-5]0)\d{2}\b", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
     private static partial Regex NvidiaRtxRegex();
-
-    [GeneratedRegex(@"driverResults\.aspx/(?<id>\d+)/en-us[^>]*>.*?</a>.*?</td>\s*<td[^>]*>(?<version>\d+\.\d+)</td>", RegexOptions.IgnoreCase | RegexOptions.Singleline | RegexOptions.CultureInvariant)]
-    private static partial Regex NvidiaResultRegex();
 
     [GeneratedRegex(@"(?im)^\s*(?<hash>[0-9a-f]{64})\s+")]
     private static partial Regex Sha256Regex();

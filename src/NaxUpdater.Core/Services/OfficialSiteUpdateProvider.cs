@@ -75,6 +75,11 @@ public sealed class OfficialSiteUpdateProvider(HttpClient httpClient, OfficialSi
                 RolloutThresholdPercent = ElectronStagedRollout.ThresholdPercent(position)
             };
 
+        if (recipe.LicenseAcceptanceRequired)
+            return Result(application, version, UpdateStatus.NewerReleaseKnown, notes,
+                $"The publisher's site lists {version}. Its download requires accepting the publisher's license on that site, so Nax-Updater reports the release and does not download it.", null,
+                UpdateApplicability.NotApplicable);
+
         if (recipe.DownloadPageUrl is not null && recipe.DownloadPattern is not null)
         {
             try
@@ -186,7 +191,7 @@ public sealed class OfficialSiteUpdateProvider(HttpClient httpClient, OfficialSi
     private async Task<string> ReadAsync(string url, CancellationToken cancellationToken)
     {
         using var request = new HttpRequestMessage(HttpMethod.Get, url);
-        request.Headers.UserAgent.ParseAdd("NaxUpdater/0.17.42");
+        request.Headers.UserAgent.ParseAdd("NaxUpdater/0.17.43");
         using var response = await httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
         response.EnsureSuccessStatusCode();
         // Version sources are small documents; never read a large file by accident.

@@ -11,6 +11,26 @@ internal static class OfficialSiteRegression
                OfficialSiteUpdateProvider.Expand("{version}", new Dictionary<string, string> { ["version"] = "1.2" }, true) == @"1\.2",
             "Recipe templates expanded unknown names, regex quantifiers, or unescaped values in patterns.");
 
+        // license_required_download_is_reported_but_never_fetched: SAP hands out Cloud Connector
+        // only after its license is accepted on its site, which Nax-Updater never does itself.
+        {
+            var requested = new List<string>();
+            using var sap = new HttpClient(new Recording(requested, "<a href=\"additional/sapcc-2.20.1-windows-x64.msi\">x</a>"));
+            var licensed = new OfficialSiteUpdateProvider(sap, new OfficialSiteRecipe
+            {
+                Id = "Vendor.Licensed", DisplayNamePattern = "^Licensed App$", VersionUrl = "https://tools.example/",
+                VersionPattern = "additional/sapcc-(?<version>[0-9]+\\.[0-9]+\\.[0-9]+)-windows-x64\\.msi", LicenseAcceptanceRequired = true,
+                DownloadUrl = "https://tools.example/additional/sapcc-{version}-windows-x64.msi", AllowedHosts = ["tools.example"],
+                InstallerKind = UpdateExecutionKind.DownloadedMsi, RequiresElevation = true
+            });
+            var newer = await licensed.CheckAsync(App("Licensed App", "2.19.2"), CancellationToken.None);
+            assert(newer is { Status: UpdateStatus.NewerReleaseKnown, AvailableVersion: "2.20.1", ExecutionPlan: null } &&
+                   requested.All(static uri => !uri.EndsWith(".msi", StringComparison.Ordinal)),
+                $"A release behind a license prompt was offered or downloaded: {newer.Status} · {string.Join(", ", requested)}");
+            assert((await licensed.CheckAsync(App("Licensed App", "2.20.1"), CancellationToken.None)).Status == UpdateStatus.Current,
+                "The installed release behind a license prompt was not current.");
+        }
+
         var hash = new string('d', 64);
         var pages = new Dictionary<string, string>
         {
@@ -150,6 +170,15 @@ internal static class OfficialSiteRegression
             actual.Equals(expectedSigner, StringComparison.OrdinalIgnoreCase)
                 ? new(true, actual, null)
                 : new(false, null, $"Expected signer '{expectedSigner}', found '{actual}'.");
+    }
+
+    private sealed class Recording(List<string> requested, string body) : HttpMessageHandler
+    {
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken token)
+        {
+            requested.Add(request.RequestUri!.AbsoluteUri);
+            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK) { RequestMessage = request, Content = new StringContent(body, Encoding.UTF8) });
+        }
     }
 
     private sealed class Respond(Dictionary<string, string> pages) : HttpMessageHandler

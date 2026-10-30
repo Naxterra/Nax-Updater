@@ -1131,3 +1131,23 @@ en: No Kyocera KX printer driver is installed, so the printer model whose suppor
 de: Es ist kein Kyocera-KX-Druckertreiber installiert, deshalb ist das Druckermodell unbekannt, auf dessen Supportseite diese Anwendung steht.
 en: Printer drivers: {0}
 de: Druckertreiber: {0}
+en: The publisher's site lists {0}. Its download requires accepting the publisher's license on that site, so Nax-Updater reports the release and does not download it.
+de: Die Herstellerseite nennt {0}. Der Download setzt voraus, dass die Lizenz des Herstellers auf dieser Seite angenommen wird, deshalb meldet Nax-Updater das Release und lädt es nicht herunter.
+en: Kyocera's support data is unexpectedly large.
+de: Kyoceras Supportdaten sind unerwartet groß.
+en: Kyocera's support site did not answer within {0} seconds.
+de: Kyoceras Supportseite hat nicht innerhalb von {0} Sekunden geantwortet.
+en: The installed printer drivers could not be read: {0}
+de: Die installierten Druckertreiber konnten nicht gelesen werden: {0}
+en: The catalog does not name its signer.
+de: Der Katalog nennt seinen Signierer nicht.
+en: NVIDIA's product list no longer contains {0}.
+de: Die Produktliste von NVIDIA enthält {0} nicht mehr.
+en: Intel's RST package {0} for 10th and 11th generation platforms supports this SATA controller and contains driver {1}; the installed driver is {2}. Intel's installer replaces the storage driver, so it is not run directly.
+de: Intels RST-Paket {0} für Plattformen der 10. und 11. Generation unterstützt diesen SATA-Controller und enthält den Treiber {1}. Installiert ist {2}. Intels Installer ersetzt den Speichertreiber, deshalb wird er nicht direkt ausgeführt.
+en: Intel's RST package {0} contains driver {1}; the installed storage driver {2} is current.
+de: Intels RST-Paket {0} enthält den Treiber {1}. Der installierte Speichertreiber {2} ist aktuell.
+en: Intel's Chipset INF Utility {0} is newer than the installed {1}.
+de: Intels Chipset INF Utility {0} ist neuer als die installierte {1}.
+en: Intel's Chipset INF Utility {0} is installed ({1}).
+de: Intels Chipset INF Utility {0} ist installiert ({1}).

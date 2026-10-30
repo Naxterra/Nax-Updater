@@ -18,11 +18,37 @@ internal static class KyoceraRegression
                  "999":{"name":"Fake Tool_9.9.exe","version":"9.9","url":"https://downloads.example/Fake Tool_9.9.exe"}}}}
         """;
 
+    private const string SecondModel = """
+        {"id":"414","downloads":{"105":{"1":{"name":"Quick Scan_2.6.0100.exe","version":"2.6.0100","url":"https://cdam.kyoceradocumentsolutions.com/content/dam/gdam_dc/dc_global/executables/web/Quick Scan_2.6.0100.exe"}}}}
+        """;
+
     public static async Task RunAsync(Action<bool, string> assert)
     {
         kx_driver_name_gives_the_printer_model(assert);
         await kyocera_utilities_are_checked_against_the_printer_support_page(assert);
         await kyocera_kx_driver_is_checked_in_the_driver_view(assert);
+        await failed_kyocera_download_is_tried_again(assert);
+        await newest_listing_across_printer_models_wins(assert);
+    }
+
+    private static async Task failed_kyocera_download_is_tried_again(Action<bool, string> assert)
+    {
+        using var http = new HttpClient(new Pages(failFirst: true));
+        var catalog = new KyoceraSupportCatalog(http);
+        Exception? first = null;
+        try { await catalog.FindModelAsync("ECOSYS MA2100cwfx", CancellationToken.None); }
+        catch (Exception exception) { first = exception; }
+        var second = await catalog.FindModelAsync("ECOSYS MA2100cwfx", CancellationToken.None);
+        assert(first is not null && second?.Id == "358", "A failed Kyocera download was kept for the rest of the check instead of being tried again.");
+    }
+
+    private static async Task newest_listing_across_printer_models_wins(Action<bool, string> assert)
+    {
+        using var http = new HttpClient(new Pages());
+        var provider = new KyoceraUtilityUpdateProvider(new KyoceraSupportCatalog(http), () => ["ECOSYS MA2100cwfx", "ECOSYS MA2101cwfx"]);
+        var scan = await provider.CheckAsync(App("Kyocera Quick Scan", "2.5.0326"), CancellationToken.None);
+        assert(scan is { Status: UpdateStatus.NewerReleaseKnown, AvailableVersion: "2.6.0100" },
+            $"An older listing on one printer model hid the newer release on another: {scan.Status} · {scan.AvailableVersion}");
     }
 
     private static void kx_driver_name_gives_the_printer_model(Action<bool, string> assert)
@@ -77,14 +103,22 @@ internal static class KyoceraRegression
         new($"registry:{name}", name, "KYOCERA Document Solutions Inc.", version, version, "fixture", null, "fixture", null, null,
             InstallScope.Machine, ManagementMode.Registry, ConfidenceLevel.High, false, [], null, []);
 
-    private sealed class Pages : HttpMessageHandler
+    private sealed class Pages(bool failFirst = false) : HttpMessageHandler
     {
+        private bool _failed;
+
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken token)
         {
+            if (failFirst && !_failed)
+            {
+                _failed = true;
+                return Task.FromResult(new HttpResponseMessage(HttpStatusCode.InternalServerError) { RequestMessage = request });
+            }
             var body = request.RequestUri!.AbsolutePath switch
             {
                 "/support_product/js/index.json" => Index,
                 "/support_product/js/models/358.json" => Model,
+                "/support_product/js/models/414.json" => SecondModel,
                 _ => null
             };
             return Task.FromResult(body is null

@@ -61,6 +61,10 @@ public sealed class OfficialSiteRecipe
     // The installer's version resource must equal the approved version even when the
     // download URL happens to contain the version's digits (opaque bundle links).
     public bool VerifyInstallerVersion { get; init; }
+    // The publisher hands out the installer only after its license is accepted on its own
+    // site (SAP Development Tools). Nax-Updater does not accept terms on the owner's behalf,
+    // so it reports a newer release with the publisher's page and never downloads it.
+    public bool LicenseAcceptanceRequired { get; init; }
 }
 
 public sealed class GitHubUpdateRecipe
