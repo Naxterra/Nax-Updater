@@ -2,6 +2,12 @@
 
 Why Nax-Updater works the way it does. Newest first; every release adds its decisions here and updates [DESIGN.md](DESIGN.md). Each entry names the decision, the evidence that led to it, and what was rejected.
 
+## 0.17.42 (2026-10-30)
+
+**Kyocera printers and their utilities are checked against Kyocera's own support site.** The Kyocera entries appeared as applications without a source, and the printer itself was missing from the driver view because a network printer has no present PnP device. Kyocera's regional download pages load their driver lists dynamically, but the global user support page that they link to publishes one JSON file per model with versions and download addresses. The KX driver now appears in the driver view, and the utilities are checked against the same model file. Kyocera publishes no hashes, so newer packages are reported with their exact download page and are not installed automatically.
+
+**Downloads always send a User-Agent.** Intel's download mirror answered the Ethernet driver download with 403 Forbidden because the request carried no User-Agent. The downloader and the shared HTTP client now always identify Nax-Updater.
+
 ## 0.17.41 (2026-10-30)
 
 **WinGet's catalog refresh is retried until its server stays up.** Installing a fresh catalog package makes WinGet's COM server exit, and its own log showed the next server exiting again 0.3 seconds later. Nax-Updater retried only once, so all 13 WinGet fallback checks of that scan failed with an RPC error (0x800706BE). The refresh and the package assessment now retry up to four times after a server exit, pausing one, two and three seconds between attempts; any other error is still reported at once.

@@ -123,7 +123,8 @@ public sealed class UpdatePackageDownloader(
             var sourceUri = plan.AuthenticatedGitHubAsset
                 ? await ResolveGitHubAssetAsync(plan.DownloadUri, cancellationToken)
                 : plan.DownloadUri;
-            using var response = await httpClient.GetAsync(sourceUri, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
+            using var download = Identified(new HttpRequestMessage(HttpMethod.Get, sourceUri));
+            using var response = await httpClient.SendAsync(download, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
             response.EnsureSuccessStatusCode();
             var finalUri = response.RequestMessage?.RequestUri ?? sourceUri;
             if (finalUri.Scheme != Uri.UriSchemeHttps ||
@@ -264,7 +265,7 @@ public sealed class UpdatePackageDownloader(
             {
                 var start = index * segmentSize;
                 var end = Math.Min(contentLength - 1, start + segmentSize - 1);
-                using var request = new HttpRequestMessage(HttpMethod.Get, uri);
+                using var request = Identified(new HttpRequestMessage(HttpMethod.Get, uri));
                 request.Headers.Range = new RangeHeaderValue(start, end);
                 using var response = await httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
                 if (response.StatusCode != HttpStatusCode.PartialContent ||
@@ -459,6 +460,14 @@ public sealed class UpdatePackageDownloader(
             return new HashPolicy(HashAlgorithmName.SHA256, null, "SHA-256");
         }
         throw new InvalidOperationException("The update plan does not contain a valid SHA-256 or SHA-512 hash.");
+    }
+
+    // Download servers behind a CDN (Intel's downloadmirror.intel.com) answer a request
+    // without a User-Agent with 403 Forbidden, so every download names the updater.
+    internal static HttpRequestMessage Identified(HttpRequestMessage request)
+    {
+        if (request.Headers.UserAgent.Count == 0) request.Headers.UserAgent.ParseAdd("NaxUpdater/0.17.42");
+        return request;
     }
 
     private static string SanitizePathSegment(string value)

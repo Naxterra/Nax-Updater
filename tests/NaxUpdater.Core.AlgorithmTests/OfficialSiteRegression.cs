@@ -121,6 +121,7 @@ internal static class OfficialSiteRegression
         try
         {
             var accepted = await new UpdatePackageDownloader(downloads, new Signer("Vendor Inc")).DownloadAndVerifyAsync(bound, cache);
+            // download_names_the_updater_so_cdns_do_not_refuse_it: the handler answers 403 without a User-Agent.
             assert(File.ReadAllBytes(accepted.Path).SequenceEqual(payload) && accepted.Signer == "Vendor Inc", "A correctly signed signature-only installer was rejected.");
             accepted.Dispose();
             Directory.Delete(cache, true);
@@ -134,10 +135,13 @@ internal static class OfficialSiteRegression
         finally { if (Directory.Exists(cache)) Directory.Delete(cache, true); }
     }
 
+    // Like Intel's download CDN, it refuses a request without a User-Agent with 403.
     private sealed class Bytes(byte[] payload) : HttpMessageHandler
     {
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken token) =>
-            Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK) { RequestMessage = request, Content = new ByteArrayContent(payload) });
+            Task.FromResult(request.Headers.UserAgent.Count == 0
+                ? new HttpResponseMessage(HttpStatusCode.Forbidden) { RequestMessage = request }
+                : new HttpResponseMessage(HttpStatusCode.OK) { RequestMessage = request, Content = new ByteArrayContent(payload) });
     }
 
     private sealed class Signer(string actual) : IAuthenticodeVerifier

@@ -1,6 +1,6 @@
 # Nax-Updater design
 
-Current as of 0.17.41. Updated with every release; the reasons behind each rule are in [DECISIONS.md](DECISIONS.md).
+Current as of 0.17.42. Updated with every release; the reasons behind each rule are in [DECISIONS.md](DECISIONS.md).
 
 ## Goal
 
@@ -97,6 +97,10 @@ Electron applications use electron-updater, which keeps a random UUID in `%APPDA
 ## Drivers
 
 Drivers have their own view (Treiber) and are never part of "Alle aktualisieren". The update list shows a driver row only as information ("Treiberupdate verfügbar · im Treiber-Bereich", with the driver version when it uses the package's version scheme). Manufacturer sources are queried directly, each request capped at 10 s. NVIDIA desktop GeForce RTX cards are checked against the WHQL Game Ready list of their own series, whose ID is read by name from NVIDIA's series list.
+
+Network printers have no present PnP device, so the KX drivers of Kyocera printers are read from the print spooler's driver list (MSFT_PrinterDriver), and the printer model is taken from the driver name. Kyocera's global user support site publishes one JSON file per model with every driver and utility, its version and its download address; the KX driver is checked there and a newer one is offered as the exact download page, because Kyocera publishes no package hash. Kyocera's utilities in the application list (TWAIN driver, Status Monitor, Quick Scan, Wi-Fi Setup Tool) are checked against the same model file.
+
+Every download sends a User-Agent, because CDNs such as Intel's download mirror refuse requests without one (403).
 
 ## Process and package context
 

@@ -1104,3 +1104,30 @@ en: release
 de: Release
 en: prerelease
 de: Vorabversion
+same: KYOCERA Document Solutions
+en: Kyocera support page
+de: Kyocera-Supportseite
+en: Kyocera support page · {0}
+de: Kyocera-Supportseite · {0}
+en: Kyocera's support page for the {0} does not list this application.
+de: Kyoceras Supportseite für den {0} führt diese Anwendung nicht.
+en: Kyocera's support page for the {0} lists KX driver {1}. Kyocera publishes no hash for the package, so it is not installed directly.
+de: Kyoceras Supportseite für den {0} nennt den KX-Treiber {1}. Kyocera veröffentlicht keinen Hash für das Paket, deshalb wird es nicht direkt installiert.
+en: Kyocera's support page for the {0} lists KX driver {1}; the installed KX driver is current.
+de: Kyoceras Supportseite für den {0} nennt den KX-Treiber {1}. Der installierte KX-Treiber ist aktuell.
+en: Kyocera's support page for the {0} lists no KX driver for Windows.
+de: Kyoceras Supportseite für den {0} nennt keinen KX-Treiber für Windows.
+en: Kyocera's support page for the {0} lists {1} as the newest release; the installed version is current.
+de: Kyoceras Supportseite für den {0} nennt {1} als neuestes Release. Die installierte Version ist aktuell.
+en: Kyocera's support page for the {0} lists {1}. Kyocera publishes no installer hash, so the update is not installed automatically; open the support page to download it.
+de: Kyoceras Supportseite für den {0} nennt {1}. Kyocera veröffentlicht keinen Installer-Hash, deshalb wird das Update nicht automatisch installiert. Öffnen Sie die Supportseite, um es herunterzuladen.
+en: Kyocera's support page for the {0} lists {1}; the installed version is newer.
+de: Kyoceras Supportseite für den {0} nennt {1}. Die installierte Version ist neuer.
+en: Kyocera's support site does not list the installed printer model.
+de: Kyoceras Supportseite führt das installierte Druckermodell nicht.
+en: Kyocera's user support page for the installed printer model
+de: Kyoceras Supportseite für das installierte Druckermodell
+en: No Kyocera KX printer driver is installed, so the printer model whose support page lists this application is unknown.
+de: Es ist kein Kyocera-KX-Druckertreiber installiert, deshalb ist das Druckermodell unbekannt, auf dessen Supportseite diese Anwendung steht.
+en: Printer drivers: {0}
+de: Druckertreiber: {0}

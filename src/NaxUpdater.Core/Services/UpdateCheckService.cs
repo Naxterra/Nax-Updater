@@ -42,7 +42,8 @@ public sealed class UpdateCheckService
             new MacriumUpdateProvider(httpClient),
             new DriverComponentUpdateProvider(httpClient),
             new ExternalOwnerUpdateProvider(),
-            new WinRarUpdateProvider(httpClient)
+            new WinRarUpdateProvider(httpClient),
+            new KyoceraUtilityUpdateProvider(new KyoceraSupportCatalog(httpClient))
         };
         providers.AddRange(catalog.GitHub.Select(recipe => new GitHubReleaseUpdateProvider(httpClient, recipe)));
         providers.AddRange(catalog.Official.Select(recipe => new OfficialSiteUpdateProvider(httpClient, recipe)));

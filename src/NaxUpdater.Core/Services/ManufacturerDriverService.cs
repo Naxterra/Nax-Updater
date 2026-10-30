@@ -37,6 +37,8 @@ public sealed partial class ManufacturerDriverService(HttpClient httpClient)
 
     public async Task<ManufacturerDriverSnapshot> CheckAsync(CancellationToken cancellationToken = default)
     {
+        // Kyocera's model list is read once per check, never from an earlier failed attempt.
+        _kyocera = new KyoceraSupportCatalog(httpClient);
         var issues = new List<string>();
         var installed = await Task.Run(() => ReadInstalledDrivers(issues), cancellationToken);
         var razerSynapseVersion = ReadInstalledProgramVersion("Razer Synapse");
@@ -87,6 +89,7 @@ public sealed partial class ManufacturerDriverService(HttpClient httpClient)
         if (IsRealtek8125(driver)) return await CheckRealtekEthernetAsync(driver, cancellationToken);
         if (IsIntelI219(driver)) return await CheckIntelI219Async(driver, cancellationToken);
         if (IsTpLinkTbe400Uh(driver)) return await CheckTpLinkAsync(driver, cancellationToken);
+        if (driver.Identity.StartsWith(KyoceraPrinterPrefix, StringComparison.Ordinal)) return await CheckKyoceraPrinterAsync(driver, cancellationToken);
         if (IsDellAw3423DwDriver(driver)) return CheckDellAw3423Dw(driver);
         if (IsWesternDigitalExternal(driver)) return NoWdDriverRequired(driver);
         return OfficialSourceOrVendorSoftware(driver, razerSynapseVersion);
@@ -320,6 +323,59 @@ public sealed partial class ManufacturerDriverService(HttpClient httpClient)
         }
     }
 
+    private const string KyoceraPrinterPrefix = "printer-driver:kyocera:";
+    private KyoceraSupportCatalog? _kyocera;
+
+    private static IReadOnlyList<InstalledHardwareDriver> ReadKyoceraPrinterDrivers(ICollection<string> issues) =>
+        KyoceraSupportCatalog.InstalledKxDrivers(issues)
+            .GroupBy(static driver => driver.Model, StringComparer.OrdinalIgnoreCase)
+            .Select(static group => group.OrderByDescending(static driver => driver.Version, Comparer<string>.Create(VersionOrder.Compare)).First())
+            .Select(static driver => new InstalledHardwareDriver(
+                KyoceraPrinterPrefix + driver.Model.ToLowerInvariant(),
+                "Kyocera " + driver.Model,
+                "Printer",
+                "Kyocera",
+                "KYOCERA Document Solutions",
+                driver.Version,
+                null,
+                null,
+                null))
+            .ToArray();
+
+    // The KX driver of an installed Kyocera printer against the KX driver on Kyocera's support
+    // page for that model. Kyocera publishes no hash for the package, so a newer driver is
+    // offered as the exact download page, not installed directly.
+    internal async Task<ManufacturerDriverResult> CheckKyoceraPrinterAsync(
+        InstalledHardwareDriver driver,
+        CancellationToken cancellationToken)
+    {
+        var model = driver.DeviceName.StartsWith("Kyocera ", StringComparison.Ordinal) ? driver.DeviceName[8..] : driver.DeviceName;
+        var source = $"Kyocera support page · {model}";
+        var fallback = new Uri("https://www.kyoceradocumentsolutions.com/support_product/index.html");
+        try
+        {
+            var catalog = _kyocera ??= new KyoceraSupportCatalog(httpClient);
+            var listed = await catalog.FindModelAsync(model, cancellationToken);
+            if (listed is null)
+                return NoVerifiedCatalog(driver, source, fallback, "Kyocera's support site does not list the installed printer model.");
+            var kx = listed.Downloads
+                .Where(static item => item.Product == "KX Driver")
+                .OrderByDescending(static item => item.Version, Comparer<string>.Create(VersionOrder.Compare))
+                .FirstOrDefault();
+            if (kx is null)
+                return NoVerifiedCatalog(driver, source, listed.SupportPage, $"Kyocera's support page for the {model} lists no KX driver for Windows.");
+            return VersionOrder.Compare(kx.Version, driver.InstalledVersion) > 0
+                ? new ManufacturerDriverResult(driver, ManufacturerDriverStatus.Available, kx.Version, source, listed.SupportPage,
+                    $"Kyocera's support page for the {model} lists KX driver {kx.Version}. Kyocera publishes no hash for the package, so it is not installed directly.", null)
+                : Current(driver, kx.Version, source, listed.SupportPage,
+                    $"Kyocera's support page for the {model} lists KX driver {kx.Version}; the installed KX driver is current.");
+        }
+        catch (Exception exception) when (exception is HttpRequestException or TaskCanceledException or System.Text.Json.JsonException or InvalidOperationException or KeyNotFoundException)
+        {
+            return Error(driver, source, fallback, exception.Message);
+        }
+    }
+
     internal async Task<ManufacturerDriverResult> CheckTpLinkAsync(
         InstalledHardwareDriver driver,
         CancellationToken cancellationToken)
@@ -480,7 +536,7 @@ public sealed partial class ManufacturerDriverService(HttpClient httpClient)
         try
         {
             using var request = new HttpRequestMessage(HttpMethod.Get, uri);
-            request.Headers.UserAgent.ParseAdd("NaxUpdater/0.17.41");
+            request.Headers.UserAgent.ParseAdd("NaxUpdater/0.17.42");
             using var response = await httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, timeout.Token);
             response.EnsureSuccessStatusCode();
             return await response.Content.ReadAsStringAsync(timeout.Token);
@@ -542,7 +598,9 @@ public sealed partial class ManufacturerDriverService(HttpClient httpClient)
         }
 
         candidates.AddRange(ReadInstalledDriverRegistrations(issues));
-        return AggregateDriverPackages(candidates);
+        // Network printers have no present PnP device, so their KX driver is read from the
+        // print spooler's driver list.
+        return [.. AggregateDriverPackages(candidates), .. ReadKyoceraPrinterDrivers(issues)];
     }
 
     private static Dictionary<string, SignedDriverData> ReadSignedDrivers(ICollection<string> issues)
