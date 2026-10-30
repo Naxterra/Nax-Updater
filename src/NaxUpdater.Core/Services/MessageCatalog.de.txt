@@ -1159,3 +1159,9 @@ en: TP-Link publishes no hash for this package; its installer must carry TP-Link
 de: TP-Link veröffentlicht für dieses Paket keinen Hash. Sein Installer muss TP-Links exakte Authenticode-Signatur tragen, und das Paket kommt von TP-Links eigenem Server.
 same: TP-Link driver installer
 same: TP-Link Systems Inc.
+en: The exact nested installer was not found in the verified archive.
+de: Der exakte enthaltene Installer wurde im geprüften Archiv nicht gefunden.
+en: The nested installer did not match an approved Authenticode publisher.
+de: Der enthaltene Installer passt zu keinem freigegebenen Authenticode-Herausgeber.
+en: Archive; the nested installer's publisher is verified before installation
+de: Archiv, dessen enthaltener Installer vor der Installation auf seinen Herausgeber geprüft wird

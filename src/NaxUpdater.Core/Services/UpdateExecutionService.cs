@@ -324,7 +324,8 @@ public sealed class UpdateExecutionService
                     var nestedPayload = ExtractNestedInstaller(
                         installer.Path,
                         plan.NestedInstallerRelativePath,
-                        extractionDirectory);
+                        extractionDirectory,
+                        plan.Kind == UpdateExecutionKind.DownloadedZipExe ? ".exe" : ".msi");
                     executableInstallerPath = nestedPayload.Path;
                     contentLocks = nestedPayload.ContentLocks;
                 }
@@ -334,7 +335,7 @@ public sealed class UpdateExecutionService
                     if (signers.Count == 0 || !signers.Any(signer =>
                             _authenticodeVerifier.Verify(executableInstallerPath, signer).IsValid))
                     {
-                        throw new InvalidDataException("The nested MSI did not match an approved Authenticode publisher.");
+                        throw new InvalidDataException("The nested installer did not match an approved Authenticode publisher.");
                     }
                 }
             }
@@ -679,10 +680,13 @@ public sealed class UpdateExecutionService
         }
     }
 
+    // The nested file must have the extension its plan kind runs: ".msi" through msiexec,
+    // ".exe" as a signed installer of its own.
     internal static PreparedNestedPayload ExtractNestedInstaller(
         string archivePath,
         string relativePath,
-        string destinationDirectory)
+        string destinationDirectory,
+        string extension = ".msi")
     {
         var normalized = relativePath.Replace('\\', '/').TrimStart('/');
         if (normalized.Length == 0 || normalized.Split('/').Any(static part => part is "" or "." or ".."))
@@ -693,9 +697,9 @@ public sealed class UpdateExecutionService
         var matches = archive.Entries
             .Where(entry => entry.FullName.Replace('\\', '/').Equals(normalized, StringComparison.OrdinalIgnoreCase))
             .ToArray();
-        if (matches.Length != 1 || !matches[0].Name.EndsWith(".msi", StringComparison.OrdinalIgnoreCase))
+        if (matches.Length != 1 || !matches[0].Name.EndsWith(extension, StringComparison.OrdinalIgnoreCase))
         {
-            throw new InvalidDataException("The exact nested MSI was not found in the verified archive.");
+            throw new InvalidDataException("The exact nested installer was not found in the verified archive.");
         }
         var destinationPath = Path.Combine(destinationDirectory, Path.GetFileName(matches[0].Name));
         var contentLock = ExtractEntryLocked(matches[0], destinationPath);

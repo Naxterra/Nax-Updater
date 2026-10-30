@@ -427,12 +427,17 @@ public sealed partial class ManufacturerDriverService(HttpClient httpClient)
     // and its file name names the driver version. Beta packages are never offered.
     internal UpdateCheckResult? TpLinkOffer(InstalledHardwareDriver driver, string html, string available, string displayed)
     {
-        var link = TpLinkPackageRegex().Matches(html)
+        // The newest upload wins by the date folder TP-Link files it under (.../YYYYMMDD/);
+        // without that folder, or with two different files on the newest date, nothing is offered.
+        var uploads = TpLinkPackageRegex().Matches(html)
             .Where(match => match.Groups["version"].Value == available && !match.Value.Contains("beta", StringComparison.OrdinalIgnoreCase))
-            .Select(static match => match.Value)
-            .OrderByDescending(static url => url, StringComparer.Ordinal)
-            .FirstOrDefault();
-        if (link is null || !Uri.TryCreate(link, UriKind.Absolute, out var uri)) return null;
+            .Select(static match => (Url: match.Value, Date: TpLinkUploadDateRegex().Match(match.Value) is { Success: true } date ? date.Groups["date"].Value : null))
+            .Distinct()
+            .ToArray();
+        if (uploads.Length == 0 || uploads.Any(static upload => upload.Date is null)) return null;
+        var newestDate = uploads.Max(static upload => upload.Date)!;
+        var newest = uploads.Where(upload => upload.Date == newestDate).ToArray();
+        if (newest.Length != 1 || !Uri.TryCreate(newest[0].Url, UriKind.Absolute, out var uri)) return null;
         var plan = new UpdateExecutionPlan(
             UpdateExecutionKind.DownloadedZipExe,
             uri,
@@ -624,7 +629,7 @@ public sealed partial class ManufacturerDriverService(HttpClient httpClient)
         try
         {
             using var request = new HttpRequestMessage(HttpMethod.Get, uri);
-            request.Headers.UserAgent.ParseAdd("NaxUpdater/0.17.45");
+            request.Headers.UserAgent.ParseAdd("NaxUpdater/0.17.46");
             using var response = await httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, timeout.Token);
             response.EnsureSuccessStatusCode();
             return await response.Content.ReadAsStringAsync(timeout.Token);
@@ -1218,6 +1223,9 @@ public sealed partial class ManufacturerDriverService(HttpClient httpClient)
 
     [GeneratedRegex(@"https://static\.tp-link\.com/upload/driver/[^""<>]*?(?<version>5\d{3}\.\d+\.\d+\.\d+)\.zip", RegexOptions.CultureInvariant)]
     private static partial Regex TpLinkPackageRegex();
+
+    [GeneratedRegex(@"/upload/driver/\d{4}/\d{6}/(?<date>\d{8})/")]
+    private static partial Regex TpLinkUploadDateRegex();
 
     [GeneratedRegex(@"Release\s+(?<version>\d+(?:\.\d+)+).*?(?<date>20\d{2}-\d{2}-\d{2}|July\s+20\d{2})", RegexOptions.IgnoreCase | RegexOptions.Singleline | RegexOptions.CultureInvariant)]
     private static partial Regex IntelEthernetReleaseRegex();

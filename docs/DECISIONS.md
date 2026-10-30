@@ -2,6 +2,10 @@
 
 Why Nax-Updater works the way it does. Newest first; every release adds its decisions here and updates [DESIGN.md](DESIGN.md). Each entry names the decision, the evidence that led to it, and what was rejected.
 
+## 0.17.46 (2026-10-30)
+
+**A nested EXE installer is extracted by its own extension.** The extraction step accepted only MSI files, so every TP-Link install from 0.17.45 would have failed after the download without running anything. The plan kind now decides the expected extension, the messages speak of the nested installer, and a TP-Link package is chosen by the date folder TP-Link files it under. With two different files on the newest date, or without that folder, nothing is offered.
+
 ## 0.17.45 (2026-10-30)
 
 **A manufacturer's signed driver installer from its own server may be installed without a published hash.** TP-Link publishes no hash for its driver packages, so the TP-Link adapter was only forwarded to TP-Link's page. The owner decided that a package from the official manufacturer site, not a third-party site, may rely on the signature. TP-Link's ZIP holds one Inno Setup installer signed by "TP-Link Systems Inc.". The new kind `DownloadedZipExe` downloads it only from static.tp-link.com, requires that exact signature on the nested installer, and runs it silently. Beta packages are never offered. Intel RST stays forwarded, because its silent install requires accepting Intel's license (`-accepteula`), which is not a signature question.
