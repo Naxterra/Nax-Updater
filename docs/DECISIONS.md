@@ -2,6 +2,10 @@
 
 Why Nax-Updater works the way it does. Newest first; every release adds its decisions here and updates [DESIGN.md](DESIGN.md). Each entry names the decision, the evidence that led to it, and what was rejected.
 
+## 0.17.44 (2026-10-30)
+
+**Intel RST and chipset results claim only what is known.** The RST row is compared only for a readable driver version on a 400-series SATA controller (PCI device IDs 06D0 to 06DF), because a device without a readable version or another platform's controller would otherwise get a false result. Intel's chipset page refuses scripted requests, so the chipset row compares the installed utility with the last release Nax-Updater verified there and says so. Driver catalogs are the only non-program files whose signature is read as a signed message, and download pages over http open as well.
+
 ## 0.17.43 (2026-10-30)
 
 **Direct driver updates read the signer of the driver catalog.** A driver package is verified through the signature of its catalog file (.cat), a signed PKCS #7 message that Windows accepts. The signer was read only from signed program files, so the Intel I219 update stopped with "The file does not contain an Authenticode signature". The signer is now read from the catalog's CMS signature.

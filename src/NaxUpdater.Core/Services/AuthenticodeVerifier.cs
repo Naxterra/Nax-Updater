@@ -91,6 +91,8 @@ public sealed class NativeAuthenticodeVerifier : IAuthenticodeVerifier
     {
         if (X509Certificate2.GetCertContentType(filePath) != X509ContentType.Authenticode)
         {
+            if (!Path.GetExtension(filePath).Equals(".cat", StringComparison.OrdinalIgnoreCase))
+                throw new System.Security.Cryptography.CryptographicException("The file does not contain an Authenticode signature.");
             // A driver catalog (.cat) is a signed PKCS #7 message, not a signed program file
             // (Windows reports its content type as unknown). WinVerifyTrust accepts it, and
             // its signer is the CMS signer certificate.

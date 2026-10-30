@@ -331,7 +331,7 @@ public sealed class GitHubReleaseUpdateProvider : IUpdateProvider
             using var request = new HttpRequestMessage(
                 HttpMethod.Get,
                 $"https://api.github.com/repos/{recipe.Repository}/releases/latest");
-            request.Headers.UserAgent.ParseAdd("NaxUpdater/0.17.43");
+            request.Headers.UserAgent.ParseAdd("NaxUpdater/0.17.44");
             request.Headers.Accept.ParseAdd("application/vnd.github+json");
             try
             {
@@ -377,7 +377,7 @@ public sealed class GitHubReleaseUpdateProvider : IUpdateProvider
         using var request = new HttpRequestMessage(
             HttpMethod.Get,
             $"https://github.com/{recipe.Repository}/releases/latest");
-        request.Headers.UserAgent.ParseAdd("NaxUpdater/0.17.43");
+        request.Headers.UserAgent.ParseAdd("NaxUpdater/0.17.44");
         using var response = await httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
         var finalUri = response.RequestMessage?.RequestUri;
         var match = finalUri is null

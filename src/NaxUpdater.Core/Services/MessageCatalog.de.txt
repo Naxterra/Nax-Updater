@@ -1147,7 +1147,9 @@ en: Intel's RST package {0} for 10th and 11th generation platforms supports this
 de: Intels RST-Paket {0} für Plattformen der 10. und 11. Generation unterstützt diesen SATA-Controller und enthält den Treiber {1}. Installiert ist {2}. Intels Installer ersetzt den Speichertreiber, deshalb wird er nicht direkt ausgeführt.
 en: Intel's RST package {0} contains driver {1}; the installed storage driver {2} is current.
 de: Intels RST-Paket {0} enthält den Treiber {1}. Der installierte Speichertreiber {2} ist aktuell.
-en: Intel's Chipset INF Utility {0} is newer than the installed {1}.
-de: Intels Chipset INF Utility {0} ist neuer als die installierte {1}.
-en: Intel's Chipset INF Utility {0} is installed ({1}).
-de: Intels Chipset INF Utility {0} ist installiert ({1}).
+en: Intel's page could not be read now, so this is the last release Nax-Updater verified there.
+de: Intels Seite konnte gerade nicht gelesen werden, deshalb ist das die letzte Version, die Nax-Updater dort geprüft hat.
+en: Intel's Chipset INF Utility {0} is newer than the installed {1}.{2}
+de: Intels Chipset INF Utility {0} ist neuer als die installierte {1}.{2}
+en: Intel's Chipset INF Utility {0} is installed ({1}).{2}
+de: Intels Chipset INF Utility {0} ist installiert ({1}).{2}

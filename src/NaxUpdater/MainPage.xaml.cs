@@ -17,7 +17,7 @@ public sealed partial class MainPage : Page
     private readonly ApplicationInventoryService _inventoryService;
     // Some publisher servers refuse requests without a User-Agent (403), so the shared
     // client always sends one; requests that set their own keep it.
-    private readonly HttpClient _httpClient = new() { Timeout = TimeSpan.FromSeconds(30), DefaultRequestHeaders = { { "User-Agent", "NaxUpdater/0.17.43" } } };
+    private readonly HttpClient _httpClient = new() { Timeout = TimeSpan.FromSeconds(30), DefaultRequestHeaders = { { "User-Agent", "NaxUpdater/0.17.44" } } };
     private readonly UpdateExecutionService _updateExecutionService = new();
     private readonly ApplicationRemovalService _applicationRemovalService = new();
     private readonly ApplicationIconService _applicationIconService = new();
@@ -1063,9 +1063,10 @@ public sealed partial class MainPage : Page
     // so the shell opens the page then, and a failure is shown instead of doing nothing.
     private async Task OpenInBrowserAsync(Uri page)
     {
-        if (page.Scheme != Uri.UriSchemeHttps) return;
         try
         {
+            if (page.Scheme != Uri.UriSchemeHttps && page.Scheme != Uri.UriSchemeHttp)
+                throw new InvalidOperationException(page.Scheme);
             if (await Launcher.LaunchUriAsync(page)) return;
             System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(page.AbsoluteUri) { UseShellExecute = true });
         }

@@ -97,6 +97,7 @@ public sealed partial class ManufacturerDriverService(HttpClient httpClient)
     {
         const string fallbackVersion = "10.1.20658.8883";
         var version = fallbackVersion;
+        var readFromIntel = false;
         try
         {
             var page = WebUtility.HtmlDecode(await GetStringAsync(IntelChipsetSoftware, cancellationToken));
@@ -104,6 +105,7 @@ public sealed partial class ManufacturerDriverService(HttpClient httpClient)
             if (versionMatch.Success)
             {
                 version = versionMatch.Groups["version"].Value;
+                readFromIntel = true;
             }
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
@@ -119,7 +121,10 @@ public sealed partial class ManufacturerDriverService(HttpClient httpClient)
 
         // The utility registers itself as "SetupChipset" with its package version, which is
         // compared with Intel's package; the identification INFs inside carry other versions.
+        // Intel's page refuses scripted requests most of the time; the last release verified
+        // there is compared then, and the message says so, because it could be stale.
         var installedPackage = installedChipsetVersion ?? ReadInstalledProgramVersion("SetupChipset");
+        var basis = readFromIntel ? "" : " Intel's page could not be read now, so this is the last release Nax-Updater verified there.";
         if (installedPackage is null)
             return OfficialSourceOnly(
                 driver,
@@ -130,9 +135,9 @@ public sealed partial class ManufacturerDriverService(HttpClient httpClient)
         return VersionOrder.Compare(version, installedPackage) > 0
             ? new ManufacturerDriverResult(driver with { InstalledVersion = installedPackage }, ManufacturerDriverStatus.Available, version,
                 "Intel Chipset Device Software", IntelChipsetSoftware,
-                $"Intel's Chipset INF Utility {version} is newer than the installed {installedPackage}.", null)
+                $"Intel's Chipset INF Utility {version} is newer than the installed {installedPackage}.{basis}", null)
             : Current(driver with { InstalledVersion = installedPackage }, version, "Intel Chipset Device Software", IntelChipsetSoftware,
-                $"Intel's Chipset INF Utility {version} is installed ({installedPackage}).");
+                $"Intel's Chipset INF Utility {version} is installed ({installedPackage}).{basis}");
     }
 
     // Intel's RST 18.7.6.1010.3 (the last release for 10th and 11th generation platforms,
@@ -144,6 +149,13 @@ public sealed partial class ManufacturerDriverService(HttpClient httpClient)
     {
         const string package = "18.7.6.1010.3";
         const string driverVersion = "18.7.6.1010";
+        // Only the 400-series chipset's SATA controllers (PCI device IDs 06D0 to 06DF, the
+        // 10th generation platform of this PC) are known to be served by this package; any
+        // other controller, or an unreadable driver version, gets the page without a claim.
+        if (!NumericVersionRegex().IsMatch(driver.InstalledVersion) ||
+            driver.HardwareId is null || !Regex.IsMatch(driver.HardwareId, @"VEN_8086&DEV_06D[0-9A-F]", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant))
+            return OfficialSourceOnly(driver, "Intel Rapid Storage Technology", IntelRapidStorageTenEleven, package,
+                "Intel's official 10th/11th-generation RST package was checked. Its umbrella package version is shown, but no update is claimed because storage/RAID applicability and OEM customization must be preserved.");
         return VersionOrder.Compare(driverVersion, driver.InstalledVersion) > 0
             ? new ManufacturerDriverResult(driver, ManufacturerDriverStatus.Available, package, "Intel Rapid Storage Technology", IntelRapidStorageTenEleven,
                 $"Intel's RST package {package} for 10th and 11th generation platforms supports this SATA controller and contains driver {driverVersion}; the installed driver is {driver.InstalledVersion}. Intel's installer replaces the storage driver, so it is not run directly.", null)
@@ -569,7 +581,7 @@ public sealed partial class ManufacturerDriverService(HttpClient httpClient)
         try
         {
             using var request = new HttpRequestMessage(HttpMethod.Get, uri);
-            request.Headers.UserAgent.ParseAdd("NaxUpdater/0.17.43");
+            request.Headers.UserAgent.ParseAdd("NaxUpdater/0.17.44");
             using var response = await httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, timeout.Token);
             response.EnsureSuccessStatusCode();
             return await response.Content.ReadAsStringAsync(timeout.Token);
@@ -763,8 +775,12 @@ public sealed partial class ManufacturerDriverService(HttpClient httpClient)
             if (group.Key.Equals("intel:rst", StringComparison.OrdinalIgnoreCase))
                 representative = representative with
                 {
+                    // Only readable versions count; a device without a signed-driver record
+                    // reads "—", which would otherwise sort above every number.
                     InstalledVersion = items.Select(static item => item.InstalledVersion)
-                        .OrderByDescending(static version => version, Comparer<string>.Create(VersionOrder.Compare)).First()
+                        .Where(static version => NumericVersionRegex().IsMatch(version))
+                        .OrderByDescending(static version => version, Comparer<string>.Create(VersionOrder.Compare))
+                        .FirstOrDefault() ?? representative.InstalledVersion
                 };
             results.Add(representative with
             {
@@ -1147,6 +1163,9 @@ public sealed partial class ManufacturerDriverService(HttpClient httpClient)
 
     [GeneratedRegex(@"(?im)^\s*(?<hash>[0-9a-f]{64})\s+")]
     private static partial Regex Sha256Regex();
+
+    [GeneratedRegex(@"^\d+(?:\.\d+)+$")]
+    private static partial Regex NumericVersionRegex();
 
     [GeneratedRegex(@"utility\s+version\s+(?<version>\d+(?:\.\d+){3})", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
     private static partial Regex IntelChipsetVersionRegex();
