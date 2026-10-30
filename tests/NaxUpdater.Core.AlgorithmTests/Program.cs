@@ -484,6 +484,37 @@ try
            !WingetFallbackUpdateProvider.IsServerGone(new System.Runtime.InteropServices.COMException("denied", unchecked((int)0x80070005))) &&
            !WingetFallbackUpdateProvider.IsServerGone(new InvalidOperationException()),
         "WinGet server-exit errors were not told apart from real refresh failures.");
+    // winget_refresh_retries_until_a_server_stays_up: the catalog package registration
+    // made two servers exit in a row; the third answered.
+    {
+        var calls = 0;
+        var pauses = 0;
+        var gone = new System.Runtime.InteropServices.COMException("gone", unchecked((int)0x800706BE));
+        var answer = await WingetFallbackUpdateProvider.RetryWhileServerRestartsAsync(
+            () => ++calls <= 2 ? Task.FromException<int>(gone) : Task.FromResult(42),
+            (_, _) => { pauses++; return Task.CompletedTask; }, CancellationToken.None);
+        Assert(answer == 42 && calls == 3 && pauses == 2, "WinGet refresh gave up while its server was still restarting.");
+        calls = 0;
+        Exception? lastFailure = null;
+        try
+        {
+            await WingetFallbackUpdateProvider.RetryWhileServerRestartsAsync(
+                () => { calls++; return Task.FromException<int>(gone); }, (_, _) => Task.CompletedTask, CancellationToken.None);
+        }
+        catch (Exception exception) { lastFailure = exception; }
+        Assert(lastFailure is not null && calls == WingetFallbackUpdateProvider.ServerRestartAttempts,
+            "WinGet refresh retried without end, or did not pass on the last failure.");
+        calls = 0;
+        lastFailure = null;
+        try
+        {
+            await WingetFallbackUpdateProvider.RetryWhileServerRestartsAsync(
+                () => { calls++; return Task.FromException<int>(new System.Runtime.InteropServices.COMException("denied", unchecked((int)0x80070005))); },
+                (_, _) => Task.CompletedTask, CancellationToken.None);
+        }
+        catch (Exception exception) { lastFailure = exception; }
+        Assert(lastFailure is not null && calls == 1, "A real WinGet failure was retried as if the server had exited.");
+    }
     await ProcessLifetimeRegression.RunAsync(Assert, fixture);
     Console.WriteLine($"Algorithm regression tests passed: {checks} assertions. No real installers executed.");
 }

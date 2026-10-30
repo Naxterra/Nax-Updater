@@ -38,37 +38,54 @@ public sealed partial class WingetFallbackUpdateProvider(
         // Installing a fresh catalog package makes WinGet's COM server shut itself
         // down ("Server shutting down after exit event signaled"), sometimes before
         // the refresh result reaches the caller. That surfaces as an RPC failure
-        // although the catalog was updated; a new server answers the retry.
-        for (var attempt = 0; ; attempt++)
+        // although the catalog was updated. The package registration can signal the
+        // next server to exit as well (seen 0.3 s later), so the refresh is retried
+        // with a short pause until a server stays up.
+        try
         {
-            try
+            var refresh = await RetryWhileServerRestartsAsync(async () =>
             {
                 var manager = new Microsoft.Management.Deployment.PackageManager();
                 var reference = manager.GetPredefinedPackageCatalog(
                     Microsoft.Management.Deployment.PredefinedPackageCatalog.OpenWindowsCatalog);
                 reference.AcceptSourceAgreements = true;
-                var refresh = await reference.RefreshPackageCatalogAsync().AsTask(cancellationToken);
-                if (refresh.Status != Microsoft.Management.Deployment.RefreshPackageCatalogStatus.Ok)
-                {
-                    _catalogRefreshError = $"{refresh.Status} {refresh.ExtendedErrorCode?.Message}".Trim();
-                    return;
-                }
+                return await reference.RefreshPackageCatalogAsync().AsTask(cancellationToken);
+            }, static (attempt, token) => Task.Delay(TimeSpan.FromSeconds(attempt), token), cancellationToken);
+            if (refresh.Status != Microsoft.Management.Deployment.RefreshPackageCatalogStatus.Ok)
+            {
+                _catalogRefreshError = $"{refresh.Status} {refresh.ExtendedErrorCode?.Message}".Trim();
+                return;
+            }
 
-                _catalogRefreshError = null;
-                _identities.Clear();
-                return;
-            }
-            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            _catalogRefreshError = null;
+            _identities.Clear();
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception exception)
+        {
+            _catalogRefreshError = exception.Message;
+        }
+    }
+
+    internal const int ServerRestartAttempts = 4;
+
+    // Runs the operation again while WinGet's server has exited under it, pausing
+    // before each new attempt; any other failure, or the last one, is passed on.
+    internal static async Task<T> RetryWhileServerRestartsAsync<T>(
+        Func<Task<T>> operation, Func<int, CancellationToken, Task> pause, CancellationToken cancellationToken)
+    {
+        for (var attempt = 1; ; attempt++)
+        {
+            try
             {
-                throw;
+                return await operation();
             }
-            catch (Exception exception) when (attempt == 0 && IsServerGone(exception))
+            catch (Exception exception) when (attempt < ServerRestartAttempts && IsServerGone(exception) && !cancellationToken.IsCancellationRequested)
             {
-            }
-            catch (Exception exception)
-            {
-                _catalogRefreshError = exception.Message;
-                return;
+                await pause(attempt, cancellationToken);
             }
         }
     }

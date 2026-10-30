@@ -36,20 +36,19 @@ public sealed partial class WingetPackageService : IWingetPackageService
     public async Task<WingetPackageOffer> AssessAsync(
         InstalledApplication application, string packageId, string version, CancellationToken token)
     {
+        // WinGet's COM server exits after installing a fresh catalog package, and the
+        // next one can exit again; every call on a dead connection fails. Each retry
+        // passes the connection it last used, so a new one is opened.
         PackageCatalog? used = null;
         try
         {
-            return await AssessCoreAsync(application, packageId, version, catalog => used = catalog, null, token);
+            return await WingetFallbackUpdateProvider.RetryWhileServerRestartsAsync(() =>
+            {
+                var stale = used;
+                return AssessCoreAsync(application, packageId, version, catalog => used = catalog, stale, token);
+            }, static (attempt, pause) => Task.Delay(TimeSpan.FromSeconds(attempt), pause), token);
         }
         catch (OperationCanceledException) when (token.IsCancellationRequested) { throw; }
-        catch (Exception exception) when (used is not null && WingetFallbackUpdateProvider.IsServerGone(exception))
-        {
-            // WinGet's COM server exits after installing a fresh catalog package;
-            // every later call on the old connection fails. Reconnect once.
-            try { return await AssessCoreAsync(application, packageId, version, _ => { }, used, token); }
-            catch (OperationCanceledException) when (token.IsCancellationRequested) { throw; }
-            catch (Exception retry) { return new(null, retry.Message); }
-        }
         catch (Exception exception) { return new(null, exception.Message); }
     }
 

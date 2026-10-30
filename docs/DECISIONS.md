@@ -2,6 +2,10 @@
 
 Why Nax-Updater works the way it does. Newest first; every release adds its decisions here and updates [DESIGN.md](DESIGN.md). Each entry names the decision, the evidence that led to it, and what was rejected.
 
+## 0.17.41 (2026-10-30)
+
+**WinGet's catalog refresh is retried until its server stays up.** Installing a fresh catalog package makes WinGet's COM server exit, and its own log showed the next server exiting again 0.3 seconds later. Nax-Updater retried only once, so all 13 WinGet fallback checks of that scan failed with an RPC error (0x800706BE). The refresh and the package assessment now retry up to four times after a server exit, pausing one, two and three seconds between attempts; any other error is still reported at once.
+
 ## 0.17.40 (2026-10-29)
 
 **Column headers are centered and the driver action column fits the German labels.** The plain-text column headers sat higher than the sortable ones in both lists, and the driver action buttons cut off German labels such as "Exakten Download öffnen". The headers are now vertically centered, the driver action column starts wider (the name column a little narrower), and each action button shows its full label as a tooltip. The status line no longer keeps saying that the manufacturer drivers are being checked after the check has finished or a removal has failed.
