@@ -932,7 +932,9 @@ public sealed partial class MainPage : Page
         UpdatesWorkspace.Visibility = Visibility.Visible;
         DriversWorkspace.Visibility = Visibility.Collapsed;
         FilterBox.IsEnabled = true;
-        ShowSystemComponentsCheckBox.IsEnabled = false;
+        // Update checks never include Windows components (Windows Update services them), so
+        // the switch has nothing to show here and is hidden instead of greyed out.
+        ShowSystemComponentsCheckBox.Visibility = Visibility.Collapsed;
         ApplyUpdateFilter();
     }
 
