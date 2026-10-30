@@ -4,7 +4,7 @@ Why Nax-Updater works the way it does. Newest first; every release adds its deci
 
 ## 0.17.45 (2026-10-30)
 
-**A manufacturer's signed driver installer from its own server may be installed without a published hash.** TP-Link publishes no hash for its driver packages, so the TP-Link adapter was only forwarded to TP-Link's page. The owner decided that a package from the official manufacturer site, not a third-party site, may rely on the signature. TP-Link's ZIP holds one Inno Setup installer signed by "TP-Link Systems Inc."; the new kind `DownloadedZipExe` downloads it only from static.tp-link.com, requires that exact signature on the nested installer, and runs it silently. Beta packages are never offered. Intel RST stays forwarded, because its silent install requires accepting Intel's license (`-accepteula`), which is not a signature question.
+**A manufacturer's signed driver installer from its own server may be installed without a published hash.** TP-Link publishes no hash for its driver packages, so the TP-Link adapter was only forwarded to TP-Link's page. The owner decided that a package from the official manufacturer site, not a third-party site, may rely on the signature. TP-Link's ZIP holds one Inno Setup installer signed by "TP-Link Systems Inc.". The new kind `DownloadedZipExe` downloads it only from static.tp-link.com, requires that exact signature on the nested installer, and runs it silently. Beta packages are never offered. Intel RST stays forwarded, because its silent install requires accepting Intel's license (`-accepteula`), which is not a signature question.
 
 ## 0.17.44 (2026-10-30)
 
