@@ -1559,9 +1559,12 @@ var intelSourceOnlyRows = liveManufacturerDrivers.Results
 // The chipset utility and the RST storage driver are compared with Intel's package versions.
 Assert(liveManufacturerDrivers.Results.Where(IsComparedIntelPackage).All(static result =>
         result.Status is ManufacturerDriverStatus.Current or ManufacturerDriverStatus.Available or ManufacturerDriverStatus.OfficialSourceOnly &&
-        result.ExecutableUpdate is null && result.AvailableVersion is not null &&
+        result.AvailableVersion is not null &&
+        // Only RST installs directly (the owner accepted Intel's EULA), and only Intel's hashed, signed installer.
+        (result.ExecutableUpdate is null || result.Driver.Identity.EndsWith(":intel:rst", StringComparison.OrdinalIgnoreCase) &&
+            result.ExecutableUpdate.ExecutionPlan is { Sha256.Length: 64, ExpectedSigner: "Intel Corporation", RequireAuthenticode: true }) &&
         result.SourceUri?.Host.Contains("intel.com", StringComparison.OrdinalIgnoreCase) == true),
-    "An Intel chipset or RST row was offered for direct installation or lacked Intel's package version.");
+    "An Intel chipset row was offered for direct installation, an RST installer lacked Intel's hash and signer, or a row lacked Intel's package version.");
 static bool IsComparedIntelPackage(ManufacturerDriverResult result) =>
     result.Driver.Identity.EndsWith(":intel:chipset", StringComparison.OrdinalIgnoreCase) ||
     result.Driver.Identity.EndsWith(":intel:rst", StringComparison.OrdinalIgnoreCase);

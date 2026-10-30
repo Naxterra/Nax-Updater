@@ -45,9 +45,20 @@ internal static class IntelPackageRegression
 
     private static void intel_rst_package_is_offered_over_the_inbox_driver(Action<bool, string> assert)
     {
+        // The owner accepted Intel's EULA for RST, so the silent install with -accepteula is offered,
+        // bound to Intel's published SHA-256 and signature; -silent must be the last flag.
         var offer = ManufacturerDriverService.CheckIntelRst(Rst);
-        assert(offer is { Status: ManufacturerDriverStatus.Available, AvailableVersion: "18.7.6.1010.3", ExecutableUpdate: null },
-            $"Intel's RST 18.7.6 was not offered over the Windows inbox driver 15.44: {offer.Status}");
+        var plan = offer.ExecutableUpdate?.ExecutionPlan;
+        assert(offer is { Status: ManufacturerDriverStatus.Available, AvailableVersion: "18.7.6.1010.3" } &&
+               plan is { Kind: UpdateExecutionKind.DownloadedExe, Sha256: "A2B2E20D6D8100E9EE344746F80849524C64490B90686A13C09268CADB976B37", ExpectedSigner: "Intel Corporation", RequireAuthenticode: true, RequiresElevation: true } &&
+               plan.Arguments.SequenceEqual(["-onlydriver", "-accepteula", "-silent"]) && offer.ExecutableUpdate!.AvailableVersion == "18.7.6.1010",
+            $"Intel's RST 18.7.6 was not offered as Intel's verified silent installer over the Windows inbox driver 15.44: {offer.Status}");
+        var bound = offer.ExecutableUpdate! with
+        {
+            ExecutionPlan = plan! with { CheckGenerationId = Guid.NewGuid(), CreatedAt = DateTimeOffset.UtcNow, ExpiresAt = DateTimeOffset.UtcNow.AddMinutes(15), InstalledVersionPrecondition = Rst.InstalledVersion },
+            CorrelationKey = "fixture"
+        };
+        assert(UpdatePlanValidator.Validate(bound, DateTimeOffset.UtcNow) is null, $"The RST plan was rejected: {UpdatePlanValidator.Validate(bound, DateTimeOffset.UtcNow)}");
         var installed = ManufacturerDriverService.CheckIntelRst(Rst with { InstalledVersion = "18.7.6.1010" });
         assert(installed.Status == ManufacturerDriverStatus.Current, "The installed RST 18.7.6 driver was not current.");
     }

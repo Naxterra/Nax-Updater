@@ -158,9 +158,45 @@ public sealed partial class ManufacturerDriverService(HttpClient httpClient)
                 "Intel's official 10th/11th-generation RST package was checked. Its umbrella package version is shown, but no update is claimed because storage/RAID applicability and OEM customization must be preserved.");
         return VersionOrder.Compare(driverVersion, driver.InstalledVersion) > 0
             ? new ManufacturerDriverResult(driver, ManufacturerDriverStatus.Available, package, "Intel Rapid Storage Technology", IntelRapidStorageTenEleven,
-                $"Intel's RST package {package} for 10th and 11th generation platforms supports this SATA controller and contains driver {driverVersion}; the installed driver is {driver.InstalledVersion}. Intel's installer replaces the storage driver, so it is not run directly.", null)
+                $"Intel's RST package {package} for 10th and 11th generation platforms supports this SATA controller and contains driver {driverVersion}; the installed driver is {driver.InstalledVersion}.",
+                IntelRstOffer(driver, driverVersion))
             : Current(driver, package, "Intel Rapid Storage Technology", IntelRapidStorageTenEleven,
                 $"Intel's RST package {package} contains driver {driverVersion}; the installed storage driver {driver.InstalledVersion} is current.");
+    }
+
+    // Intel's SetupRST.exe with the SHA-256 Intel publishes on the download page and Intel's
+    // signature. A silent install requires accepting Intel's EULA (-accepteula); the owner
+    // accepted it for RST on 2026-10-30. -onlydriver installs the driver without Intel's
+    // storage management application, and -silent must come last.
+    internal static UpdateCheckResult IntelRstOffer(InstalledHardwareDriver driver, string driverVersion)
+    {
+        var plan = new UpdateExecutionPlan(
+            UpdateExecutionKind.DownloadedExe,
+            new Uri("https://downloadmirror.intel.com/773229/SetupRST.exe"),
+            "SetupRST.exe",
+            "A2B2E20D6D8100E9EE344746F80849524C64490B90686A13C09268CADB976B37",
+            "Intel Corporation",
+            null,
+            ["-onlydriver", "-accepteula", "-silent"],
+            true,
+            ["downloadmirror.intel.com"],
+            [],
+            RequireAuthenticode: true);
+        return new UpdateCheckResult(
+            driver.Identity,
+            driver.DeviceName,
+            driver.InstalledVersion,
+            driverVersion,
+            UpdateStatus.Available,
+            "manufacturer-driver:intel-rst",
+            "Intel Rapid Storage Technology",
+            "neutral",
+            "Intel RST driver installer",
+            "x64",
+            "stable",
+            IntelRapidStorageTenEleven.AbsoluteUri,
+            "Intel's RST installer is protected by Intel's published SHA-256 and Authenticode publisher; Windows needs a restart to load the new storage driver.",
+            plan);
     }
 
     internal async Task<ManufacturerDriverResult> CheckRazerSuiteAsync(
@@ -629,7 +665,7 @@ public sealed partial class ManufacturerDriverService(HttpClient httpClient)
         try
         {
             using var request = new HttpRequestMessage(HttpMethod.Get, uri);
-            request.Headers.UserAgent.ParseAdd("NaxUpdater/0.17.46");
+            request.Headers.UserAgent.ParseAdd("NaxUpdater/0.17.47");
             using var response = await httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, timeout.Token);
             response.EnsureSuccessStatusCode();
             return await response.Content.ReadAsStringAsync(timeout.Token);
@@ -895,8 +931,11 @@ public sealed partial class ManufacturerDriverService(HttpClient httpClient)
         }
         if (driver.Provider.Contains("Intel", StringComparison.OrdinalIgnoreCase))
         {
+            // After Intel's RST driver is installed the controller is named "... RST Premium
+            // Controller" and uses an oemNN.inf, so it must stay in the same row.
             if (driver.InfName?.Equals("iastorav.inf", StringComparison.OrdinalIgnoreCase) == true ||
-                driver.DeviceName.Contains("Rapid Storage", StringComparison.OrdinalIgnoreCase))
+                driver.DeviceName.Contains("Rapid Storage", StringComparison.OrdinalIgnoreCase) ||
+                Regex.IsMatch(driver.DeviceName, @"\bRST\b", RegexOptions.CultureInvariant))
                 return "intel:rst";
             if (IsIntelManagementComponent(driver)) return "intel:management-engine";
             if (driver.DeviceClass.Equals("System", StringComparison.OrdinalIgnoreCase)) return "intel:chipset";

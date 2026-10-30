@@ -1165,3 +1165,9 @@ en: The nested installer did not match an approved Authenticode publisher.
 de: Der enthaltene Installer passt zu keinem freigegebenen Authenticode-Herausgeber.
 en: Archive; the nested installer's publisher is verified before installation
 de: Archiv, dessen enthaltener Installer vor der Installation auf seinen Herausgeber geprüft wird
+en: Intel's RST package {0} for 10th and 11th generation platforms supports this SATA controller and contains driver {1}; the installed driver is {2}.
+de: Intels RST-Paket {0} für Plattformen der 10. und 11. Generation unterstützt diesen SATA-Controller und enthält den Treiber {1}. Installiert ist {2}.
+en: Intel's RST installer is protected by Intel's published SHA-256 and Authenticode publisher; Windows needs a restart to load the new storage driver.
+de: Intels RST-Installer ist durch Intels veröffentlichten SHA-256 und den Authenticode-Herausgeber geschützt. Windows braucht einen Neustart, um den neuen Speichertreiber zu laden.
+en: Intel RST driver installer
+de: Intels RST-Treiberinstaller
