@@ -2,6 +2,10 @@
 
 Why Nax-Updater works the way it does. Newest first; every release adds its decisions here and updates [DESIGN.md](DESIGN.md). Each entry names the decision, the evidence that led to it, and what was rejected.
 
+## 0.17.48 (2026-10-31)
+
+**The license changed to the Nax Source-Available License 1.0.** You may still install and use the app. Modifying, redistributing or selling it needs written permission.
+
 ## 0.17.47 (2026-10-30)
 
 **Intel RST installs directly, with Intel's license accepted by the owner.** Intel's silent RST installation requires `-accepteula`, which accepts Intel's EULA. The owner accepted it for RST on 2026-10-30, so the RST row now offers Intel's `SetupRST.exe` 18.7.6.1010.3, bound to the SHA-256 that Intel publishes on its download page and to Intel's signature, and runs it as `-onlydriver -accepteula -silent`. The license decision covers only RST. The controller stays in the RST row after the update, when Windows names it "RST Premium Controller", and Windows needs a restart to load the new storage driver.
