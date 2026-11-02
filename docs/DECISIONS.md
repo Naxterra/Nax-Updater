@@ -2,6 +2,10 @@
 
 Why Nax-Updater works the way it does. Newest first; every release adds its decisions here and updates [DESIGN.md](DESIGN.md). Each entry names the decision, the evidence that led to it, and what was rejected.
 
+## 0.17.50 (2026-11-02)
+
+**Nax Event Viewer is checked against its GitHub releases.** The app has published releases on GitHub, but the source list had no entry for it, so its row said that no verifiable update source exists. It now uses the same rules as Nax-Notepad: the installer asset is chosen by its name, its SHA-256 must match the digest GitHub publishes for the asset, and the installation keeps the scope it already has. Nax-DeepL stays without a source, because its repository has no release yet.
+
 ## 0.17.49 (2026-11-02)
 
 **Per-user registrations are read once.** Windows keeps one `HKCU\Software` for 32-bit and 64-bit programs, and only `HKLM` is split into two views. The inventory read the user hive in both views, so every per-user uninstall entry appeared twice. Entries with an install path were merged afterwards, but rustup's entry has none and showed up as two update rows. The user hive is now read in one view.

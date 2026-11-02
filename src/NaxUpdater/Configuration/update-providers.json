@@ -136,6 +136,21 @@
       "requiresElevation": true
     },
     {
+      "id": "Naxterra.NaxEventViewer",
+      "displayName": "Nax Event Viewer",
+      "publisherContains": "Naxterra",
+      "repository": "Naxterra/Nax-EventViewer",
+      "assetNamePattern": "^Nax-EventViewer-(?<version>[0-9]+(?:\\.[0-9]+)+)-setup\\.exe$",
+      "architecture": "x64",
+      "language": "neutral",
+      "unsigned": true,
+      "installerKind": "DownloadedExe",
+      "installerArguments": [ "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART", "/ALLUSERS" ],
+      "currentUserInstallerArguments": [ "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART", "/CURRENTUSER" ],
+      "runningProcessNames": [ "nax-eventviewer" ],
+      "requiresElevation": true
+    },
+    {
       "id": "Naxterra.NaxRenamer",
       "displayName": "Nax-Renamer",
       "publisherContains": "Naxterra",
