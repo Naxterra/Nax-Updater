@@ -17,8 +17,10 @@ internal sealed partial class RegistryInventoryScanner
         var installerUpgradeFamilies = ReadInstallerUpgradeFamilies(issues);
         ScanHive(RegistryHive.LocalMachine, RegistryView.Registry64, InstallScope.Machine, installerUpgradeFamilies, results, issues);
         ScanHive(RegistryHive.LocalMachine, RegistryView.Registry32, InstallScope.Machine, installerUpgradeFamilies, results, issues);
+        // Windows keeps one HKCU\Software for 32-bit and 64-bit programs (only HKLM is split),
+        // so the user hive is read once. Reading it in both views listed every per-user
+        // entry twice, and entries without an install path (rustup) were never merged.
         ScanHive(RegistryHive.CurrentUser, RegistryView.Registry64, InstallScope.CurrentUser, installerUpgradeFamilies, results, issues);
-        ScanHive(RegistryHive.CurrentUser, RegistryView.Registry32, InstallScope.CurrentUser, installerUpgradeFamilies, results, issues);
         return results;
     }
 

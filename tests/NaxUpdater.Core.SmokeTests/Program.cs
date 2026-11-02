@@ -1179,6 +1179,15 @@ Assert(PolicyService.IsMatch(battleNetPolicy, "Battle.net", "Blizzard Entertainm
 Assert(!PolicyService.IsMatch(battleNetPolicy, "Battle.net", "Unrelated Publisher"), "Publisher matching accepted an unrelated app.");
 
 var snapshot = await new ApplicationInventoryService(policyPath).ScanAsync();
+// per_user_registration_is_listed_once: HKCU is not split into 32-bit and 64-bit views,
+// so reading it in both listed every per-user entry twice (rustup without an install path).
+var repeatedPerUser = snapshot.Applications
+    .Where(static app => app.Scope == InstallScope.CurrentUser && !app.Identity.StartsWith("msix:", StringComparison.OrdinalIgnoreCase))
+    .GroupBy(static app => $"{app.DisplayName}|{app.InstalledVersion}|{app.Publisher}", StringComparer.OrdinalIgnoreCase)
+    .Where(static group => group.Count() > 1)
+    .Select(static group => group.Key)
+    .ToArray();
+Assert(repeatedPerUser.Length == 0, "A per-user registration was listed more than once: " + string.Join(", ", repeatedPerUser));
 Assert(snapshot.Applications.Count > 0, "The inventory scan did not find any applications.");
 Assert(snapshot.Applications.All(static app => !string.IsNullOrWhiteSpace(app.DisplayName)), "An application has an empty display name.");
 Assert(snapshot.Applications.All(static app => app.Evidence.Count > 0), "Every application must retain detection evidence.");

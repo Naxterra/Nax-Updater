@@ -2,6 +2,10 @@
 
 Why Nax-Updater works the way it does. Newest first; every release adds its decisions here and updates [DESIGN.md](DESIGN.md). Each entry names the decision, the evidence that led to it, and what was rejected.
 
+## 0.17.49 (2026-11-02)
+
+**Per-user registrations are read once.** Windows keeps one `HKCU\Software` for 32-bit and 64-bit programs, and only `HKLM` is split into two views. The inventory read the user hive in both views, so every per-user uninstall entry appeared twice. Entries with an install path were merged afterwards, but rustup's entry has none and showed up as two update rows. The user hive is now read in one view.
+
 ## 0.17.48 (2026-10-31)
 
 **The license changed to the Nax Source-Available License 1.0.** You may still install and use the app. Modifying, redistributing or selling it needs written permission.
