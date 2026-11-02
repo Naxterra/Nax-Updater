@@ -2,6 +2,10 @@
 
 Why Nax-Updater works the way it does. Newest first; every release adds its decisions here and updates [DESIGN.md](DESIGN.md). Each entry names the decision, the evidence that led to it, and what was rejected.
 
+## 0.17.52 (2026-11-02)
+
+**A connected device's driver version is read from its own driver key.** After the Intel I219 and TP-Link updates, Windows had installed the new drivers and the device's driver key held them, but Win32_PnPSignedDriver kept reporting the replaced drivers inside the running app for more than a minute. The update was therefore reported as unverified, and the driver key, read again as a registration, showed the same adapter a second time as not connected. The version, INF, provider and date of a connected device now come from the driver key that its device entry names, and that key is no longer listed as a separate registration. Waiting longer was rejected, because the stale answer outlasted any reasonable wait.
+
 ## 0.17.51 (2026-11-02)
 
 **A driver install is verified for about 31 seconds instead of three.** TP-Link's setup for the Archer TBE400UH installs its files, starts a helper that adds the INF, and the adapter then restarts. Windows logged the new driver as installed a few seconds after the setup returned, while Nax-Updater had already read the old version three times within about three seconds and reported the update as unverified. A manufacturer driver is now read up to six times with growing pauses, and an application keeps the short check. A longer fixed wait for every update was rejected, because applications report their new version at once and a failed update should not hold the window for half a minute.

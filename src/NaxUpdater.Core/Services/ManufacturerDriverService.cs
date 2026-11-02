@@ -665,7 +665,7 @@ public sealed partial class ManufacturerDriverService(HttpClient httpClient)
         try
         {
             using var request = new HttpRequestMessage(HttpMethod.Get, uri);
-            request.Headers.UserAgent.ParseAdd("NaxUpdater/0.17.51");
+            request.Headers.UserAgent.ParseAdd("NaxUpdater/0.17.52");
             using var response = await httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, timeout.Token);
             response.EnsureSuccessStatusCode();
             return await response.Content.ReadAsStringAsync(timeout.Token);
@@ -680,6 +680,7 @@ public sealed partial class ManufacturerDriverService(HttpClient httpClient)
     {
         var candidates = new List<InstalledHardwareDriver>();
         var signedDrivers = ReadSignedDrivers(issues);
+        var presentDriverKeys = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         try
         {
             using var searcher = new ManagementObjectSearcher(
@@ -700,6 +701,23 @@ public sealed partial class ManufacturerDriverService(HttpClient httpClient)
                     continue;
                 }
                 signedDrivers.TryGetValue(deviceId, out var signed);
+                // Win32_PnPSignedDriver kept reporting the replaced Intel and TP-Link drivers in
+                // the running app for more than a minute after Windows had installed the new ones,
+                // while the device's own driver key already held them. The key is authoritative.
+                var driverKey = ReadDeviceDriverKey(deviceId);
+                if (driverKey is not null)
+                {
+                    presentDriverKeys.Add(driverKey.Path);
+                    signed = signed is null
+                        ? new SignedDriverData(null, null, null, driverKey.Provider, driverKey.Version, driverKey.Date, driverKey.InfName)
+                        : signed with
+                        {
+                            Provider = driverKey.Provider ?? signed.Provider,
+                            Version = driverKey.Version ?? signed.Version,
+                            Date = driverKey.Date ?? signed.Date,
+                            InfName = driverKey.InfName ?? signed.InfName
+                        };
+                }
                 var provider = signed?.Provider ?? "Microsoft";
                 var manufacturer = Text(entity["Manufacturer"]) ?? signed?.Manufacturer ?? provider;
                 var hardwareId = Strings(entity["HardwareID"]).FirstOrDefault() ?? deviceId;
@@ -726,7 +744,9 @@ public sealed partial class ManufacturerDriverService(HttpClient httpClient)
             issues.Add($"Present PnP devices: {exception.Message}");
         }
 
-        candidates.AddRange(ReadInstalledDriverRegistrations(issues));
+        // A present device's own driver key is already its row; reading it again as a
+        // registration showed the same adapter a second time as "not connected".
+        candidates.AddRange(ReadInstalledDriverRegistrations(issues, presentDriverKeys));
         // Network printers have no present PnP device, so their KX driver is read from the
         // print spooler's driver list.
         // A USB-connected Kyocera printer also has a PnP row; the KX row replaces it.
@@ -770,7 +790,31 @@ public sealed partial class ManufacturerDriverService(HttpClient httpClient)
         return results;
     }
 
-    private static IReadOnlyList<InstalledHardwareDriver> ReadInstalledDriverRegistrations(ICollection<string> issues)
+    private static DeviceDriverKey? ReadDeviceDriverKey(string deviceId)
+    {
+        try
+        {
+            using var device = Registry.LocalMachine.OpenSubKey($@"SYSTEM\CurrentControlSet\Enum\{deviceId}");
+            if (device?.GetValue("Driver") is not string path || string.IsNullOrWhiteSpace(path))
+            {
+                return null;
+            }
+            using var key = Registry.LocalMachine.OpenSubKey($@"{DriverClassPath}\{path}");
+            if (key is null)
+            {
+                return null;
+            }
+            return new DeviceDriverKey(path, Read(key, "ProviderName"), Read(key, "DriverVersion"),
+                NormalizeDate(Read(key, "DriverDate")), Read(key, "InfPath"));
+        }
+        catch (Exception exception) when (exception is UnauthorizedAccessException or IOException or System.Security.SecurityException)
+        {
+            return null;
+        }
+    }
+
+    private static IReadOnlyList<InstalledHardwareDriver> ReadInstalledDriverRegistrations(
+        ICollection<string> issues, IReadOnlySet<string> presentDriverKeys)
     {
         var results = new List<InstalledHardwareDriver>();
         try
@@ -790,6 +834,10 @@ public sealed partial class ManufacturerDriverService(HttpClient httpClient)
                 var classLabel = Read(classKey, "Class") ?? className;
                 foreach (var instanceName in classKey.GetSubKeyNames().Where(static name => NumericKeyRegex().IsMatch(name)))
                 {
+                    if (presentDriverKeys.Contains($@"{className}\{instanceName}"))
+                    {
+                        continue;
+                    }
                     try
                     {
                         using var instance = classKey.OpenSubKey(instanceName);
@@ -1271,6 +1319,8 @@ public sealed partial class ManufacturerDriverService(HttpClient httpClient)
 
     [GeneratedRegex(@"VID_1532&PID_(?<product>[0-9A-F]{4})", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
     private static partial Regex RazerProductRegex();
+
+    private sealed record DeviceDriverKey(string Path, string? Provider, string? Version, string? Date, string? InfName);
 
     private sealed record SignedDriverData(
         string? DeviceName,

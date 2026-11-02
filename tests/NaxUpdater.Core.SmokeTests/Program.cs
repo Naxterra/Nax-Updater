@@ -1483,6 +1483,14 @@ AssertIntegrationAttached(
 
 using var liveManufacturerClient = new HttpClient { Timeout = TimeSpan.FromSeconds(30) };
 var liveManufacturerDrivers = await new ManufacturerDriverService(liveManufacturerClient).CheckAsync();
+// connected_device_is_not_listed_again_as_disconnected: after the I219 update the adapter's
+// own driver key appeared as a second, "not connected" row with the new version.
+var connectedDriverRows = liveManufacturerDrivers.Results.Where(static result => result.Driver.IsPresent)
+    .Select(static result => $"{result.Driver.DeviceName}|{result.Driver.DeviceClass}").ToHashSet(StringComparer.OrdinalIgnoreCase);
+var connectedAgainAsDisconnected = liveManufacturerDrivers.Results.Where(result => !result.Driver.IsPresent &&
+    connectedDriverRows.Contains($"{result.Driver.DeviceName}|{result.Driver.DeviceClass}")).Select(static result => result.Driver.DeviceName).ToArray();
+Assert(connectedAgainAsDisconnected.Length == 0,
+    $"A connected device was listed a second time as not connected: {string.Join(", ", connectedAgainAsDisconnected)}");
 var liveNvidiaDriver = liveManufacturerDrivers.Results.FirstOrDefault(static result =>
     result.Driver.DeviceName.Contains("NVIDIA GeForce", StringComparison.OrdinalIgnoreCase));
 if (liveNvidiaDriver is not null)
