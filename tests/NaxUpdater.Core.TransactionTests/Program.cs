@@ -367,6 +367,18 @@ var driverReboot = await new UpdateTransactionCoordinator(driverRebootBackend, v
     .ApplyAsync(driverOffer, Path.GetTempPath());
 Assert(driverReboot.RequiresRestart && !driverReboot.IsSuccess,
     "A driver whose installer asked for a restart was counted as completed before Windows restarted.");
+// driver_that_appears_after_the_setup_exits_is_verified: TP-Link's setup exits before its
+// helper installs the INF and the adapter restarts, so the new driver is read only on the
+// fifth look. An application keeps its short check and stays unverified with the same timing.
+static Task NoWait(TimeSpan delay, CancellationToken token) => Task.CompletedTask;
+var lateDriverBackend = new ScriptedBackend([driverOffer, driverOffer, driverOffer, driverOffer, driverOffer, driverOffer, driverInstalled], new(0, true, null));
+var lateDriver = await new UpdateTransactionCoordinator(lateDriverBackend, verificationAttempts: 1, delay: NoWait)
+    .ApplyAsync(driverOffer, Path.GetTempPath());
+var lateApplicationBackend = new ScriptedBackend([offer, offer, offer, offer, offer, offer, installed], new(0, true, null));
+var lateApplication = await new UpdateTransactionCoordinator(lateApplicationBackend, verificationAttempts: 1, delay: NoWait)
+    .ApplyAsync(offer, Path.GetTempPath());
+Assert(lateDriver.IsSuccess && lateApplication.Stage == UpdateTransactionStage.Indeterminate,
+    $"A driver that Windows reported a few seconds after its setup exited was not verified, or an application waited as long: {lateDriver.Stage} · {lateApplication.Stage}");
 var uacCanceledBackend = new ScriptedBackend([offer, offer, offer], new(1223, false, "UAC canceled", NotStarted: true));
 var uacCanceled = await new UpdateTransactionCoordinator(uacCanceledBackend, verificationAttempts: 1)
     .ApplyAsync(offer, Path.GetTempPath());

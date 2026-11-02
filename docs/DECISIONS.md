@@ -2,6 +2,12 @@
 
 Why Nax-Updater works the way it does. Newest first; every release adds its decisions here and updates [DESIGN.md](DESIGN.md). Each entry names the decision, the evidence that led to it, and what was rejected.
 
+## 0.17.51 (2026-11-02)
+
+**A driver install is verified for about 31 seconds instead of three.** TP-Link's setup for the Archer TBE400UH installs its files, starts a helper that adds the INF, and the adapter then restarts. Windows logged the new driver as installed a few seconds after the setup returned, while Nax-Updater had already read the old version three times within about three seconds and reported the update as unverified. A manufacturer driver is now read up to six times with growing pauses, and an application keeps the short check. A longer fixed wait for every update was rejected, because applications report their new version at once and a failed update should not hold the window for half a minute.
+
+**System.Security.Cryptography.Pkcs and System.Management follow the .NET 11 runtime.** NuGet reported a high and a moderate advisory for Pkcs 10.0.11. Both packages now use the version that matches the bundled .NET 11 runtime, and THIRD-PARTY-NOTICES.txt carries the notices text of that version.
+
 ## 0.17.50 (2026-11-02)
 
 **Nax Event Viewer is checked against its GitHub releases.** The app has published releases on GitHub, but the source list had no entry for it, so its row said that no verifiable update source exists. It now uses the same rules as Nax-Notepad: the installer asset is chosen by its name, its SHA-256 must match the digest GitHub publishes for the asset, and the installation keeps the scope it already has. Nax-DeepL stays without a source, because its repository has no release yet.

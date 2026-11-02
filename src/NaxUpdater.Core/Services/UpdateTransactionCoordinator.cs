@@ -125,21 +125,27 @@ public sealed class UpdateTransactionCoordinator
     private readonly IUpdateOperationJournal? _journal;
     private readonly IUpdateTransactionLeaseProvider? _leaseProvider;
     private readonly int _verificationAttempts;
+    private readonly int _driverVerificationAttempts;
     private readonly Func<TimeSpan, CancellationToken, Task> _delay;
     private readonly TimeProvider _timeProvider;
 
+    // A driver setup often hands the INF to a helper process or service and exits first, and
+    // the device then restarts, so the new driver can appear many seconds after the exit.
+    // Six reads wait about 31 seconds in all before the result is called unverified.
     public UpdateTransactionCoordinator(
         IUpdateTransactionBackend backend,
         IUpdateOperationJournal? journal = null,
         IUpdateTransactionLeaseProvider? leaseProvider = null,
         int verificationAttempts = 3,
         Func<TimeSpan, CancellationToken, Task>? delay = null,
-        TimeProvider? timeProvider = null)
+        TimeProvider? timeProvider = null,
+        int driverVerificationAttempts = 6)
     {
         _backend = backend;
         _journal = journal;
         _leaseProvider = leaseProvider;
         _verificationAttempts = Math.Max(1, verificationAttempts);
+        _driverVerificationAttempts = Math.Max(_verificationAttempts, driverVerificationAttempts);
         _delay = delay ?? Task.Delay;
         _timeProvider = timeProvider ?? TimeProvider.System;
     }
@@ -481,10 +487,13 @@ public sealed class UpdateTransactionCoordinator
         CancellationToken cancellationToken)
     {
         UpdateCheckResult? observed = null;
-        for (var attempt = 0; attempt < _verificationAttempts; attempt++)
+        var attempts = expected.ProviderId.StartsWith("manufacturer-driver:", StringComparison.Ordinal)
+            ? _driverVerificationAttempts
+            : _verificationAttempts;
+        for (var attempt = 0; attempt < attempts; attempt++)
         {
             observed = await _backend.RevalidateAsync(expected, cancellationToken);
-            if (ReachedTarget(expected, observed) || ReconciledStoreQueue(expected, observed) || attempt + 1 >= _verificationAttempts)
+            if (ReachedTarget(expected, observed) || ReconciledStoreQueue(expected, observed) || attempt + 1 >= attempts)
             {
                 return observed;
             }
