@@ -10,6 +10,23 @@ internal static class HistoryRegression
         await every_finished_update_is_kept_newest_first(assert);
         history_keeps_only_the_newest_entries(assert);
         damaged_history_file_is_kept_aside(assert);
+        interrupted_write_leftovers_are_removed(assert);
+    }
+
+    private static void interrupted_write_leftovers_are_removed(Action<bool, string> assert)
+    {
+        var folder = Folder();
+        try
+        {
+            // An interrupted write leaves its own temporary file; earlier versions used ".tmp".
+            var path = Path.Combine(folder, "update-history.json");
+            File.WriteAllText(path + ".0123456789abcdef0123456789abcdef.tmp", "partial");
+            File.WriteAllText(path + ".tmp", "partial");
+            new FileUpdateHistory(path).Append(Entry("After the interruption"));
+            var left = Directory.GetFiles(folder).Select(Path.GetFileName).ToArray();
+            assert(left.SequenceEqual(["update-history.json"]), $"Temporary files of interrupted writes were left behind: {string.Join(", ", left)}");
+        }
+        finally { Directory.Delete(folder, true); }
     }
 
     private static async Task every_finished_update_is_kept_newest_first(Action<bool, string> assert)

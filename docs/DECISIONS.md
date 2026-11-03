@@ -2,6 +2,14 @@
 
 Why Nax-Updater works the way it does. Newest first; every release adds its decisions here and updates [DESIGN.md](DESIGN.md). Each entry names the decision, the evidence that led to it, and what was rejected.
 
+## 0.17.58 (2026-11-03)
+
+**A damaged choices file can be replaced from the app.** The hold and skip buttons read the current choice before changing it, so a damaged file made every click fail and kept Update All stopped until the file was deleted by hand. The buttons now toggle inside the write, which keeps a damaged file aside and starts a new one, and the message that stops Update All names this way out.
+
+**Leftovers of interrupted writes are removed.** Each write uses a temporary file of its own, so an interrupted one left a file that nothing removed. Before each write, the leftovers of the same file are deleted, together with the fixed temporary name of earlier versions. Only one writer exists for each file and only one Nax-Updater runs per session, so such a file can only be a leftover.
+
+**URL redaction covers tokens with dots and passwords with a slash.** A JSON web token in a path segment and a password with an unencoded "/" were left in copied diagnostics. Path segments with dots now count as tokens unless they end in a short file extension, and the user part of a URL ends at its last "@", while an "@" in a path and a port number are kept.
+
 ## 0.17.57 (2026-11-03)
 
 **Unreadable skip and hold choices stop Update All.** A damaged or locked choices file was read as empty, so every held application and skipped release went back into the batch without a warning. Reading now reports the failure, Update All does not start and names the reason, and only a new choice by the owner keeps the damaged file aside and starts a new one.

@@ -769,8 +769,8 @@ en: The history path has no directory.
 de: Der Pfad des Verlaufs hat keinen Ordner.
 en: The preferences path has no directory.
 de: Der Pfad der Einstellungen hat keinen Ordner.
-en: The saved skip and hold choices could not be read: {0}
-de: Die gespeicherten Einstellungen zum Überspringen und Festhalten konnten nicht gelesen werden: {0}
+en: The saved skip and hold choices could not be read: {0} Holding or skipping an application again keeps the damaged file aside and starts a new one.
+de: Die gespeicherten Einstellungen zum Überspringen und Festhalten konnten nicht gelesen werden: {0} Wenn Sie eine Anwendung erneut festhalten oder überspringen, wird die beschädigte Datei beiseitegelegt und eine neue angelegt.
 en: The journal path has no directory.
 de: Der Pfad des Journals hat keinen Ordner.
 en: The last verified Razer catalog mapping is shown because the live support page did not return complete machine-readable content.

@@ -74,13 +74,17 @@ internal static class PreferenceDiagnosticsRegression
             var reported = false;
             try { preferences.ReadAll(); }
             catch (UpdatePreferencesUnreadableException) { reported = true; }
-            preferences.SetHeld(Update("2.0.0"), true);
+            // The buttons toggle without reading first, so the owner can replace a damaged file.
+            preferences.ToggleHeld(Update("2.0.0"));
             // A second damage keeps its own copy instead of replacing the first one.
             File.WriteAllText(path, "[ damaged again");
             Thread.Sleep(5);
+            preferences.ToggleSkippedVersion(Update("2.0.0"));
+            var skippedOnNewFile = FileUpdatePreferences.SkipsRelease(preferences.Get(Update("2.0.0")), Update("2.0.0"));
             preferences.SetHeld(Update("2.0.0"), true);
             var keptAside = Directory.GetFiles(folder, "update-preferences.json.unreadable-*").Select(File.ReadAllText).Order().ToArray();
-            assert(reported && keptAside.SequenceEqual(["[ damaged again", "[ not json"]) && preferences.ExclusionFor(Update("2.0.0")) == UpdateExclusion.Held,
+            assert(reported && skippedOnNewFile && keptAside.SequenceEqual(["[ damaged again", "[ not json"]) &&
+                   preferences.ExclusionFor(Update("2.0.0")) == UpdateExclusion.Held,
                 $"A damaged preferences file was read as empty, overwritten, or lost the new choice: reported {reported}, kept {keptAside.Length}");
         }
         finally { Directory.Delete(folder, true); }
@@ -97,15 +101,24 @@ internal static class PreferenceDiagnosticsRegression
             signed in as robin on WORKSTATION-7
             https://mirror-user:p4ssw0rd@mirror.example.com/files/setup.exe
             https://cdn.example.com/dl/AbCdEf0123456789AbCdEf0123456789xyz/setup.exe
+            https://cdn.example.com/t/eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOjEyMzQ1Njc4OTB9.SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c/setup.exe
+            https://mirror-user:pa/ss9w0rd@slash.example.com/files/setup.exe
+            https://registry.example.org/@scope/package
+            https://ports.example.com:8443/files/user@example/setup.exe
             """;
         var redacted = UpdateDiagnostics.Redact(text, "Robin", "WORKSTATION-7");
-        string[] secrets = ["Robin", "robin", "WORKSTATION-7", "AppData", "X-Amz", "s3cr3tvalue", "ghp_", "Downloads", "p4ssw0rd", "mirror-user", "AbCdEf0123456789"];
+        string[] secrets = ["Robin", "robin", "WORKSTATION-7", "AppData", "X-Amz", "s3cr3tvalue", "ghp_", "Downloads", "p4ssw0rd", "mirror-user", "AbCdEf0123456789",
+            "eyJhbGci", "ss9w0rd"];
         var leaked = secrets.Where(secret => redacted.Contains(secret, StringComparison.Ordinal)).ToArray();
         assert(leaked.Length == 0 && redacted.Contains(@"<path>\setup.exe failed", StringComparison.Ordinal) &&
                redacted.Contains("https://objects.example.com/release/setup.exe", StringComparison.Ordinal) &&
                redacted.Contains(@"<network path>\file.msi", StringComparison.Ordinal) &&
                redacted.Contains("https://mirror.example.com/files/setup.exe", StringComparison.Ordinal) &&
-               redacted.Contains("https://cdn.example.com/dl/<redacted>/setup.exe", StringComparison.Ordinal),
+               redacted.Contains("https://cdn.example.com/dl/<redacted>/setup.exe", StringComparison.Ordinal) &&
+               redacted.Contains("https://cdn.example.com/t/<redacted>/setup.exe", StringComparison.Ordinal) &&
+               redacted.Contains("https://slash.example.com/files/setup.exe", StringComparison.Ordinal) &&
+               redacted.Contains("https://registry.example.org/@scope/package", StringComparison.Ordinal) &&
+               redacted.Contains("https://ports.example.com:8443/files/user@example/setup.exe", StringComparison.Ordinal),
             $"The diagnostics report kept a private detail or lost what is needed to read it ({string.Join(", ", leaked)}):{Environment.NewLine}{redacted}");
     }
 
@@ -116,7 +129,7 @@ internal static class PreferenceDiagnosticsRegression
         var failed = new UpdateHistoryEntry(Guid.NewGuid(), "Fixture App", "registry:LocalMachine:Registry64:{11111111-1111-1111-1111-111111111111}",
             "github:vendor/app", "1.0.0", "2.0.0", "1.0.0", UpdateTransactionStage.FailedNeedsAttention, 1603, false,
             @"The updater exited with code 1603. Log: D:\Logs\private\install.log", DateTimeOffset.UtcNow, DateTimeOffset.UtcNow);
-        var report = UpdateDiagnostics.Build(Update("2.0.0", plan: plan), "Failed", "The updater exited with code 1603.", [failed], "0.17.57");
+        var report = UpdateDiagnostics.Build(Update("2.0.0", plan: plan), "Failed", "The updater exited with code 1603.", [failed], "0.17.58");
         assert(report.Contains("download host vendor.example", StringComparison.Ordinal) && report.Contains("exit code 1603", StringComparison.Ordinal) &&
                report.Contains("FailedNeedsAttention", StringComparison.Ordinal) && !report.Contains("sig=abc", StringComparison.Ordinal) &&
                !report.Contains(@"D:\Logs", StringComparison.Ordinal) && report.Contains(@"<path>\install.log", StringComparison.Ordinal),

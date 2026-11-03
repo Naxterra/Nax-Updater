@@ -60,7 +60,7 @@ public sealed class FileUpdatePreferences(string path)
             }
             catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or JsonException)
             {
-                throw new UpdatePreferencesUnreadableException($"The saved skip and hold choices could not be read: {exception.Message}", exception);
+                throw new UpdatePreferencesUnreadableException($"The saved skip and hold choices could not be read: {exception.Message} Holding or skipping an application again keeps the damaged file aside and starts a new one.", exception);
             }
         }
     }
@@ -73,6 +73,14 @@ public sealed class FileUpdatePreferences(string path)
 
     public void SetHeld(UpdateCheckResult update, bool held) =>
         Change(update, current => current with { Held = held });
+
+    // The buttons toggle inside Change, which reads the current state itself. Reading it first
+    // through Get would throw on a damaged file, so the owner could never replace it.
+    public void ToggleHeld(UpdateCheckResult update) =>
+        Change(update, static current => current with { Held = !current.Held });
+
+    public void ToggleSkippedVersion(UpdateCheckResult update) =>
+        Change(update, current => current with { SkippedVersion = SkipsRelease(current, update) ? null : update.AvailableVersion });
 
     private void Change(UpdateCheckResult update, Func<UpdatePreference, UpdatePreference> change)
     {

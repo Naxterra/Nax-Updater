@@ -87,18 +87,29 @@ public static partial class UpdateDiagnostics
     {
         var cut = value.IndexOfAny(['?', '#']);
         if (cut >= 0) value = value[..cut];
-        value = UserInfoRegex().Replace(value, "${scheme}");
-        var parts = value.Split('/');
-        for (var index = 3; index < parts.Length; index++)
+        var scheme = value.IndexOf("://", StringComparison.Ordinal) + 3;
+        var rest = value[scheme..];
+        // The user part ends at the last "@". A password may contain an unencoded "/", so the
+        // "@" may come after a "/": then a ":" before that "/" marks a password, unless what
+        // follows the ":" is a port number. An "@" in a path (npm's /@scope) has no such ":".
+        var at = rest.LastIndexOf('@');
+        if (at > 0)
+        {
+            var user = rest[..at];
+            var slash = user.IndexOf('/');
+            var colon = user.IndexOf(':');
+            if (slash < 0 || colon >= 0 && colon < slash && !user[(colon + 1)..slash].All(char.IsAsciiDigit))
+                rest = rest[(at + 1)..];
+        }
+        var parts = rest.Split('/');
+        for (var index = 1; index < parts.Length; index++)
             if (TokenSegmentRegex().IsMatch(parts[index])) parts[index] = "<redacted>";
-        return string.Join('/', parts);
+        return value[..scheme] + string.Join('/', parts);
     }
 
-    [GeneratedRegex(@"^(?<scheme>https?://)[^/@]+@", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
-    private static partial Regex UserInfoRegex();
-
-    // At least 32 characters with letters and digits and no file extension.
-    [GeneratedRegex(@"^(?=[^.]*\d)(?=[^.]*[A-Za-z])[A-Za-z0-9_\-=~%]{32,}$", RegexOptions.CultureInvariant)]
+    // At least 32 characters with letters and digits that do not end in a short file extension.
+    // Dots are allowed, because a JSON web token in a path has them.
+    [GeneratedRegex(@"^(?=.*\d)(?=.*[A-Za-z])(?!.*\.[A-Za-z0-9]{1,5}$)[A-Za-z0-9_\-=~%.]{32,}$", RegexOptions.CultureInvariant)]
     private static partial Regex TokenSegmentRegex();
 
     [GeneratedRegex(@"\bgh[pousr]_[A-Za-z0-9]{20,}\b|\bgithub_pat_[A-Za-z0-9_]{20,}\b", RegexOptions.CultureInvariant)]
