@@ -29,6 +29,75 @@ internal static class KyoceraRegression
         await kyocera_kx_driver_is_checked_in_the_driver_view(assert);
         await failed_kyocera_download_is_tried_again(assert);
         await newest_listing_across_printer_models_wins(assert);
+        await unchanged_kyocera_files_are_answered_from_the_cache(assert);
+        await one_scan_asks_kyocera_once_for_utilities_and_drivers(assert);
+    }
+
+    // The second check asks with the saved ETag and gets 304 without a body; a changed file is
+    // downloaded again.
+    private static async Task unchanged_kyocera_files_are_answered_from_the_cache(Action<bool, string> assert)
+    {
+        var cache = Path.Combine(Path.GetTempPath(), "nax-kyocera-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            var server = new Conditional();
+            using var http = new HttpClient(server);
+            var first = await new KyoceraSupportCatalog(http, cache).FindModelAsync("ECOSYS MA2100cwfx", CancellationToken.None);
+            var fullAfterFirst = server.FullBodies;
+            var second = await new KyoceraSupportCatalog(http, cache).FindModelAsync("ECOSYS MA2100cwfx", CancellationToken.None);
+            var fullAfterSecond = server.FullBodies;
+            server.Version = "v2";
+            var third = await new KyoceraSupportCatalog(http, cache).FindModelAsync("ECOSYS MA2100cwfx", CancellationToken.None);
+            assert(first?.Id == "358" && second?.Downloads.Count == first.Downloads.Count && third?.Id == "358" &&
+                   fullAfterFirst == 2 && fullAfterSecond == 2 && server.FullBodies == 4 && server.NotModified == 2,
+                $"Kyocera's unchanged files were downloaded again, or a changed file was taken from the cache: full {fullAfterFirst}/{fullAfterSecond}/{server.FullBodies}, 304 {server.NotModified}");
+        }
+        finally { if (Directory.Exists(cache)) Directory.Delete(cache, true); }
+    }
+
+    private static async Task one_scan_asks_kyocera_once_for_utilities_and_drivers(Action<bool, string> assert)
+    {
+        var server = new Conditional();
+        using var http = new HttpClient(server);
+        var sources = new SharedScanSources(http);
+        var utility = await new KyoceraUtilityUpdateProvider(sources.Kyocera, () => ["ECOSYS MA2100cwfx"])
+            .CheckAsync(App("KYOCERA Status Monitor 5", "5.4.12.3"), CancellationToken.None);
+        var driver = await new ManufacturerDriverService(http, sources.Kyocera).CheckKyoceraPrinterAsync(
+            new InstalledHardwareDriver("printer-driver:kyocera:ecosys ma2100cwfx", "Kyocera ECOSYS MA2100cwfx", "Printer",
+                "Kyocera", "KYOCERA Document Solutions", "8.7.917.0", null, null, null), CancellationToken.None);
+        assert(utility.Status == UpdateStatus.Current && driver.Status == ManufacturerDriverStatus.Current && server.Requests == 2,
+            $"The utilities and the printer driver of one scan asked Kyocera more than once: {server.Requests} requests");
+    }
+
+    // Serves the fixture with an ETag and answers a matching If-None-Match with 304.
+    private sealed class Conditional : HttpMessageHandler
+    {
+        public string Version { get; set; } = "v1";
+        public int Requests { get; private set; }
+        public int FullBodies { get; private set; }
+        public int NotModified { get; private set; }
+
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken token)
+        {
+            Requests++;
+            var etag = $"\"{Version}\"";
+            if (request.Headers.IfNoneMatch.Any(value => value.Tag == etag))
+            {
+                NotModified++;
+                return Task.FromResult(new HttpResponseMessage(HttpStatusCode.NotModified) { RequestMessage = request });
+            }
+            var body = request.RequestUri!.AbsolutePath switch
+            {
+                "/support_product/js/index.json" => Index,
+                "/support_product/js/models/358.json" => Model,
+                _ => null
+            };
+            if (body is null) return Task.FromResult(new HttpResponseMessage(HttpStatusCode.NotFound) { RequestMessage = request });
+            FullBodies++;
+            var response = new HttpResponseMessage(HttpStatusCode.OK) { RequestMessage = request, Content = new StringContent(body, Encoding.UTF8, "application/json") };
+            response.Headers.ETag = new System.Net.Http.Headers.EntityTagHeaderValue(etag);
+            return Task.FromResult(response);
+        }
     }
 
     private static async Task failed_kyocera_download_is_tried_again(Action<bool, string> assert)

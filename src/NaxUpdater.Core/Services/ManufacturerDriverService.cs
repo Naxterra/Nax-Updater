@@ -8,7 +8,10 @@ using System.Text.RegularExpressions;
 
 namespace NaxUpdater.Core.Services;
 
-public sealed partial class ManufacturerDriverService(HttpClient httpClient)
+// A scan passes its shared Kyocera catalog, so the update list and the driver view ask Kyocera
+// once; without one, each check uses a catalog of its own.
+public sealed partial class ManufacturerDriverService(HttpClient httpClient, KyoceraSupportCatalog? sharedKyocera = null,
+    string? kyoceraCacheDirectory = null)
 {
     private const string DriverClassPath = @"SYSTEM\CurrentControlSet\Control\Class";
     private static readonly Uri NvidiaDriverHomeEn = new("https://www.nvidia.com/en-us/drivers/");
@@ -37,8 +40,9 @@ public sealed partial class ManufacturerDriverService(HttpClient httpClient)
 
     public async Task<ManufacturerDriverSnapshot> CheckAsync(CancellationToken cancellationToken = default)
     {
-        // Kyocera's model list is read once per check, never from an earlier failed attempt.
-        _kyocera = new KyoceraSupportCatalog(httpClient);
+        // Kyocera's model list is read once per check, never from an earlier failed attempt
+        // (a shared catalog drops a failed download itself, so the next row retries).
+        _kyocera = sharedKyocera ?? new KyoceraSupportCatalog(httpClient, kyoceraCacheDirectory);
         var issues = new List<string>();
         var installed = await Task.Run(() => ReadInstalledDrivers(issues), cancellationToken);
         var razerSynapseVersion = ReadInstalledProgramVersion("Razer Synapse");
@@ -432,7 +436,7 @@ public sealed partial class ManufacturerDriverService(HttpClient httpClient)
         var fallback = new Uri("https://www.kyoceradocumentsolutions.com/support_product/index.html");
         try
         {
-            var catalog = _kyocera ??= new KyoceraSupportCatalog(httpClient);
+            var catalog = _kyocera ??= sharedKyocera ?? new KyoceraSupportCatalog(httpClient, kyoceraCacheDirectory);
             var listed = await catalog.FindModelAsync(model, cancellationToken);
             if (listed is null)
                 return NoVerifiedCatalog(driver, source, fallback, "Kyocera's support site does not list the installed printer model.");
@@ -665,7 +669,7 @@ public sealed partial class ManufacturerDriverService(HttpClient httpClient)
         try
         {
             using var request = new HttpRequestMessage(HttpMethod.Get, uri);
-            request.Headers.UserAgent.ParseAdd("NaxUpdater/0.17.58");
+            request.Headers.UserAgent.ParseAdd("NaxUpdater/0.17.59");
             using var response = await httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, timeout.Token);
             response.EnsureSuccessStatusCode();
             return await response.Content.ReadAsStringAsync(timeout.Token);
@@ -679,7 +683,6 @@ public sealed partial class ManufacturerDriverService(HttpClient httpClient)
     private static IReadOnlyList<InstalledHardwareDriver> ReadInstalledDrivers(ICollection<string> issues)
     {
         var candidates = new List<InstalledHardwareDriver>();
-        var signedDrivers = ReadSignedDrivers(issues);
         var presentDriverKeys = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         try
         {
@@ -700,28 +703,16 @@ public sealed partial class ManufacturerDriverService(HttpClient httpClient)
                 {
                     continue;
                 }
-                signedDrivers.TryGetValue(deviceId, out var signed);
-                // Win32_PnPSignedDriver kept reporting the replaced Intel and TP-Link drivers in
-                // the running app for more than a minute after Windows had installed the new ones,
-                // while the device's own driver key already held them. The key is authoritative.
+                // The driver comes from the device's own driver key. Win32_PnPSignedDriver kept
+                // reporting the replaced Intel and TP-Link drivers in the running app for more than
+                // a minute after Windows had installed the new ones, and it took 1.7 s per read
+                // against 0.35 s for the device list, so it is no longer queried.
                 var driverKey = ReadDeviceDriverKey(deviceId);
-                if (driverKey is not null)
-                {
-                    presentDriverKeys.Add(driverKey.Path);
-                    signed = signed is null
-                        ? new SignedDriverData(null, null, null, driverKey.Provider, driverKey.Version, driverKey.Date, driverKey.InfName)
-                        : signed with
-                        {
-                            Provider = driverKey.Provider ?? signed.Provider,
-                            Version = driverKey.Version ?? signed.Version,
-                            Date = driverKey.Date ?? signed.Date,
-                            InfName = driverKey.InfName ?? signed.InfName
-                        };
-                }
-                var provider = signed?.Provider ?? "Microsoft";
-                var manufacturer = Text(entity["Manufacturer"]) ?? signed?.Manufacturer ?? provider;
+                if (driverKey is not null) presentDriverKeys.Add(driverKey.Path);
+                var provider = driverKey?.Provider ?? "Microsoft";
+                var manufacturer = Text(entity["Manufacturer"]) ?? provider;
                 var hardwareId = Strings(entity["HardwareID"]).FirstOrDefault() ?? deviceId;
-                var deviceClass = Text(entity["PNPClass"]) ?? signed?.DeviceClass ?? "Unknown";
+                var deviceClass = Text(entity["PNPClass"]) ?? "Unknown";
                 if (!ShouldInventory(name, deviceClass, manufacturer, provider, hardwareId))
                 {
                     continue;
@@ -732,10 +723,10 @@ public sealed partial class ManufacturerDriverService(HttpClient httpClient)
                     deviceClass,
                     manufacturer.Trim(),
                     provider.Trim(),
-                    signed?.Version ?? "—",
-                    signed?.Date,
+                    driverKey?.Version ?? "—",
+                    driverKey?.Date,
                     hardwareId,
-                    signed?.InfName,
+                    driverKey?.InfName,
                     true));
             }
         }
@@ -757,37 +748,6 @@ public sealed partial class ManufacturerDriverService(HttpClient httpClient)
             : [.. packages.Where(static driver => !(driver.DeviceClass.Equals("Printer", StringComparison.OrdinalIgnoreCase) &&
                     (driver.Manufacturer.Contains("Kyocera", StringComparison.OrdinalIgnoreCase) || driver.Provider.Contains("Kyocera", StringComparison.OrdinalIgnoreCase)))),
                .. printers];
-    }
-
-    private static Dictionary<string, SignedDriverData> ReadSignedDrivers(ICollection<string> issues)
-    {
-        var results = new Dictionary<string, SignedDriverData>(StringComparer.OrdinalIgnoreCase);
-        try
-        {
-            using var searcher = new ManagementObjectSearcher(
-                "SELECT DeviceID, DeviceName, DeviceClass, Manufacturer, DriverProviderName, DriverVersion, DriverDate, InfName FROM Win32_PnPSignedDriver");
-            foreach (ManagementObject item in searcher.Get())
-            {
-                var deviceId = Text(item["DeviceID"]);
-                if (string.IsNullOrWhiteSpace(deviceId))
-                {
-                    continue;
-                }
-                results[deviceId] = new SignedDriverData(
-                    Text(item["DeviceName"]),
-                    Text(item["DeviceClass"]),
-                    Text(item["Manufacturer"]),
-                    Text(item["DriverProviderName"]),
-                    Text(item["DriverVersion"]),
-                    NormalizeDate(Text(item["DriverDate"])),
-                    Text(item["InfName"]));
-            }
-        }
-        catch (Exception exception) when (exception is ManagementException or UnauthorizedAccessException)
-        {
-            issues.Add($"Signed PnP drivers: {exception.Message}");
-        }
-        return results;
     }
 
     private static DeviceDriverKey? ReadDeviceDriverKey(string deviceId)
@@ -1326,15 +1286,6 @@ public sealed partial class ManufacturerDriverService(HttpClient httpClient)
     private static partial Regex RazerProductRegex();
 
     private sealed record DeviceDriverKey(string Path, string? Provider, string? Version, string? Date, string? InfName);
-
-    private sealed record SignedDriverData(
-        string? DeviceName,
-        string? DeviceClass,
-        string? Manufacturer,
-        string? Provider,
-        string? Version,
-        string? Date,
-        string? InfName);
 
     private sealed record IntelDriverPayload(
         string DriverVersion,

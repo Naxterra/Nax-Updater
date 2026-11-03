@@ -2,6 +2,14 @@
 
 Why Nax-Updater works the way it does. Newest first; every release adds its decisions here and updates [DESIGN.md](DESIGN.md). Each entry names the decision, the evidence that led to it, and what was rejected.
 
+## 0.17.59 (2026-11-03)
+
+**A scan checks the drivers once.** Measured on the owner's PC, the update check took 7.0 to 8.5 s, and its slowest parts were the four driver rows of the update list (5.6 s, a full manufacturer driver check) and the Kyocera utilities (5 s); opening the driver view then ran the same driver check again (4.3 to 6.2 s). The driver check now starts together with the application inventory, the update list and the driver view share its result, and both ask Kyocera through one catalog. A scan followed by the driver view went from 13 to 17 s to 6.4 to 6.8 s, the update check alone to 4.5 to 5.1 s, with identical driver rows. Caching driver results across scans was rejected, because a driver can change outside Nax-Updater; the reuse is limited to five minutes and ends with any change Nax-Updater makes.
+
+**Kyocera's files are fetched conditionally.** Kyocera's index is 480 KB and changes rarely, and the server sends an ETag and Last-Modified. Each file is kept with them and requested with If-None-Match, so an unchanged file comes back as 304. The cached data only names versions and pages, because Kyocera publishes no hashes and nothing from it is installed automatically.
+
+**Win32_PnPSignedDriver is no longer read.** It took 1.7 s per read against 0.35 s for the device list, and since 0.17.52 the device's driver key already supplied version, INF, provider and date. Name, class and manufacturer come from the device list.
+
 ## 0.17.58 (2026-11-03)
 
 **A damaged choices file can be replaced from the app.** The hold and skip buttons read the current choice before changing it, so a damaged file made every click fail and kept Update All stopped until the file was deleted by hand. The buttons now toggle inside the write, which keeps a damaged file aside and starts a new one, and the message that stops Update All names this way out.

@@ -17,7 +17,7 @@ public sealed partial class MainPage : Page
     private readonly ApplicationInventoryService _inventoryService;
     // Some publisher servers refuse requests without a User-Agent (403), so the shared
     // client always sends one; requests that set their own keep it.
-    private readonly HttpClient _httpClient = new() { Timeout = TimeSpan.FromSeconds(30), DefaultRequestHeaders = { { "User-Agent", "NaxUpdater/0.17.58" } } };
+    private readonly HttpClient _httpClient = new() { Timeout = TimeSpan.FromSeconds(30), DefaultRequestHeaders = { { "User-Agent", "NaxUpdater/0.17.59" } } };
     private readonly UpdateExecutionService _updateExecutionService = new();
     private readonly ApplicationRemovalService _applicationRemovalService = new();
     private readonly ApplicationIconService _applicationIconService = new();
@@ -25,6 +25,10 @@ public sealed partial class MainPage : Page
     private readonly FileUpdateOperationJournal _updateOperationJournal;
     private readonly FileUpdateHistory _updateHistory;
     private readonly FileUpdatePreferences _updatePreferences;
+    private readonly string _sourceCacheRoot;
+    // The sources of the latest update check; the driver view reuses its driver check while fresh.
+    private SharedScanSources? _scanSources;
+    private static readonly TimeSpan ScanDriverReuse = TimeSpan.FromMinutes(5);
     private readonly FileUpdateTransactionLeaseProvider _updateTransactionLease;
     public DriverColumnLayout DriverLayout { get; } = new();
     private IReadOnlyList<ApplicationRow> _allApplications = [];
@@ -67,10 +71,11 @@ public sealed partial class MainPage : Page
             AppContext.BaseDirectory,
             "Configuration",
             "application-policies.json"));
-        _manufacturerDriverService = new ManufacturerDriverService(_httpClient);
         var localStateRoot = Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
             "NaxUpdater");
+        _sourceCacheRoot = Path.Combine(localStateRoot, "SourceCache");
+        _manufacturerDriverService = new ManufacturerDriverService(_httpClient, kyoceraCacheDirectory: _sourceCacheRoot);
         _updateOperationJournal = new FileUpdateOperationJournal(Path.Combine(localStateRoot, "update-operation.json"));
         _updateHistory = new FileUpdateHistory(Path.Combine(localStateRoot, "update-history.json"));
         _updatePreferences = new FileUpdatePreferences(Path.Combine(localStateRoot, "update-preferences.json"));
@@ -238,10 +243,13 @@ public sealed partial class MainPage : Page
         UpdateBar.IsOpen = false;
         ShowUpdatesButton.IsEnabled = false;
         ShowUpdatesButton.Content = LocalizationService.Get("UpdatesLabel");
+        // The driver check needs no application inventory, so it runs while the inventory is read.
+        var sources = new SharedScanSources(_httpClient, _sourceCacheRoot);
+        _ = sources.DriversAsync();
         await ScanAsync();
         if (_snapshot is not null)
         {
-            await CheckUpdatesAsync(showWorkspace: false);
+            await CheckUpdatesAsync(showWorkspace: false, sources);
         }
     }
 
@@ -672,6 +680,7 @@ public sealed partial class MainPage : Page
         }
 
         _mutationActive = true;
+        _scanSources = null; // A change to the system makes the scan's driver check stale.
         SetUpdateBusy(true, LocalizationService.Format("RemovingApplication", row.Name));
         try
         {
@@ -785,8 +794,13 @@ public sealed partial class MainPage : Page
         UnmatchedPolicySection.Visibility = policies.Length == 0 ? Visibility.Collapsed : Visibility.Visible;
     }
 
-    private async Task CheckUpdatesAsync(bool showWorkspace)
+    private async Task CheckUpdatesAsync(bool showWorkspace, SharedScanSources? sources = null)
     {
+        // Every check gets sources of its own, so a check after an update never shows the drivers
+        // as they were before it.
+        sources ??= new SharedScanSources(_httpClient, _sourceCacheRoot);
+        _ = sources.DriversAsync();
+        _scanSources = sources;
         var checkTimer = Stopwatch.StartNew();
         if (_snapshot is null)
         {
@@ -807,7 +821,7 @@ public sealed partial class MainPage : Page
         {
             var catalogPath = Path.Combine(AppContext.BaseDirectory, "Configuration", "update-providers.json");
             var catalog = await UpdateProviderCatalogLoader.LoadAsync(catalogPath);
-            var service = new UpdateCheckService(_httpClient, catalog);
+            var service = new UpdateCheckService(_httpClient, catalog, sharedSources: sources);
             var progress = new Progress<UpdateCheckProgress>(state =>
             {
                 if (!ReferenceEquals(_providerCheckCancellation, cancellation)) return;
@@ -972,16 +986,25 @@ public sealed partial class MainPage : Page
         ConfigureDriverHeader();
         FilterBox.IsEnabled = true;
         ShowSystemComponentsCheckBox.IsEnabled = false;
-        await CheckManufacturerDriversAsync();
+        await CheckManufacturerDriversAsync(reuseScan: true);
     }
 
-    private async Task CheckManufacturerDriversAsync()
+    // Opening the driver view shows the latest scan's driver check while it is fresh; "check
+    // drivers" and the check after a driver install always run a new one.
+    private async Task CheckManufacturerDriversAsync(bool reuseScan = false)
     {
         SetUpdateBusy(true, LocalizationService.Get("CheckingManufacturerDrivers"));
         UpdateBar.IsOpen = false;
         try
         {
-            var rawSnapshot = await _manufacturerDriverService.CheckAsync();
+            ManufacturerDriverSnapshot? reused = null;
+            if (reuseScan && _scanSources is { DriversStartedAt: { } started } sources && DateTimeOffset.UtcNow - started < ScanDriverReuse)
+            {
+                // A failed shared check is not shown; the driver view runs its own instead.
+                try { reused = await sources.DriversAsync(); }
+                catch (Exception exception) when (exception is not OperationCanceledException) { reused = null; }
+            }
+            var rawSnapshot = reused ?? await _manufacturerDriverService.CheckAsync();
             var generationId = Guid.NewGuid();
             var snapshot = rawSnapshot with
             {
@@ -1121,6 +1144,7 @@ public sealed partial class MainPage : Page
 
         var update = row.Source.ExecutableUpdate!;
         _mutationActive = true;
+        _scanSources = null; // A change to the system makes the scan's driver check stale.
         SetUpdateBusy(true, LocalizationService.Format("RevalidatingUpdate", row.Name));
         DriverProgress.Visibility = Visibility.Visible;
         DriverProgress.IsIndeterminate = true;
@@ -1673,6 +1697,7 @@ public sealed partial class MainPage : Page
             return false;
         }
         _mutationActive = true;
+        _scanSources = null; // A change to the system makes the scan's driver check stale.
         SetUpdateBusy(true, LocalizationService.Format("RevalidatingUpdate", row.Name));
         using var operationCancellation = new CancellationTokenSource();
         _operationCancellation = operationCancellation;

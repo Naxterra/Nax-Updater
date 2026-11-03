@@ -2,7 +2,9 @@ using NaxUpdater.Core.Models;
 
 namespace NaxUpdater.Core.Services;
 
-internal sealed class DriverComponentUpdateProvider(HttpClient client) : IUpdateProvider, IUpdateProviderSourceRefresher
+// With the scan's shared sources, the driver rows use the scan's one driver check (started with
+// the inventory, also shown by the driver view); without them, this provider runs its own.
+internal sealed class DriverComponentUpdateProvider(HttpClient client, SharedScanSources? shared = null) : IUpdateProvider, IUpdateProviderSourceRefresher
 {
     private readonly object _gate = new();
     private Task<ManufacturerDriverSnapshot>? _scan;
@@ -16,7 +18,8 @@ internal sealed class DriverComponentUpdateProvider(HttpClient client) : IUpdate
     public async Task<UpdateCheckResult> CheckAsync(InstalledApplication app, CancellationToken token)
     {
         Task<ManufacturerDriverSnapshot> scan;
-        lock (_gate) scan = _scan ??= Task.Run(() => new ManufacturerDriverService(client).CheckAsync());
+        if (shared is not null) scan = shared.DriversAsync();
+        else lock (_gate) scan = _scan ??= Task.Run(() => new ManufacturerDriverService(client).CheckAsync());
         var snapshot = await scan.WaitAsync(token);
         var matches = snapshot.Results.Where(r => Matches(app.DisplayName, r.Driver)).ToArray();
         var status = matches.Length == 0 ? UpdateStatus.ManagedExternally :

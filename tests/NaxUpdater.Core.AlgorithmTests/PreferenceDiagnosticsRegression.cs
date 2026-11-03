@@ -129,7 +129,7 @@ internal static class PreferenceDiagnosticsRegression
         var failed = new UpdateHistoryEntry(Guid.NewGuid(), "Fixture App", "registry:LocalMachine:Registry64:{11111111-1111-1111-1111-111111111111}",
             "github:vendor/app", "1.0.0", "2.0.0", "1.0.0", UpdateTransactionStage.FailedNeedsAttention, 1603, false,
             @"The updater exited with code 1603. Log: D:\Logs\private\install.log", DateTimeOffset.UtcNow, DateTimeOffset.UtcNow);
-        var report = UpdateDiagnostics.Build(Update("2.0.0", plan: plan), "Failed", "The updater exited with code 1603.", [failed], "0.17.58");
+        var report = UpdateDiagnostics.Build(Update("2.0.0", plan: plan), "Failed", "The updater exited with code 1603.", [failed], "0.17.59");
         assert(report.Contains("download host vendor.example", StringComparison.Ordinal) && report.Contains("exit code 1603", StringComparison.Ordinal) &&
                report.Contains("FailedNeedsAttention", StringComparison.Ordinal) && !report.Contains("sig=abc", StringComparison.Ordinal) &&
                !report.Contains(@"D:\Logs", StringComparison.Ordinal) && report.Contains(@"<path>\install.log", StringComparison.Ordinal),

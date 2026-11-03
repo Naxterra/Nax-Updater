@@ -25,7 +25,8 @@ public sealed class UpdateCheckService
             ? sourceTimeout.Value : throw new ArgumentOutOfRangeException(nameof(sourceTimeout));
     }
 
-    public UpdateCheckService(HttpClient httpClient, UpdateProviderCatalog catalog, FirefoxMetadataDetector? firefoxMetadataDetector = null)
+    public UpdateCheckService(HttpClient httpClient, UpdateProviderCatalog catalog, FirefoxMetadataDetector? firefoxMetadataDetector = null,
+        SharedScanSources? sharedSources = null)
     {
         var providers = new List<IUpdateProvider>
         {
@@ -40,10 +41,10 @@ public sealed class UpdateCheckService
             new NodeJsUpdateProvider(httpClient),
             new WslUpdateProvider(httpClient),
             new MacriumUpdateProvider(httpClient),
-            new DriverComponentUpdateProvider(httpClient),
+            new DriverComponentUpdateProvider(httpClient, sharedSources),
             new ExternalOwnerUpdateProvider(),
             new WinRarUpdateProvider(httpClient),
-            new KyoceraUtilityUpdateProvider(new KyoceraSupportCatalog(httpClient))
+            new KyoceraUtilityUpdateProvider(sharedSources?.Kyocera ?? new KyoceraSupportCatalog(httpClient))
         };
         providers.AddRange(catalog.GitHub.Select(recipe => new GitHubReleaseUpdateProvider(httpClient, recipe)));
         providers.AddRange(catalog.Official.Select(recipe => new OfficialSiteUpdateProvider(httpClient, recipe)));

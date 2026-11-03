@@ -14,7 +14,11 @@ public sealed record KyoceraModel(string Name, string Id, string ProjectId, Uri 
 // pages link to) publishes one JSON file per printer model with every driver and utility,
 // its version and its download address. The model is found by the name of the installed
 // KX printer driver ("Kyocera ECOSYS MA2100cwfx KX" is model "ECOSYS MA2100cwfx").
-public sealed partial class KyoceraSupportCatalog(HttpClient httpClient)
+// With a cache folder, each downloaded file is kept with its ETag and Last-Modified, and the
+// next check asks Kyocera whether it changed: an unchanged file comes back as 304 without its
+// 480 KB body. The cached data only names versions and download pages; Kyocera publishes no
+// hashes, so nothing from it is ever installed automatically.
+public sealed partial class KyoceraSupportCatalog(HttpClient httpClient, string? cacheDirectory = null)
 {
     private static readonly Uri SupportRoot = new("https://www.kyoceradocumentsolutions.com/support_product/");
     // Like every manufacturer site, Kyocera's may only cost its own rows a bounded wait.
@@ -134,9 +138,16 @@ public sealed partial class KyoceraSupportCatalog(HttpClient httpClient)
     private async Task<JsonDocument> LoadJsonAsync(Uri uri)
     {
         using var timeout = new CancellationTokenSource(RequestTimeout);
+        var cache = CachePaths(uri);
+        var cached = cache is null ? null : ReadCache(cache.Value, uri);
         try
         {
-            using var response = await httpClient.GetAsync(uri, HttpCompletionOption.ResponseHeadersRead, timeout.Token);
+            using var request = new HttpRequestMessage(HttpMethod.Get, uri);
+            if (cached?.Entry.ETag is { } etag) request.Headers.TryAddWithoutValidation("If-None-Match", etag);
+            if (cached?.Entry.LastModified is { } lastModified) request.Headers.IfModifiedSince = lastModified;
+            using var response = await httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, timeout.Token);
+            if (response.StatusCode == System.Net.HttpStatusCode.NotModified && cached is not null)
+                return JsonDocument.Parse(cached.Body);
             response.EnsureSuccessStatusCode();
             if (response.Content.Headers.ContentLength > MaxDocumentBytes)
                 throw new InvalidDataException("Kyocera's support data is unexpectedly large.");
@@ -149,12 +160,61 @@ public sealed partial class KyoceraSupportCatalog(HttpClient httpClient)
                 if (buffer.Length + read > MaxDocumentBytes) throw new InvalidDataException("Kyocera's support data is unexpectedly large.");
                 buffer.Write(chunk, 0, read);
             }
-            buffer.Position = 0;
-            return await JsonDocument.ParseAsync(buffer, cancellationToken: timeout.Token);
+            var body = System.Text.Encoding.UTF8.GetString(buffer.GetBuffer(), 0, (int)buffer.Length);
+            var document = JsonDocument.Parse(body);
+            if (cache is { } paths)
+                WriteCache(paths, new KyoceraCacheEntry(uri.AbsoluteUri, response.Headers.ETag?.ToString(), response.Content.Headers.LastModified), body);
+            return document;
         }
         catch (OperationCanceledException) when (timeout.IsCancellationRequested)
         {
             throw new TimeoutException($"Kyocera's support site did not answer within {RequestTimeout.TotalSeconds:0} seconds.");
+        }
+    }
+
+    private sealed record KyoceraCacheEntry(string Uri, string? ETag, DateTimeOffset? LastModified);
+
+    private sealed record CachedDocument(KyoceraCacheEntry Entry, string Body);
+
+    private (string Body, string Entry)? CachePaths(Uri uri)
+    {
+        if (string.IsNullOrWhiteSpace(cacheDirectory)) return null;
+        var name = "kyocera-" + Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(uri.AbsoluteUri)))[..16].ToLowerInvariant();
+        return (Path.Combine(cacheDirectory, name + ".json"), Path.Combine(cacheDirectory, name + ".entry.json"));
+    }
+
+    // A missing, damaged or foreign cache entry only means a full download.
+    private static CachedDocument? ReadCache((string Body, string Entry) paths, Uri uri)
+    {
+        try
+        {
+            if (!File.Exists(paths.Body) || !File.Exists(paths.Entry)) return null;
+            var entry = JsonSerializer.Deserialize<KyoceraCacheEntry>(File.ReadAllText(paths.Entry));
+            if (entry is null || !entry.Uri.Equals(uri.AbsoluteUri, StringComparison.Ordinal) || entry.ETag is null && entry.LastModified is null) return null;
+            var body = File.ReadAllText(paths.Body);
+            using (JsonDocument.Parse(body)) { }
+            return new CachedDocument(entry, body);
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or JsonException)
+        {
+            return null;
+        }
+    }
+
+    // The body is written before its entry, so an entry never names a body that was not saved.
+    private static void WriteCache((string Body, string Entry) paths, KyoceraCacheEntry entry, string body)
+    {
+        if (entry.ETag is null && entry.LastModified is null) return;
+        try
+        {
+            Directory.CreateDirectory(Path.GetDirectoryName(paths.Body)!);
+            if (File.Exists(paths.Entry)) File.Delete(paths.Entry);
+            AtomicFile.WriteAllText(paths.Body, body);
+            AtomicFile.WriteAllText(paths.Entry, JsonSerializer.Serialize(entry));
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+        {
+            // Without a cache the next check downloads the file again.
         }
     }
 
