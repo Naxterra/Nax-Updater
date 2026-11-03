@@ -91,23 +91,26 @@ public static partial class UpdateDiagnostics
         var rest = value[scheme..];
         // A well-formed URL names its user part itself; it may be followed by an "@" in the path
         // (npm's /@scope), which stays.
-        if (Uri.TryCreate(value, UriKind.Absolute, out var parsed) && parsed.UserInfo.Length > 0 &&
-            rest.StartsWith(parsed.UserInfo + "@", StringComparison.Ordinal))
+        var parsedOk = Uri.TryCreate(value, UriKind.Absolute, out var parsed);
+        if (parsedOk && parsed!.UserInfo.Length > 0 && rest.StartsWith(parsed.UserInfo + "@", StringComparison.Ordinal))
         {
             rest = rest[(parsed.UserInfo.Length + 1)..];
         }
         else
         {
-            // A password with an unencoded "/" puts the "@" behind a "/", and the parser then
-            // reads the user name as the host. Text before such an "@" is a user part when what
-            // comes before its first "/" is no host name with a dot ("ports.example.com:8443"),
-            // so an "@" in the path of a real host stays.
+            // A password with an unencoded "/" puts the "@" behind a "/": the parser then fails
+            // ("john.doe:pa/ss@host") or reads the user name as the host ("u:12/34@host"). Text
+            // up to such an "@" is a user part only when a host name with a dot follows the "@",
+            // and either the parser failed or no host name with a dot precedes the first "/".
+            // So "/@scope" paths on localhost and real hosts, and e-mail addresses in the path of
+            // a real host, stay as they are.
             var at = rest.LastIndexOf('@');
             if (at > 0)
             {
-                var user = rest[..at];
-                var slash = user.IndexOf('/');
-                if (slash < 0 || !user[..slash].Contains('.')) rest = rest[(at + 1)..];
+                var after = rest[(at + 1)..];
+                var hostAfter = after.Split('/')[0];
+                var authorityHost = rest.Split('/')[0].Split(':')[0];
+                if (hostAfter.Contains('.') && (!parsedOk || !authorityHost.Contains('.'))) rest = after;
             }
         }
         var parts = rest.Split('/');

@@ -17,7 +17,7 @@ public sealed partial class MainPage : Page
     private readonly ApplicationInventoryService _inventoryService;
     // Some publisher servers refuse requests without a User-Agent (403), so the shared
     // client always sends one; requests that set their own keep it.
-    private readonly HttpClient _httpClient = new() { Timeout = TimeSpan.FromSeconds(30), DefaultRequestHeaders = { { "User-Agent", "NaxUpdater/0.17.61" } } };
+    private readonly HttpClient _httpClient = new() { Timeout = TimeSpan.FromSeconds(30), DefaultRequestHeaders = { { "User-Agent", "NaxUpdater/0.17.62" } } };
     private readonly UpdateExecutionService _updateExecutionService = new();
     private readonly ApplicationRemovalService _applicationRemovalService = new();
     private readonly ApplicationIconService _applicationIconService = new();
@@ -990,7 +990,7 @@ public sealed partial class MainPage : Page
     }
 
     private void DriversList_SelectionChanged(object sender, SelectionChangedEventArgs e) =>
-        DriverDetailsButton.IsEnabled = DriversList.SelectedItem is ManufacturerDriverRow;
+        DriverDetailsButton.IsEnabled = !_driverDetailsBusy && DriversList.SelectedItem is ManufacturerDriverRow;
 
     private async void DriversList_DoubleTapped(object sender, Microsoft.UI.Xaml.Input.DoubleTappedRoutedEventArgs e)
     {
@@ -1008,11 +1008,38 @@ public sealed partial class MainPage : Page
     // it is not redacted like the diagnostics report.
     private const int MaxDetailDevices = 8;
 
+    private bool _driverDetailsBusy;
+
+    // Only one ContentDialog can be open, and reading a group's devices takes a while, so the
+    // details neither open twice nor while an update or its confirmation runs, a driver install
+    // waits for them, and a failure is shown instead of ending the process from an async void
+    // handler.
     private async Task ShowDriverDetailsAsync(ManufacturerDriverRow row)
+    {
+        if (_driverDetailsBusy || _updateBusy || _massUpdateBusy) return;
+        _driverDetailsBusy = true;
+        DriverDetailsButton.IsEnabled = false;
+        try
+        {
+            await ShowDriverDetailsCoreAsync(row);
+        }
+        catch (Exception exception)
+        {
+            ShowUnexpectedFailure(LocalizationService.Format("DriverDetailsFailedTitle", row.Name), exception);
+        }
+        finally
+        {
+            _driverDetailsBusy = false;
+            DriverDetailsButton.IsEnabled = DriversList.SelectedItem is ManufacturerDriverRow;
+        }
+    }
+
+    private async Task ShowDriverDetailsCoreAsync(ManufacturerDriverRow row)
     {
         var driver = row.Source.Driver;
         var previousStatus = StatusText.Text;
-        StatusText.Text = LocalizationService.Format("DriverDetailsLoading", driver.DeviceName);
+        var loading = LocalizationService.Format("DriverDetailsLoading", driver.DeviceName);
+        StatusText.Text = loading;
         var devices = new List<(string Id, DriverDeviceRecovery? Details, string? Error)>();
         try
         {
@@ -1030,7 +1057,8 @@ public sealed partial class MainPage : Page
         }
         finally
         {
-            StatusText.Text = previousStatus;
+            // Only the loading text is replaced; a status written meanwhile stays.
+            if (StatusText.Text == loading) StatusText.Text = previousStatus;
         }
 
         var report = new System.Text.StringBuilder();
@@ -1274,7 +1302,7 @@ public sealed partial class MainPage : Page
 
     private async void DriverRowButton_Click(object sender, RoutedEventArgs e)
     {
-        if (_updateBusy || _massUpdateBusy || _restartPending || sender is not Button { DataContext: ManufacturerDriverRow row })
+        if (_updateBusy || _massUpdateBusy || _restartPending || _driverDetailsBusy || sender is not Button { DataContext: ManufacturerDriverRow row })
         {
             return;
         }

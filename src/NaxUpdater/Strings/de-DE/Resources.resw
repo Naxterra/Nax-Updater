@@ -259,4 +259,5 @@
   <data name="DriverDetailsLoading" xml:space="preserve"><value>Treiberspeicher für {0} wird gelesen…</value></data>
   <data name="DriverDetailsBootCriticalTitle" xml:space="preserve"><value>Speichertreiber</value></data>
   <data name="DriverDetailsMoreDevices" xml:space="preserve"><value>{0} weitere Geräte dieser Gruppe sind nicht aufgeführt.</value></data>
+  <data name="DriverDetailsFailedTitle" xml:space="preserve"><value>Die Treiberdetails von {0} konnten nicht angezeigt werden</value></data>
 </root>

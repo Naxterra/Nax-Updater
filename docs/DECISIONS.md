@@ -2,6 +2,12 @@
 
 Why Nax-Updater works the way it does. Newest first; every release adds its decisions here and updates [DESIGN.md](DESIGN.md). Each entry names the decision, the evidence that led to it, and what was rejected.
 
+## 0.17.62 (2026-11-03)
+
+**Driver details cannot end the app.** Reading a group's devices takes a while, and a second click or a driver install's confirmation could open a second dialog, which Windows refuses with an exception that ended the process. The details now open only when no update runs and no other details are loading, a driver install waits for them, and any failure is shown in the status bar. The loading message no longer replaces a status written meanwhile.
+
+**URL redaction keys on the host after the "@".** The rule for a password with an unencoded "/" kept a dotted user name such as john.doe and cut the host from "/@scope" paths on hosts without a dot. Text up to such an "@" is now removed only when a host name with a dot follows it, and either the URI parser failed or no host name with a dot precedes the first "/".
+
 ## 0.17.61 (2026-11-03)
 
 **Driver details show evidence and the way back, not a rollback.** After a driver update the owner could not see what the device ran before, whether the old package was still on the PC, or whether the new one waited for a restart. The driver view now shows this per device, read from pnputil's XML list of matching drivers, which is language-independent and needs no administrator rights. The registry's driver database was rejected, because on this Windows build the readable copy under SYSTEM was outdated and the DRIVERS hive is not readable without elevation. An automatic rollback was rejected, because a wrong storage driver can keep Windows from starting; the details describe the way back in Device Manager instead and warn for storage drivers. The details are read when they are opened, so a scan stays as fast as before.
