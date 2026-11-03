@@ -764,6 +764,8 @@ en: The installed-version precondition no longer matches the checked application
 de: Die vorausgesetzte installierte Version passt nicht mehr zur geprüften Anwendung.
 en: The installer was cancelled.
 de: Der Installer wurde abgebrochen.
+en: The history path has no directory.
+de: Der Pfad des Verlaufs hat keinen Ordner.
 en: The journal path has no directory.
 de: Der Pfad des Journals hat keinen Ordner.
 en: The last verified Razer catalog mapping is shown because the live support page did not return complete machine-readable content.
@@ -804,6 +806,8 @@ en: The official Store catalog publishes no newer package for the exact installe
 de: Der offizielle Store-Katalog veröffentlicht für die exakte installierte Paketfamilie und Architektur kein neueres Paket.
 en: The original RARLAB installer was hashed directly from the producer's HTTPS endpoint and must pass win.rar GmbH Authenticode verification before installation.
 de: Der Original-Installer von RARLAB wurde direkt von der HTTPS-Adresse des Herstellers gehasht und muss vor der Installation die Authenticode-Prüfung auf die win.rar GmbH bestehen.
+en: The outcome could not be saved in the update history: {0}
+de: Das Ergebnis konnte nicht im Updateverlauf gespeichert werden: {0}
 en: The outcome could not be saved in the update journal: {0}
 de: Das Ergebnis konnte nicht im Updatejournal gespeichert werden: {0}
 en: The package update plan does not contain an exact Store product and package-family identity.

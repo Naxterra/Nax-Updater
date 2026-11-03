@@ -39,6 +39,7 @@
                 <ColumnDefinition Width="Auto" />
                 <ColumnDefinition Width="Auto" />
                 <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="Auto" />
             </Grid.ColumnDefinitions>
             <Button x:Name="ScanButton" Height="36" Padding="14,0" Click="ScanButton_Click" Style="{StaticResource BlueActionButtonStyle}">
                 <StackPanel Orientation="Horizontal" Spacing="8">
@@ -67,7 +68,13 @@
                     <TextBlock x:Uid="DriversButtonText" Text="Drivers" />
                 </StackPanel>
             </Button>
-            <Button x:Name="LanguageButton" Grid.Column="4" Height="36" Padding="11,0" Click="LanguageButton_Click">
+            <Button x:Name="HistoryButton" Grid.Column="4" Height="36" Padding="11,0" Click="HistoryButton_Click">
+                <StackPanel Orientation="Horizontal" Spacing="6">
+                    <FontIcon Glyph="&#xE81C;" FontSize="14" />
+                    <TextBlock x:Uid="HistoryButtonText" Text="History" />
+                </StackPanel>
+            </Button>
+            <Button x:Name="LanguageButton" Grid.Column="5" Height="36" Padding="11,0" Click="LanguageButton_Click">
                 <StackPanel Orientation="Horizontal" Spacing="6">
                     <FontIcon Glyph="&#xE713;" FontSize="14" />
                     <TextBlock x:Uid="LanguageButtonText" Text="Settings" />

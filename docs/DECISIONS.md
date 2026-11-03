@@ -2,6 +2,12 @@
 
 Why Nax-Updater works the way it does. Newest first; every release adds its decisions here and updates [DESIGN.md](DESIGN.md). Each entry names the decision, the evidence that led to it, and what was rejected.
 
+## 0.17.55 (2026-11-03)
+
+**Update All shows its batch before it runs.** Filtering the update list never changed which entries Update All includes, so the batch was not visible as a whole. The button now opens a review of every entry with its installed and target version, its source and the running programs it will close, and entries can be deselected. All entries start selected, because the owner's rule is that Update All updates everything without clicking apps one by one. Drivers stay outside the batch.
+
+**Finished updates are kept in a history.** The recovery journal holds only the latest transaction, so after a batch the earlier outcomes were gone once the window closed. A separate history file now receives every finished outcome with its versions, source, exit code and reason, capped at the newest 500. Extending the journal was rejected, because recovery must read exactly one unfinished transaction, and a damaged history must never affect it.
+
 ## 0.17.54 (2026-11-03)
 
 **An MSI update keeps the all-users scope.** The PdfCraft 0.18.0 update failed with 1603, and Windows Installer logged that the app was already installed for everyone and that ALLUSERS=1 had to be passed. Nax-Updater runs an MSI update elevated only for a copy installed for all users, but none of its MSI recipes passed ALLUSERS, so a package that can install either way ran in the per-user context. Every elevated MSI update now gets ALLUSERS=1 unless its recipe sets ALLUSERS itself. The same PdfCraft package installed with that argument and replaced the earlier copy. Adding the argument to each recipe was rejected, because the three providers that build their own MSI plans would still have lacked it.

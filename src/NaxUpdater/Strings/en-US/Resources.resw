@@ -200,4 +200,24 @@
   <data name="UpdateCompletedRestartRecommended" xml:space="preserve"><value>The update is installed and verified. The installer asked for a Windows restart so that files in use are replaced.</value></data>
   <data name="MassUpdateRestartRecommended" xml:space="preserve"><value>At least one installer asked for a Windows restart. Restart Windows when convenient.</value></data>
   <data name="OpenPageFailedTitle" xml:space="preserve"><value>The page could not be opened</value></data>
+  <data name="HistoryButtonText.Text" xml:space="preserve"><value>History</value></data>
+  <data name="HistoryTitle" xml:space="preserve"><value>Update history</value></data>
+  <data name="HistoryEmpty" xml:space="preserve"><value>No update has finished yet. Every finished update, including failed and canceled ones, is listed here.</value></data>
+  <data name="HistoryObserved" xml:space="preserve"><value>read afterwards: {0}</value></data>
+  <data name="HistoryExitCode" xml:space="preserve"><value>exit code {0}</value></data>
+  <data name="HistoryRestartRecommended" xml:space="preserve"><value>restart recommended</value></data>
+  <data name="HistoryStageSucceeded" xml:space="preserve"><value>Updated</value></data>
+  <data name="HistoryStagePendingReboot" xml:space="preserve"><value>Waiting for a Windows restart</value></data>
+  <data name="HistoryStageNoLongerApplicable" xml:space="preserve"><value>No longer applicable</value></data>
+  <data name="HistoryStageCanceledBeforeChange" xml:space="preserve"><value>Canceled before any change</value></data>
+  <data name="HistoryStageFailedBeforeChange" xml:space="preserve"><value>Failed before any change</value></data>
+  <data name="HistoryStageFailedNeedsAttention" xml:space="preserve"><value>Failed</value></data>
+  <data name="HistoryStageIndeterminate" xml:space="preserve"><value>Not confirmed</value></data>
+  <data name="ProviderManufacturerDriver" xml:space="preserve"><value>Manufacturer driver</value></data>
+  <data name="QueueTitle" xml:space="preserve"><value>Review Update All</value></data>
+  <data name="QueueIntro" xml:space="preserve"><value>Only the selected entries are updated, one after another. Drivers are not part of this list. They are updated in the Drivers view.</value></data>
+  <data name="QueueStart" xml:space="preserve"><value>Update selected ({0})</value></data>
+  <data name="QueueCloses" xml:space="preserve"><value>will be closed: {0}</value></data>
+  <data name="QueueSelectAll" xml:space="preserve"><value>Select all</value></data>
+  <data name="CloseDialog" xml:space="preserve"><value>Close</value></data>
 </root>

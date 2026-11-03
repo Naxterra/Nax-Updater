@@ -200,4 +200,24 @@
   <data name="UpdateCompletedRestartRecommended" xml:space="preserve"><value>Das Update ist installiert und geprüft. Der Installer hat einen Windows-Neustart angefordert, damit Dateien ersetzt werden, die in Benutzung waren.</value></data>
   <data name="MassUpdateRestartRecommended" xml:space="preserve"><value>Mindestens ein Installer hat einen Windows-Neustart angefordert. Starten Sie Windows bei Gelegenheit neu.</value></data>
   <data name="OpenPageFailedTitle" xml:space="preserve"><value>Die Seite konnte nicht geöffnet werden</value></data>
+  <data name="HistoryButtonText.Text" xml:space="preserve"><value>Verlauf</value></data>
+  <data name="HistoryTitle" xml:space="preserve"><value>Updateverlauf</value></data>
+  <data name="HistoryEmpty" xml:space="preserve"><value>Es wurde noch kein Update abgeschlossen. Jedes abgeschlossene Update, auch fehlgeschlagene und abgebrochene, wird hier aufgeführt.</value></data>
+  <data name="HistoryObserved" xml:space="preserve"><value>danach gelesen: {0}</value></data>
+  <data name="HistoryExitCode" xml:space="preserve"><value>Exitcode {0}</value></data>
+  <data name="HistoryRestartRecommended" xml:space="preserve"><value>Neustart empfohlen</value></data>
+  <data name="HistoryStageSucceeded" xml:space="preserve"><value>Aktualisiert</value></data>
+  <data name="HistoryStagePendingReboot" xml:space="preserve"><value>Wartet auf einen Windows-Neustart</value></data>
+  <data name="HistoryStageNoLongerApplicable" xml:space="preserve"><value>Nicht mehr anwendbar</value></data>
+  <data name="HistoryStageCanceledBeforeChange" xml:space="preserve"><value>Vor einer Änderung abgebrochen</value></data>
+  <data name="HistoryStageFailedBeforeChange" xml:space="preserve"><value>Vor einer Änderung fehlgeschlagen</value></data>
+  <data name="HistoryStageFailedNeedsAttention" xml:space="preserve"><value>Fehlgeschlagen</value></data>
+  <data name="HistoryStageIndeterminate" xml:space="preserve"><value>Nicht bestätigt</value></data>
+  <data name="ProviderManufacturerDriver" xml:space="preserve"><value>Herstellertreiber</value></data>
+  <data name="QueueTitle" xml:space="preserve"><value>Alle aktualisieren prüfen</value></data>
+  <data name="QueueIntro" xml:space="preserve"><value>Nur die ausgewählten Einträge werden nacheinander aktualisiert. Treiber gehören nicht dazu. Sie werden in der Treiberansicht aktualisiert.</value></data>
+  <data name="QueueStart" xml:space="preserve"><value>Ausgewählte aktualisieren ({0})</value></data>
+  <data name="QueueCloses" xml:space="preserve"><value>wird geschlossen: {0}</value></data>
+  <data name="QueueSelectAll" xml:space="preserve"><value>Alle auswählen</value></data>
+  <data name="CloseDialog" xml:space="preserve"><value>Schließen</value></data>
 </root>

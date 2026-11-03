@@ -17,12 +17,13 @@ public sealed partial class MainPage : Page
     private readonly ApplicationInventoryService _inventoryService;
     // Some publisher servers refuse requests without a User-Agent (403), so the shared
     // client always sends one; requests that set their own keep it.
-    private readonly HttpClient _httpClient = new() { Timeout = TimeSpan.FromSeconds(30), DefaultRequestHeaders = { { "User-Agent", "NaxUpdater/0.17.54" } } };
+    private readonly HttpClient _httpClient = new() { Timeout = TimeSpan.FromSeconds(30), DefaultRequestHeaders = { { "User-Agent", "NaxUpdater/0.17.55" } } };
     private readonly UpdateExecutionService _updateExecutionService = new();
     private readonly ApplicationRemovalService _applicationRemovalService = new();
     private readonly ApplicationIconService _applicationIconService = new();
     private readonly ManufacturerDriverService _manufacturerDriverService;
     private readonly FileUpdateOperationJournal _updateOperationJournal;
+    private readonly FileUpdateHistory _updateHistory;
     private readonly FileUpdateTransactionLeaseProvider _updateTransactionLease;
     public DriverColumnLayout DriverLayout { get; } = new();
     private IReadOnlyList<ApplicationRow> _allApplications = [];
@@ -70,6 +71,7 @@ public sealed partial class MainPage : Page
             Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
             "NaxUpdater");
         _updateOperationJournal = new FileUpdateOperationJournal(Path.Combine(localStateRoot, "update-operation.json"));
+        _updateHistory = new FileUpdateHistory(Path.Combine(localStateRoot, "update-history.json"));
         _updateTransactionLease = new FileUpdateTransactionLeaseProvider(Path.Combine(localStateRoot, "update-transaction.lock"));
         MainInfo.IsOpen = App.ShowSafetyInformation;
         UpdateSortHeaders();
@@ -186,6 +188,8 @@ public sealed partial class MainPage : Page
                 interruptedOperation,
                 recoveredStage,
                 DateTimeOffset.UtcNow,
+                reachedTarget ? null : interruptedOperation.Error ?? "Nax-Updater restarted before the target version could be confirmed.");
+            AppendRecoveredOutcome(interruptedOperation, recoveredStage, observedVersion,
                 reachedTarget ? null : interruptedOperation.Error ?? "Nax-Updater restarted before the target version could be confirmed.");
             // A failed verification is not a reboot requirement. A fresh update
             // transaction revalidates its own target; unrelated apps remain usable.
@@ -909,7 +913,23 @@ public sealed partial class MainPage : Page
         if (operation is null || operation.Stage is not (UpdateTransactionStage.FailedNeedsAttention or UpdateTransactionStage.Indeterminate)) return;
         var assessment = snapshot.Results.FirstOrDefault(r => r.ApplicationIdentity.Equals(operation.ApplicationIdentity, StringComparison.OrdinalIgnoreCase));
         if (UpdateRecoveryVerifier.HasReachedTarget(operation, assessment?.InstalledVersion, assessment))
+        {
             _updateOperationJournal.Record(operation, UpdateTransactionStage.Succeeded, DateTimeOffset.UtcNow);
+            AppendRecoveredOutcome(operation, UpdateTransactionStage.Succeeded, assessment?.InstalledVersion, null);
+        }
+    }
+
+    // An outcome settled after the transaction (on restart or by a later scan) is added to the
+    // history as its own entry; the transaction's first outcome stays as it was recorded.
+    private void AppendRecoveredOutcome(UpdateOperationRecord operation, UpdateTransactionStage stage, string? observedVersion, string? error)
+    {
+        try
+        {
+            _updateHistory.Append(UpdateHistoryEntry.From(operation, stage, observedVersion, null, false, error, DateTimeOffset.UtcNow));
+        }
+        // The outcome is already in the journal, which recovery relies on; a history file that
+        // cannot be written must not stop the startup or the scan.
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException) { }
     }
 
     private void ShowApplicationsButton_Click(object sender, RoutedEventArgs e)
@@ -1131,7 +1151,8 @@ public sealed partial class MainPage : Page
             var transaction = await new UpdateTransactionCoordinator(
                 backend,
                 _updateOperationJournal,
-                _updateTransactionLease).ApplyAsync(
+                _updateTransactionLease,
+                history: _updateHistory).ApplyAsync(
                 update,
                 cacheRoot,
                 progress);
@@ -1318,6 +1339,14 @@ public sealed partial class MainPage : Page
         {
             return;
         }
+        // The filter of the update list does not decide the batch, so the exact batch is shown
+        // first and each entry can be deselected.
+        var selected = await ReviewUpdateQueueAsync(queue);
+        if (selected is not { Length: > 0 } || _updateBusy || _massUpdateBusy || _restartPending)
+        {
+            return;
+        }
+        queue = selected;
 
         _massUpdateBusy = true;
         _stopBatch = false;
@@ -1367,6 +1396,137 @@ public sealed partial class MainPage : Page
             RefreshMassUpdateButton();
             EndMutation();
         }
+    }
+
+    // Each entry shows its versions, its source and the running programs that the update will
+    // close. Returns the selected entries in their order, or null when the batch was canceled.
+    private async Task<UpdateRow[]?> ReviewUpdateQueueAsync(UpdateRow[] queue)
+    {
+        var boxes = new List<(CheckBox Box, UpdateRow Row)>();
+        var list = new StackPanel { Spacing = 8 };
+        foreach (var row in queue)
+        {
+            var running = _updateExecutionService.FindRunningProcesses(row.Source);
+            var detail = $"{row.Installed} → {row.Available} · {row.Provider}";
+            if (running.Count > 0) detail += " · " + LocalizationService.Format("QueueCloses", string.Join(", ", running));
+            var box = new CheckBox
+            {
+                IsChecked = true,
+                Content = new StackPanel
+                {
+                    Children =
+                    {
+                        new TextBlock { Text = row.Name, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold, TextWrapping = TextWrapping.Wrap },
+                        new TextBlock
+                        {
+                            Text = detail,
+                            FontSize = 12,
+                            TextWrapping = TextWrapping.Wrap,
+                            Foreground = PresentationBrushes.Get(running.Count > 0 ? "NaxOrangeBrush" : "NaxBlueBrush")
+                        }
+                    }
+                }
+            };
+            boxes.Add((box, row));
+            list.Children.Add(box);
+        }
+        var selectAll = new CheckBox { Content = LocalizationService.Get("QueueSelectAll"), IsChecked = true };
+        var dialog = new ContentDialog
+        {
+            XamlRoot = XamlRoot,
+            Title = LocalizationService.Get("QueueTitle"),
+            Content = new StackPanel
+            {
+                Spacing = 10,
+                Children =
+                {
+                    new TextBlock { Text = LocalizationService.Get("QueueIntro"), TextWrapping = TextWrapping.Wrap },
+                    selectAll,
+                    new ScrollViewer { Content = list, MaxHeight = 420 }
+                }
+            },
+            PrimaryButtonText = LocalizationService.Format("QueueStart", queue.Length),
+            CloseButtonText = LocalizationService.Get("Cancel"),
+            DefaultButton = ContentDialogButton.Primary
+        };
+        var syncing = false;
+        void Refresh()
+        {
+            var count = boxes.Count(static entry => entry.Box.IsChecked == true);
+            dialog.PrimaryButtonText = LocalizationService.Format("QueueStart", count);
+            dialog.IsPrimaryButtonEnabled = count > 0;
+            syncing = true;
+            selectAll.IsChecked = count == boxes.Count ? true : count == 0 ? false : null;
+            syncing = false;
+        }
+        void SetAll(bool value)
+        {
+            if (syncing) return;
+            syncing = true;
+            foreach (var entry in boxes) entry.Box.IsChecked = value;
+            syncing = false;
+            Refresh();
+        }
+        selectAll.Checked += (_, _) => SetAll(true);
+        selectAll.Unchecked += (_, _) => SetAll(false);
+        foreach (var entry in boxes)
+        {
+            entry.Box.Checked += (_, _) => { if (!syncing) Refresh(); };
+            entry.Box.Unchecked += (_, _) => { if (!syncing) Refresh(); };
+        }
+        return await dialog.ShowAsync() == ContentDialogResult.Primary
+            ? boxes.Where(static entry => entry.Box.IsChecked == true).Select(static entry => entry.Row).ToArray()
+            : null;
+    }
+
+    private async void HistoryButton_Click(object sender, RoutedEventArgs e)
+    {
+        var entries = _updateHistory.ReadNewestFirst();
+        var list = new StackPanel { Spacing = 14 };
+        if (entries.Count == 0)
+        {
+            list.Children.Add(new TextBlock { Text = LocalizationService.Get("HistoryEmpty"), TextWrapping = TextWrapping.Wrap });
+        }
+        foreach (var entry in entries)
+        {
+            var details = new List<string> { $"{entry.InstalledVersion ?? "?"} → {entry.TargetVersion ?? "?"}" };
+            if (!string.IsNullOrWhiteSpace(entry.ObservedVersion)) details.Add(LocalizationService.Format("HistoryObserved", entry.ObservedVersion));
+            details.Add(LocalizationService.ProviderName(entry.ProviderId));
+            if (entry.ExitCode is int exitCode) details.Add(LocalizationService.Format("HistoryExitCode", exitCode));
+            if (entry.RestartRecommended) details.Add(LocalizationService.Get("HistoryRestartRecommended"));
+            var panel = new StackPanel { Spacing = 2 };
+            panel.Children.Add(new TextBlock
+            {
+                Text = $"{entry.DisplayName} · {LocalizationService.Get("HistoryStage" + entry.Stage)}",
+                FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
+                TextWrapping = TextWrapping.Wrap,
+                Foreground = PresentationBrushes.Get(entry.Stage switch
+                {
+                    UpdateTransactionStage.Succeeded => "NaxGreenBrush",
+                    UpdateTransactionStage.PendingReboot => "NaxOrangeBrush",
+                    UpdateTransactionStage.FailedBeforeChange or UpdateTransactionStage.FailedNeedsAttention or UpdateTransactionStage.Indeterminate => "NaxPinkBrush",
+                    _ => "NaxPurpleBrush"
+                })
+            });
+            panel.Children.Add(new TextBlock { Text = string.Join(" · ", details), FontSize = 12, TextWrapping = TextWrapping.Wrap, IsTextSelectionEnabled = true });
+            if (!string.IsNullOrWhiteSpace(entry.Error))
+                panel.Children.Add(new TextBlock { Text = LocalizationService.Text(entry.Error), FontSize = 12, TextWrapping = TextWrapping.Wrap, IsTextSelectionEnabled = true });
+            panel.Children.Add(new TextBlock
+            {
+                Text = entry.FinishedAt.ToLocalTime().ToString("g", System.Globalization.CultureInfo.CurrentCulture),
+                FontSize = 11,
+                Style = (Style)Application.Current.Resources["MutedTextStyle"]
+            });
+            list.Children.Add(panel);
+        }
+        await new ContentDialog
+        {
+            XamlRoot = XamlRoot,
+            Title = LocalizationService.Get("HistoryTitle"),
+            Content = new ScrollViewer { Content = list, MaxHeight = 520 },
+            CloseButtonText = LocalizationService.Get("CloseDialog"),
+            DefaultButton = ContentDialogButton.Close
+        }.ShowAsync();
     }
 
     private async Task<bool> ExecuteUpdateAsync(UpdateRow row, bool rescanAfterSuccess)
@@ -1425,7 +1585,8 @@ public sealed partial class MainPage : Page
             var transaction = await new UpdateTransactionCoordinator(
                 backend,
                 _updateOperationJournal,
-                _updateTransactionLease).ApplyAsync(
+                _updateTransactionLease,
+                history: _updateHistory).ApplyAsync(
                 row.Source,
                 cacheRoot,
                 transactionProgress, operationCancellation.Token);

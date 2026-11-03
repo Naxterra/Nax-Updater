@@ -126,6 +126,7 @@ public sealed class UpdateTransactionCoordinator
     private readonly IUpdateTransactionLeaseProvider? _leaseProvider;
     private readonly int _verificationAttempts;
     private readonly int _driverVerificationAttempts;
+    private readonly IUpdateHistory? _history;
     private readonly Func<TimeSpan, CancellationToken, Task> _delay;
     private readonly TimeProvider _timeProvider;
 
@@ -139,8 +140,10 @@ public sealed class UpdateTransactionCoordinator
         int verificationAttempts = 3,
         Func<TimeSpan, CancellationToken, Task>? delay = null,
         TimeProvider? timeProvider = null,
-        int driverVerificationAttempts = 6)
+        int driverVerificationAttempts = 6,
+        IUpdateHistory? history = null)
     {
+        _history = history;
         _backend = backend;
         _journal = journal;
         _leaseProvider = leaseProvider;
@@ -211,9 +214,21 @@ public sealed class UpdateTransactionCoordinator
             try { _journal.Record(operation, result.Stage, _timeProvider.GetUtcNow(), result.Error); }
             catch (Exception exception) when (exception is IOException or UnauthorizedAccessException) { journalFailure = exception.Message; }
         }
-        return journalFailure is null
-            ? result
-            : result with { JournalWarning = $"The outcome could not be saved in the update journal: {journalFailure}" };
+        string? historyFailure = null;
+        if (operation is not null && _history is not null)
+        {
+            try
+            {
+                _history.Append(UpdateHistoryEntry.From(operation, result.Stage, result.FreshAssessment?.InstalledVersion,
+                    result.Execution?.ExitCode, result.RestartRecommended, result.Error, _timeProvider.GetUtcNow()));
+            }
+            catch (Exception exception) when (exception is IOException or UnauthorizedAccessException) { historyFailure = exception.Message; }
+        }
+        // One translatable message is shown; a failing journal matters more for recovery.
+        var warning = journalFailure is not null ? $"The outcome could not be saved in the update journal: {journalFailure}"
+            : historyFailure is not null ? $"The outcome could not be saved in the update history: {historyFailure}"
+            : null;
+        return warning is null ? result : result with { JournalWarning = warning };
     }
 
     private async Task<UpdateTransactionResult> ApplyCoreAsync(
