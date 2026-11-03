@@ -2,6 +2,12 @@
 
 Why Nax-Updater works the way it does. Newest first; every release adds its decisions here and updates [DESIGN.md](DESIGN.md). Each entry names the decision, the evidence that led to it, and what was rejected.
 
+## 0.17.56 (2026-11-03)
+
+**A release can be skipped and an application held.** A bad release or a compatibility constraint previously meant deselecting the entry in every Update All review. A skip now covers exactly one release, and a hold keeps the application out until it is released. Both stay checked and can be updated one by one, because the owner still wants to see what is available. The choice is keyed to the correlation key, which survives a change of provider and an MSI major upgrade; keying it to the provider or the product code was rejected, because the choice would silently disappear.
+
+**Diagnostics are redacted before they are copied.** A failed row can be copied as a report for an issue. Paths, the user and computer name, URL query strings and credential-like values are removed by default, because signed download links and local paths would otherwise land in a public issue. The report stays English so that it reads the same for everyone who handles the issue.
+
 ## 0.17.55 (2026-11-03)
 
 **Update All shows its batch before it runs.** Filtering the update list never changed which entries Update All includes, so the batch was not visible as a whole. The button now opens a review of every entry with its installed and target version, its source and the running programs it will close, and entries can be deselected. All entries start selected, because the owner's rule is that Update All updates everything without clicking apps one by one. Drivers stay outside the batch.

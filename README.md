@@ -140,6 +140,8 @@ The current implementation includes:
 - six-way parallel ranged downloads for installers of at least 64 MB when the server advertises byte-range support, followed by complete reconstruction and whole-file hash verification;
 - SHA-256-verified ZIP/NuGet packages containing an explicitly declared nested MSI, with exact-entry extraction, traversal rejection, and silent MSI execution;
 - a sequential **Update all** queue containing verified conventional updates followed only by Store/MSIX packages with a reported applicable upgrade, with shared Store connections and one final inventory/update rescan; before it starts, the queue is shown with each entry's installed and target version, its source and the running programs it will close, and each entry can be deselected;
+- **Skip version** and **Hold this application** in the update details: a skipped release and a held application are still checked and can still be updated one by one, but **Update all** leaves them out and its review names the reason; a skip covers only that release, and the choice is keyed to the application's correlation identity so a change of provider keeps it;
+- **Copy diagnostics** in the update details copies a plain-text report of the row (versions, provider, plan, source checks, last run and the last outcomes from the history) with local and network paths, the user and computer name, URL query strings and credentials redacted;
 - an update history (**History**) that keeps every finished outcome, including failed and canceled ones, with the requested and observed version, the source, the installer exit code and whether a restart is needed, separately from the recovery journal;
 - honest bulk counts that keep proven newer conventional versions separate from confirmed Store updates;
 - multi-signer Authenticode policies from installed updater metadata, accepting any explicitly declared trusted publisher identity;
@@ -233,7 +235,7 @@ From this directory:
 dotnet build NaxUpdater.slnx
 dotnet run --project tests/NaxUpdater.Core.SmokeTests/NaxUpdater.Core.SmokeTests.csproj
 dotnet publish src/NaxUpdater/NaxUpdater.csproj -c Release -r win-x64 --self-contained true -o artifacts/NaxUpdater-win-x64
-./scripts/package-release.ps1 -Version 0.17.55
+./scripts/package-release.ps1 -Version 0.17.56
 ```
 
 The desktop project uses .NET 11, WinUI 3, and the Windows App SDK. It is not an Electron or WebView application.

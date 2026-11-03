@@ -4,6 +4,7 @@
 
 same: "{0}" upgrade {1} --version="{2}" -y -r --no-progress > "{3}" 2>&1
 same: Accept: application/vnd.github+json
+same: Architecture, channel, language
 same: Bitdefender Endpoint Security Tools
 same: Bitdefender GravityZone policy
 same: Dell AW3423DW (M46J9)
@@ -766,6 +767,8 @@ en: The installer was cancelled.
 de: Der Installer wurde abgebrochen.
 en: The history path has no directory.
 de: Der Pfad des Verlaufs hat keinen Ordner.
+en: The preferences path has no directory.
+de: Der Pfad der Einstellungen hat keinen Ordner.
 en: The journal path has no directory.
 de: Der Pfad des Journals hat keinen Ordner.
 en: The last verified Razer catalog mapping is shown because the live support page did not return complete machine-readable content.

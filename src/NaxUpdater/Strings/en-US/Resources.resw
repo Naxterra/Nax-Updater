@@ -220,4 +220,19 @@
   <data name="QueueCloses" xml:space="preserve"><value>will be closed: {0}</value></data>
   <data name="QueueSelectAll" xml:space="preserve"><value>Select all</value></data>
   <data name="CloseDialog" xml:space="preserve"><value>Close</value></data>
+  <data name="BatchPreferenceLabel.Text" xml:space="preserve"><value>Update All</value></data>
+  <data name="PreferenceNone" xml:space="preserve"><value>Included in Update All.</value></data>
+  <data name="PreferenceSkipped" xml:space="preserve"><value>Version {0} is skipped. Update All leaves it out until a newer version is released. You can still update it here.</value></data>
+  <data name="PreferenceHeld" xml:space="preserve"><value>This application is held. It is still checked, but Update All leaves it out. You can still update it here.</value></data>
+  <data name="SkipVersionButton" xml:space="preserve"><value>Skip version {0}</value></data>
+  <data name="UnskipVersionButton" xml:space="preserve"><value>Stop skipping version {0}</value></data>
+  <data name="HoldAppButton" xml:space="preserve"><value>Hold this application</value></data>
+  <data name="ReleaseHoldButton" xml:space="preserve"><value>Release the hold</value></data>
+  <data name="CopyDiagnosticsButton.Content" xml:space="preserve"><value>Copy diagnostics</value></data>
+  <data name="DiagnosticsCopiedTitle" xml:space="preserve"><value>Diagnostics copied</value></data>
+  <data name="DiagnosticsCopiedMessage" xml:space="preserve"><value>The report for {0} is on the clipboard. Local paths, the user and computer name, URL parameters and credentials are redacted.</value></data>
+  <data name="QueueExcludedHeader" xml:space="preserve"><value>Not in this run</value></data>
+  <data name="QueueExcludedSkipped" xml:space="preserve"><value>version {0} is skipped</value></data>
+  <data name="QueueExcludedHeld" xml:space="preserve"><value>held</value></data>
+  <data name="PreferenceSaveFailed" xml:space="preserve"><value>The choice could not be saved: {0}</value></data>
 </root>

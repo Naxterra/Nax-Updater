@@ -429,6 +429,14 @@
                             <TextBlock x:Uid="CheckedSourcesLabel" Text="Source check results" Style="{StaticResource DetailLabelStyle}" />
                             <TextBlock x:Name="UpdateSourcesText" TextWrapping="Wrap" IsTextSelectionEnabled="True" />
 
+                            <TextBlock x:Uid="BatchPreferenceLabel" Text="Update All" Style="{StaticResource DetailLabelStyle}" />
+                            <TextBlock x:Name="UpdatePreferenceText" TextWrapping="Wrap" />
+                            <StackPanel Spacing="6" Margin="0,6,0,0">
+                                <Button x:Name="SkipVersionButton" Click="SkipVersionButton_Click" />
+                                <Button x:Name="HoldAppButton" Click="HoldAppButton_Click" />
+                                <Button x:Name="CopyDiagnosticsButton" x:Uid="CopyDiagnosticsButton" Content="Copy diagnostics" Click="CopyDiagnosticsButton_Click" />
+                            </StackPanel>
+
                             <ProgressBar x:Name="UpdateProgress" Visibility="Collapsed" Margin="0,18,0,8" Minimum="0" Maximum="100" />
                             <Button x:Name="StopOperationButton" Visibility="Collapsed" Click="StopOperationButton_Click" Content="Stop after current" />
                             <TextBlock x:Uid="CloseAppsHint" Text="Starting an update authorizes Nax-Updater to close its listed application processes and force-terminate them if necessary." Style="{StaticResource MutedTextStyle}" FontSize="11" TextWrapping="Wrap" Margin="0,7,0,0" />

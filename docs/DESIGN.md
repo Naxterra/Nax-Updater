@@ -1,6 +1,6 @@
 # Nax-Updater design
 
-Current as of 0.17.55. Updated with every release; the reasons behind each rule are in [DECISIONS.md](DECISIONS.md).
+Current as of 0.17.56. Updated with every release; the reasons behind each rule are in [DECISIONS.md](DECISIONS.md).
 
 ## Goal
 
@@ -8,7 +8,7 @@ One window that finds every installed Windows application, tells the truth about
 
 Hard requirements:
 
-- **Update all means update all.** Every installable update is in "Alle aktualisieren"; the owner never has to click apps one by one. Driver updates are the one deliberate exception (see below). Before the batch runs, a review lists every entry with its installed and target version, its source and the running programs it will close. All entries are selected, so one more click starts the whole batch, and any entry can be deselected.
+- **Update all means update all.** Every installable update is in "Alle aktualisieren"; the owner never has to click apps one by one. Driver updates are the one deliberate exception (see below). Before the batch runs, a review lists every entry with its installed and target version, its source and the running programs it will close. All entries are selected, so one more click starts the whole batch, and any entry can be deselected. A held application and a skipped release (both set in the update details) are left out of the batch and listed in the review with the reason. They are still checked and can still be updated one by one. A skip covers exactly one release, so the next release is in the batch again.
 - **Systemic fixes only.** A problem with one app is fixed in the rule that produced it, never with a per-app exception.
 - **Elevation shows UAC.** Nothing that needs administrator rights runs silently without a prompt.
 - **Scan speed comparable to WinGet or the Store** (about 10 s for roughly 150 applications).
@@ -43,6 +43,8 @@ An installer exit code 1641 or 3010 (restart requested) after a verified target 
 The update and driver lists stay enabled, so they can be scrolled and every row's details read during an update; only the row actions and "Alle aktualisieren" are locked. Each row in a run shows its own state in the status column (in Warteschlange, wird vorbereitet, Anwendung wird geschlossen, wird installiert, wird geprüft, then aktualisiert, fehlgeschlagen, nicht mehr anwendbar, Neustart erforderlich or übersprungen). Outcomes stay on the rows after the closing rescan until the next manual scan; a failed row shows its reason above the provider notes. A row that is still installable after a reported success shows the remaining offer instead of "aktualisiert".
 
 Every finished update, including failed, canceled and no longer applicable ones, is added to the update history (Verlauf, `update-history.json`, the newest 500 entries). An entry keeps the installed, target and afterwards read version, the source, the installer exit code, the outcome and its reason. The recovery journal stays separate and holds only the latest transaction. An outcome settled later (after a restart or by a later scan) is added as its own entry, and a damaged history file is kept aside as `update-history.json.unreadable` instead of being overwritten.
+
+"Diagnose kopieren" in the update details copies a plain-text report of the selected row for an issue: versions, provider, plan, source checks, the last run and the row's last five history entries. It is redacted before it reaches the clipboard. Local and network paths keep only their file name, the Windows user and computer name are replaced, URLs lose their query string (signed download links carry credentials there), and tokens, bearer values and other credential-like values are removed.
 
 ## Source order
 

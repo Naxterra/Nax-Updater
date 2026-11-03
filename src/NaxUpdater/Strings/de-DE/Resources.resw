@@ -220,4 +220,19 @@
   <data name="QueueCloses" xml:space="preserve"><value>wird geschlossen: {0}</value></data>
   <data name="QueueSelectAll" xml:space="preserve"><value>Alle auswählen</value></data>
   <data name="CloseDialog" xml:space="preserve"><value>Schließen</value></data>
+  <data name="BatchPreferenceLabel.Text" xml:space="preserve"><value>Alle aktualisieren</value></data>
+  <data name="PreferenceNone" xml:space="preserve"><value>Wird von „Alle aktualisieren“ erfasst.</value></data>
+  <data name="PreferenceSkipped" xml:space="preserve"><value>Version {0} wird übersprungen. „Alle aktualisieren“ lässt sie aus, bis eine neuere Version erscheint. Hier kann sie weiterhin einzeln aktualisiert werden.</value></data>
+  <data name="PreferenceHeld" xml:space="preserve"><value>Diese Anwendung ist festgehalten. Sie wird weiter geprüft, aber „Alle aktualisieren“ lässt sie aus. Hier kann sie weiterhin einzeln aktualisiert werden.</value></data>
+  <data name="SkipVersionButton" xml:space="preserve"><value>Version {0} überspringen</value></data>
+  <data name="UnskipVersionButton" xml:space="preserve"><value>Überspringen von Version {0} aufheben</value></data>
+  <data name="HoldAppButton" xml:space="preserve"><value>Anwendung festhalten</value></data>
+  <data name="ReleaseHoldButton" xml:space="preserve"><value>Festhalten aufheben</value></data>
+  <data name="CopyDiagnosticsButton.Content" xml:space="preserve"><value>Diagnose kopieren</value></data>
+  <data name="DiagnosticsCopiedTitle" xml:space="preserve"><value>Diagnose kopiert</value></data>
+  <data name="DiagnosticsCopiedMessage" xml:space="preserve"><value>Der Bericht für {0} liegt in der Zwischenablage. Lokale Pfade, Benutzer- und Rechnername, URL-Parameter und Zugangsdaten sind geschwärzt.</value></data>
+  <data name="QueueExcludedHeader" xml:space="preserve"><value>Nicht in diesem Lauf</value></data>
+  <data name="QueueExcludedSkipped" xml:space="preserve"><value>Version {0} wird übersprungen</value></data>
+  <data name="QueueExcludedHeld" xml:space="preserve"><value>festgehalten</value></data>
+  <data name="PreferenceSaveFailed" xml:space="preserve"><value>Die Auswahl konnte nicht gespeichert werden: {0}</value></data>
 </root>
