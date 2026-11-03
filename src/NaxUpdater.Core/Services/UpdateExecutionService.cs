@@ -536,7 +536,7 @@ public sealed class UpdateExecutionService
             startInfo.ArgumentList.Add(prepared.ExecutablePath);
             startInfo.ArgumentList.Add("/install");
         }
-        foreach (var argument in plan.Arguments)
+        foreach (var argument in InstallerArguments(plan))
         {
             startInfo.ArgumentList.Add(argument);
         }
@@ -552,6 +552,16 @@ public sealed class UpdateExecutionService
             CleanupPreparedDirectory(prepared.CleanupDirectory);
         }
     }
+
+    // An MSI update runs elevated only for a copy installed for all users. A package that can
+    // install either way (PdfCraft 0.18.0) otherwise runs in the per-user context, finds the
+    // per-machine copy and fails with 1603, so ALLUSERS=1 keeps the installed scope unless the
+    // recipe sets ALLUSERS itself.
+    internal static IReadOnlyList<string> InstallerArguments(UpdateExecutionPlan plan) =>
+        plan.Kind is UpdateExecutionKind.DownloadedMsi or UpdateExecutionKind.DownloadedZipMsi && plan.RequiresElevation &&
+        !plan.Arguments.Any(static argument => argument.StartsWith("ALLUSERS=", StringComparison.OrdinalIgnoreCase))
+            ? [.. plan.Arguments, "ALLUSERS=1"]
+            : plan.Arguments;
 
     private static async Task<UpdateExecutionResult> RunStartedProcessAsync(
         ProcessStartInfo startInfo,

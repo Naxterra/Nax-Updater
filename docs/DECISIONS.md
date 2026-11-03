@@ -2,6 +2,10 @@
 
 Why Nax-Updater works the way it does. Newest first; every release adds its decisions here and updates [DESIGN.md](DESIGN.md). Each entry names the decision, the evidence that led to it, and what was rejected.
 
+## 0.17.54 (2026-11-03)
+
+**An MSI update keeps the all-users scope.** The PdfCraft 0.18.0 update failed with 1603, and Windows Installer logged that the app was already installed for everyone and that ALLUSERS=1 had to be passed. Nax-Updater runs an MSI update elevated only for a copy installed for all users, but none of its MSI recipes passed ALLUSERS, so a package that can install either way ran in the per-user context. Every elevated MSI update now gets ALLUSERS=1 unless its recipe sets ALLUSERS itself. The same PdfCraft package installed with that argument and replaced the earlier copy. Adding the argument to each recipe was rejected, because the three providers that build their own MSI plans would still have lacked it.
+
 ## 0.17.53 (2026-11-03)
 
 **The RST row describes the live storage controller.** The row took the highest driver version of all its members, including registrations of controllers that are no longer connected, and the hardware ID of whichever member came first. A retained registration on a newer driver could therefore make an outdated live controller look current, also when an update was verified. The version, hardware ID and INF now come from one live controller, and with several the oldest driver decides. Every driver row now takes its hardware ID from the device whose version it shows.
