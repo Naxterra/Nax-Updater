@@ -57,7 +57,8 @@ internal static class HistoryRegression
             var history = new FileUpdateHistory(path);
             var unreadableBefore = history.ReadNewestFirst();
             history.Append(Entry("After the damage"));
-            assert(unreadableBefore.Count == 0 && File.ReadAllText(path + ".unreadable") == "{ not json" &&
+            var keptAside = Directory.GetFiles(folder, "update-history.json.unreadable-*");
+            assert(unreadableBefore.Count == 0 && keptAside.Length == 1 && File.ReadAllText(keptAside[0]) == "{ not json" &&
                    history.ReadNewestFirst().Single().DisplayName == "After the damage",
                 "A damaged history file was overwritten instead of being kept aside, or the new entry was lost.");
         }

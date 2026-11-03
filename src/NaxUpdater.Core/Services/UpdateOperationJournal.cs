@@ -108,9 +108,7 @@ public sealed class FileUpdateOperationJournal(string path) : IUpdateOperationJo
         {
             var directory = Path.GetDirectoryName(_path) ?? throw new InvalidOperationException("The journal path has no directory.");
             Directory.CreateDirectory(directory);
-            var temporary = _path + ".tmp";
-            File.WriteAllText(temporary, JsonSerializer.Serialize(operation, JsonOptions));
-            File.Move(temporary, _path, overwrite: true);
+            AtomicFile.WriteAllText(_path, JsonSerializer.Serialize(operation, JsonOptions));
         }
     }
 

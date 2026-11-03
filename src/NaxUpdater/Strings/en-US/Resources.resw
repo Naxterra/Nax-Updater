@@ -235,4 +235,6 @@
   <data name="QueueExcludedSkipped" xml:space="preserve"><value>version {0} is skipped</value></data>
   <data name="QueueExcludedHeld" xml:space="preserve"><value>held</value></data>
   <data name="PreferenceSaveFailed" xml:space="preserve"><value>The choice could not be saved: {0}</value></data>
+  <data name="PreferencesUnreadableTitle" xml:space="preserve"><value>Update All was not started</value></data>
+  <data name="DiagnosticsCopyFailedTitle" xml:space="preserve"><value>The diagnostics could not be copied</value></data>
 </root>

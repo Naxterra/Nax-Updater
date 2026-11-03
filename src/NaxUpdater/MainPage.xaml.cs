@@ -17,7 +17,7 @@ public sealed partial class MainPage : Page
     private readonly ApplicationInventoryService _inventoryService;
     // Some publisher servers refuse requests without a User-Agent (403), so the shared
     // client always sends one; requests that set their own keep it.
-    private readonly HttpClient _httpClient = new() { Timeout = TimeSpan.FromSeconds(30), DefaultRequestHeaders = { { "User-Agent", "NaxUpdater/0.17.56" } } };
+    private readonly HttpClient _httpClient = new() { Timeout = TimeSpan.FromSeconds(30), DefaultRequestHeaders = { { "User-Agent", "NaxUpdater/0.17.57" } } };
     private readonly UpdateExecutionService _updateExecutionService = new();
     private readonly ApplicationRemovalService _applicationRemovalService = new();
     private readonly ApplicationIconService _applicationIconService = new();
@@ -1321,17 +1321,26 @@ public sealed partial class MainPage : Page
 
     private void RefreshPreferenceDetails(UpdateRow row)
     {
-        var preference = _updatePreferences.Get(row.Source);
-        var exclusion = FileUpdatePreferences.ExclusionFor(preference, row.Source);
-        UpdatePreferenceText.Text = exclusion switch
+        UpdatePreference? preference = null;
+        string? readError = null;
+        try
         {
-            UpdateExclusion.Held => LocalizationService.Get("PreferenceHeld"),
-            UpdateExclusion.SkippedVersion => LocalizationService.Format("PreferenceSkipped", preference!.SkippedVersion!),
-            _ => row.CanInstall ? LocalizationService.Get("PreferenceNone") : string.Empty
-        };
+            preference = _updatePreferences.Get(row.Source);
+        }
+        catch (UpdatePreferencesUnreadableException exception)
+        {
+            readError = LocalizationService.Text(exception.Message);
+        }
+        // The skip button follows the skip itself, also while the application is held, so a skip
+        // can be cleared without releasing the hold first.
+        var skipped = FileUpdatePreferences.SkipsRelease(preference, row.Source);
+        UpdatePreferenceText.Text = readError ??
+            (preference?.Held == true ? LocalizationService.Get("PreferenceHeld")
+            : skipped ? LocalizationService.Format("PreferenceSkipped", preference!.SkippedVersion!)
+            : row.CanInstall ? LocalizationService.Get("PreferenceNone") : string.Empty);
         var skippable = row.Source is { Status: UpdateStatus.Available, AvailableVersion: not null };
-        SkipVersionButton.Visibility = skippable || exclusion == UpdateExclusion.SkippedVersion ? Visibility.Visible : Visibility.Collapsed;
-        SkipVersionButton.Content = exclusion == UpdateExclusion.SkippedVersion
+        SkipVersionButton.Visibility = skippable || skipped ? Visibility.Visible : Visibility.Collapsed;
+        SkipVersionButton.Content = skipped
             ? LocalizationService.Format("UnskipVersionButton", preference!.SkippedVersion!)
             : LocalizationService.Format("SkipVersionButton", row.Source.AvailableVersion ?? "—");
         HoldAppButton.Content = LocalizationService.Get(preference?.Held == true ? "ReleaseHoldButton" : "HoldAppButton");
@@ -1342,7 +1351,7 @@ public sealed partial class MainPage : Page
         if (_detailsRow is not { } row) return;
         ChangePreference(row, () =>
         {
-            if (_updatePreferences.ExclusionFor(row.Source) == UpdateExclusion.SkippedVersion) _updatePreferences.ClearSkippedVersion(row.Source);
+            if (FileUpdatePreferences.SkipsRelease(_updatePreferences.Get(row.Source), row.Source)) _updatePreferences.ClearSkippedVersion(row.Source);
             else _updatePreferences.SkipVersion(row.Source);
         });
     }
@@ -1374,16 +1383,27 @@ public sealed partial class MainPage : Page
     private void CopyDiagnosticsButton_Click(object sender, RoutedEventArgs e)
     {
         if (_detailsRow is not { } row) return;
-        var history = _updateHistory.ReadNewestFirst().Where(entry =>
-            entry.ApplicationIdentity.Equals(row.Source.ApplicationIdentity, StringComparison.OrdinalIgnoreCase));
-        var report = UpdateDiagnostics.Build(row.Source, row.RunState == UpdateRunState.None ? null : row.RunState.ToString(),
-            row.RunMessage, history, GetApplicationVersion());
-        var package = new Windows.ApplicationModel.DataTransfer.DataPackage();
-        package.SetText(report);
-        Windows.ApplicationModel.DataTransfer.Clipboard.SetContent(package);
-        UpdateBar.Title = LocalizationService.Get("DiagnosticsCopiedTitle");
-        UpdateBar.Message = LocalizationService.Format("DiagnosticsCopiedMessage", row.Name);
-        UpdateBar.Severity = InfoBarSeverity.Success;
+        try
+        {
+            var history = _updateHistory.ReadNewestFirst().Where(entry =>
+                entry.ApplicationIdentity.Equals(row.Source.ApplicationIdentity, StringComparison.OrdinalIgnoreCase));
+            var report = UpdateDiagnostics.Build(row.Source, row.RunState == UpdateRunState.None ? null : row.RunState.ToString(),
+                row.RunMessage, history, GetApplicationVersion());
+            var package = new Windows.ApplicationModel.DataTransfer.DataPackage();
+            package.SetText(report);
+            Windows.ApplicationModel.DataTransfer.Clipboard.SetContent(package);
+            UpdateBar.Title = LocalizationService.Get("DiagnosticsCopiedTitle");
+            UpdateBar.Message = LocalizationService.Format("DiagnosticsCopiedMessage", row.Name);
+            UpdateBar.Severity = InfoBarSeverity.Success;
+        }
+        // Another program holding the clipboard (a clipboard manager, remote desktop) makes
+        // SetContent throw; that must not end the process, possibly during an update.
+        catch (Exception exception) when (exception is System.Runtime.InteropServices.COMException or IOException or UnauthorizedAccessException)
+        {
+            UpdateBar.Title = LocalizationService.Get("DiagnosticsCopyFailedTitle");
+            UpdateBar.Message = exception.Message;
+            UpdateBar.Severity = InfoBarSeverity.Error;
+        }
         UpdateBar.IsOpen = true;
     }
 
@@ -1404,7 +1424,20 @@ public sealed partial class MainPage : Page
         {
             return;
         }
-        var preferences = _updatePreferences.ReadAll();
+        IReadOnlyDictionary<string, UpdatePreference> preferences;
+        try
+        {
+            preferences = _updatePreferences.ReadAll();
+        }
+        catch (UpdatePreferencesUnreadableException exception)
+        {
+            // Without the saved choices every held application would be updated.
+            UpdateBar.Title = LocalizationService.Get("PreferencesUnreadableTitle");
+            UpdateBar.Message = LocalizationService.Text(exception.Message);
+            UpdateBar.Severity = InfoBarSeverity.Error;
+            UpdateBar.IsOpen = true;
+            return;
+        }
         var installable = _allUpdates.Where(static row => row.CanInstall).ToArray();
         // A held application and a skipped release are still checked, but stay out of the batch.
         var excluded = installable.Where(row => Exclusion(preferences, row) != UpdateExclusion.None).ToArray();
@@ -1828,7 +1861,11 @@ public sealed partial class MainPage : Page
         // Same predicate as UpdateAllButton_Click (CanInstall), so queued Store
         // rows that "Update all" will resume are counted, not shown as (0).
         // Held applications and skipped releases are not counted, because the batch leaves them out.
-        var preferences = _updatePreferences.ReadAll();
+        // When the choices cannot be read, the count includes everything; Update All itself then
+        // refuses to run and says why.
+        IReadOnlyDictionary<string, UpdatePreference> preferences;
+        try { preferences = _updatePreferences.ReadAll(); }
+        catch (UpdatePreferencesUnreadableException) { preferences = new Dictionary<string, UpdatePreference>(); }
         var batch = _allUpdates.Where(row => row.CanInstall && Exclusion(preferences, row) == UpdateExclusion.None).ToArray();
         var verifiedUpdates = batch.Count(static row =>
             row.Source.ExecutionPlan?.Kind is not (UpdateExecutionKind.StorePackage or UpdateExecutionKind.NativeStorePackage or UpdateExecutionKind.NativeStoreQueue));

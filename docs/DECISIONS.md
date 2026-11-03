@@ -2,6 +2,16 @@
 
 Why Nax-Updater works the way it does. Newest first; every release adds its decisions here and updates [DESIGN.md](DESIGN.md). Each entry names the decision, the evidence that led to it, and what was rejected.
 
+## 0.17.57 (2026-11-03)
+
+**Unreadable skip and hold choices stop Update All.** A damaged or locked choices file was read as empty, so every held application and skipped release went back into the batch without a warning. Reading now reports the failure, Update All does not start and names the reason, and only a new choice by the owner keeps the damaged file aside and starts a new one.
+
+**Small state files are written durably.** The journal, the history, the choices and the Store search cache were written to a shared temporary file without forcing it to disk before replacing the old file, so a power loss could leave a truncated file. They now use a temporary file of their own that is flushed to disk first, and a damaged file is kept aside under a time-stamped name, so a second damage cannot replace the first copy.
+
+**Copying diagnostics cannot end the app.** Another program holding the clipboard made the copy throw, which ended the process, possibly during an update. The failure is now shown instead. URLs in the report also lose a user name and password before the host and long random path segments, where signed links can carry their token.
+
+**A skip stays visible while the application is held.** The skip button followed the combined state, so a skip set before a hold could not be cleared while the hold lasted. It now follows the skip itself.
+
 ## 0.17.56 (2026-11-03)
 
 **A release can be skipped and an application held.** A bad release or a compatibility constraint previously meant deselecting the entry in every Update All review. A skip now covers exactly one release, and a hold keeps the application out until it is released. Both stay checked and can be updated one by one, because the owner still wants to see what is available. The choice is keyed to the correlation key, which survives a change of provider and an MSI major upgrade; keying it to the provider or the product code was rejected, because the choice would silently disappear.

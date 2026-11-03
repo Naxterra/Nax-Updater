@@ -47,9 +47,7 @@ internal sealed class StoreSearchCache(string path, TimeProvider? time = null)
             try
             {
                 Directory.CreateDirectory(Path.GetDirectoryName(path)!);
-                var temporary = path + ".tmp";
-                File.WriteAllText(temporary, JsonSerializer.Serialize(entries));
-                File.Move(temporary, path, overwrite: true);
+                AtomicFile.WriteAllText(path, JsonSerializer.Serialize(entries));
             }
             catch (Exception exception) when (exception is IOException or UnauthorizedAccessException) { }
         }

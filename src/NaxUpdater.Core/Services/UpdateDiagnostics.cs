@@ -68,12 +68,7 @@ public static partial class UpdateDiagnostics
         text = GitHubTokenRegex().Replace(text, "<redacted>");
         text = BearerRegex().Replace(text, "Bearer <redacted>");
         text = CredentialRegex().Replace(text, static match => $"{match.Groups["name"].Value}=<redacted>");
-        text = UrlRegex().Replace(text, static match =>
-        {
-            var value = match.Value;
-            var cut = value.IndexOfAny(['?', '#']);
-            return cut < 0 ? value : value[..cut];
-        });
+        text = UrlRegex().Replace(text, static match => RedactUrl(match.Value));
         // A path may contain spaces, so it runs to the end of the line or a quote, and everything
         // before its last backslash is replaced; only the file name and the text after it remain.
         text = LocalPathRegex().Replace(text, static match => "<path>\\" + match.Value[(match.Value.LastIndexOf('\\') + 1)..]);
@@ -84,6 +79,27 @@ public static partial class UpdateDiagnostics
             text = Regex.Replace(text, $@"\b{Regex.Escape(machineName)}\b", "<computer>", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
         return text;
     }
+
+    // A URL keeps its scheme, host and readable path. The query and fragment go, and so do a
+    // user name and password before the host and a long random path segment, which is where
+    // signed CDN links carry their token when it is not in the query.
+    private static string RedactUrl(string value)
+    {
+        var cut = value.IndexOfAny(['?', '#']);
+        if (cut >= 0) value = value[..cut];
+        value = UserInfoRegex().Replace(value, "${scheme}");
+        var parts = value.Split('/');
+        for (var index = 3; index < parts.Length; index++)
+            if (TokenSegmentRegex().IsMatch(parts[index])) parts[index] = "<redacted>";
+        return string.Join('/', parts);
+    }
+
+    [GeneratedRegex(@"^(?<scheme>https?://)[^/@]+@", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
+    private static partial Regex UserInfoRegex();
+
+    // At least 32 characters with letters and digits and no file extension.
+    [GeneratedRegex(@"^(?=[^.]*\d)(?=[^.]*[A-Za-z])[A-Za-z0-9_\-=~%]{32,}$", RegexOptions.CultureInvariant)]
+    private static partial Regex TokenSegmentRegex();
 
     [GeneratedRegex(@"\bgh[pousr]_[A-Za-z0-9]{20,}\b|\bgithub_pat_[A-Za-z0-9_]{20,}\b", RegexOptions.CultureInvariant)]
     private static partial Regex GitHubTokenRegex();

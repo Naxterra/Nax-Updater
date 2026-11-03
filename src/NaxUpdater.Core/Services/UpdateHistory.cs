@@ -27,9 +27,7 @@ public sealed class FileUpdateHistory(string path, int capacity = 500) : IUpdate
             if (entries.Count > capacity) entries.RemoveRange(0, entries.Count - capacity);
             var directory = Path.GetDirectoryName(_path) ?? throw new InvalidOperationException("The history path has no directory.");
             Directory.CreateDirectory(directory);
-            var temporary = _path + ".tmp";
-            File.WriteAllText(temporary, JsonSerializer.Serialize(entries, JsonOptions));
-            File.Move(temporary, _path, overwrite: true);
+            AtomicFile.WriteAllText(_path, JsonSerializer.Serialize(entries, JsonOptions));
         }
     }
 
@@ -54,7 +52,7 @@ public sealed class FileUpdateHistory(string path, int capacity = 500) : IUpdate
         catch (JsonException) when (preserveUnreadable)
         {
             // A damaged file is kept next to the new one instead of being overwritten.
-            File.Move(_path, _path + ".unreadable", overwrite: true);
+            AtomicFile.KeepAside(_path);
             return [];
         }
         catch (Exception exception) when (!preserveUnreadable && exception is IOException or UnauthorizedAccessException or JsonException)

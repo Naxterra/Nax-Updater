@@ -15,6 +15,10 @@ public enum UpdateExclusion
     Held
 }
 
+// The saved choices exist but cannot be read. Treating them as empty would put every held
+// application back into Update All without a word, so the caller has to decide.
+public sealed class UpdatePreferencesUnreadableException(string message, Exception inner) : IOException(message, inner);
+
 public sealed class FileUpdatePreferences(string path)
 {
     private static readonly JsonSerializerOptions JsonOptions = new() { WriteIndented = true };
@@ -29,27 +33,35 @@ public sealed class FileUpdatePreferences(string path)
     public static UpdateExclusion ExclusionFor(UpdatePreference? preference, UpdateCheckResult update) =>
         preference is null ? UpdateExclusion.None
         : preference.Held ? UpdateExclusion.Held
-        // A skip covers only the skipped release; a newer one is offered again.
-        : preference.SkippedVersion is { } skipped && update.AvailableVersion is { } available &&
-          VersionOrder.Compare(skipped, available) == 0 ? UpdateExclusion.SkippedVersion
+        : SkipsRelease(preference, update) ? UpdateExclusion.SkippedVersion
         : UpdateExclusion.None;
 
-    public UpdatePreference? Get(UpdateCheckResult update)
-    {
-        lock (_gate)
-        {
-            return ReadFile(preserveUnreadable: false).GetValueOrDefault(KeyFor(update));
-        }
-    }
+    // A skip covers only the skipped release; a newer one is offered again. It is kept while the
+    // application is also held, so releasing the hold brings the skip back.
+    public static bool SkipsRelease(UpdatePreference? preference, UpdateCheckResult update) =>
+        preference?.SkippedVersion is { } skipped && update.AvailableVersion is { } available &&
+        VersionOrder.Compare(skipped, available) == 0;
 
+    /// <exception cref="UpdatePreferencesUnreadableException">The saved choices cannot be read.</exception>
+    public UpdatePreference? Get(UpdateCheckResult update) => ReadAll().GetValueOrDefault(KeyFor(update));
+
+    /// <exception cref="UpdatePreferencesUnreadableException">The saved choices cannot be read.</exception>
     public UpdateExclusion ExclusionFor(UpdateCheckResult update) => ExclusionFor(Get(update), update);
 
     // One read for a whole list, keyed by KeyFor.
+    /// <exception cref="UpdatePreferencesUnreadableException">The saved choices cannot be read.</exception>
     public IReadOnlyDictionary<string, UpdatePreference> ReadAll()
     {
         lock (_gate)
         {
-            return ReadFile(preserveUnreadable: false);
+            try
+            {
+                return ReadFile();
+            }
+            catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or JsonException)
+            {
+                throw new UpdatePreferencesUnreadableException($"The saved skip and hold choices could not be read: {exception.Message}", exception);
+            }
         }
     }
 
@@ -66,7 +78,18 @@ public sealed class FileUpdatePreferences(string path)
     {
         lock (_gate)
         {
-            var preferences = ReadFile(preserveUnreadable: true);
+            Dictionary<string, UpdatePreference> preferences;
+            try
+            {
+                preferences = ReadFile();
+            }
+            catch (JsonException)
+            {
+                // The owner is making a new choice, so a damaged file is kept aside under a name
+                // of its own and the new choice starts a new file. A locked file still fails.
+                AtomicFile.KeepAside(_path);
+                preferences = new(StringComparer.Ordinal);
+            }
             var key = KeyFor(update);
             var current = preferences.GetValueOrDefault(key) ?? new UpdatePreference(key, update.DisplayName, null, false, default);
             var changed = change(current) with { DisplayName = update.DisplayName, ChangedAt = DateTimeOffset.UtcNow };
@@ -74,31 +97,16 @@ public sealed class FileUpdatePreferences(string path)
             else preferences[key] = changed;
             var directory = Path.GetDirectoryName(_path) ?? throw new InvalidOperationException("The preferences path has no directory.");
             Directory.CreateDirectory(directory);
-            var temporary = _path + ".tmp";
-            File.WriteAllText(temporary, JsonSerializer.Serialize(preferences.Values.OrderBy(static value => value.Key, StringComparer.Ordinal), JsonOptions));
-            File.Move(temporary, _path, overwrite: true);
+            AtomicFile.WriteAllText(_path, JsonSerializer.Serialize(preferences.Values.OrderBy(static value => value.Key, StringComparer.Ordinal), JsonOptions));
         }
     }
 
-    private Dictionary<string, UpdatePreference> ReadFile(bool preserveUnreadable)
+    private Dictionary<string, UpdatePreference> ReadFile()
     {
-        try
-        {
-            if (!File.Exists(_path)) return new(StringComparer.Ordinal);
-            return (JsonSerializer.Deserialize<List<UpdatePreference>>(File.ReadAllText(_path), JsonOptions) ?? [])
-                .Where(static value => value is not null && !string.IsNullOrWhiteSpace(value.Key))
-                .GroupBy(static value => value.Key, StringComparer.Ordinal)
-                .ToDictionary(static group => group.Key, static group => group.Last(), StringComparer.Ordinal);
-        }
-        catch (JsonException) when (preserveUnreadable)
-        {
-            // A damaged file is kept next to the new one instead of being overwritten.
-            File.Move(_path, _path + ".unreadable", overwrite: true);
-            return new(StringComparer.Ordinal);
-        }
-        catch (Exception exception) when (!preserveUnreadable && exception is IOException or UnauthorizedAccessException or JsonException)
-        {
-            return new(StringComparer.Ordinal);
-        }
+        if (!File.Exists(_path)) return new(StringComparer.Ordinal);
+        return (JsonSerializer.Deserialize<List<UpdatePreference>>(File.ReadAllText(_path), JsonOptions) ?? [])
+            .Where(static value => value is not null && !string.IsNullOrWhiteSpace(value.Key))
+            .GroupBy(static value => value.Key, StringComparer.Ordinal)
+            .ToDictionary(static group => group.Key, static group => group.Last(), StringComparer.Ordinal);
     }
 }

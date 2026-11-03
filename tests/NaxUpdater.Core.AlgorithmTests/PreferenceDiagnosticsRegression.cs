@@ -47,9 +47,16 @@ internal static class PreferenceDiagnosticsRegression
             // A major upgrade replaced the MSI product code and the app moved to another provider.
             var moved = Update("3.0.0", identity: "registry:LocalMachine:Registry64:{33333333-3333-3333-3333-333333333333}", provider: "official:Vendor.App");
             var held = preferences.ExclusionFor(moved);
+            // A skip set while held is still seen as a skip, so it can be cleared without
+            // releasing the hold, and it applies once the hold is released.
+            preferences.SkipVersion(moved);
+            var skipSeenWhileHeld = FileUpdatePreferences.SkipsRelease(preferences.Get(moved), moved) && preferences.ExclusionFor(moved) == UpdateExclusion.Held;
             preferences.SetHeld(moved, false);
-            assert(held == UpdateExclusion.Held && preferences.ExclusionFor(moved) == UpdateExclusion.None,
-                $"A hold was lost when the application's provider and product code changed, or could not be released: {held}");
+            var skippedAfterRelease = preferences.ExclusionFor(moved);
+            preferences.ClearSkippedVersion(moved);
+            assert(held == UpdateExclusion.Held && skipSeenWhileHeld && skippedAfterRelease == UpdateExclusion.SkippedVersion &&
+                   preferences.ExclusionFor(moved) == UpdateExclusion.None,
+                $"A hold was lost when the application's provider and product code changed, a skip was hidden by the hold, or the choices could not be cleared: {held} · {skipSeenWhileHeld} · {skippedAfterRelease}");
         }
         finally { Directory.Delete(folder, true); }
     }
@@ -62,11 +69,19 @@ internal static class PreferenceDiagnosticsRegression
             var path = Path.Combine(folder, "update-preferences.json");
             File.WriteAllText(path, "[ not json");
             var preferences = new FileUpdatePreferences(path);
-            var unreadable = preferences.ExclusionFor(Update("2.0.0"));
+            // An unreadable file must be reported, because reading it as empty would put every
+            // held application back into Update All.
+            var reported = false;
+            try { preferences.ReadAll(); }
+            catch (UpdatePreferencesUnreadableException) { reported = true; }
             preferences.SetHeld(Update("2.0.0"), true);
-            assert(unreadable == UpdateExclusion.None && File.ReadAllText(path + ".unreadable") == "[ not json" &&
-                   preferences.ExclusionFor(Update("2.0.0")) == UpdateExclusion.Held,
-                "A damaged preferences file was overwritten instead of being kept aside, or the new choice was lost.");
+            // A second damage keeps its own copy instead of replacing the first one.
+            File.WriteAllText(path, "[ damaged again");
+            Thread.Sleep(5);
+            preferences.SetHeld(Update("2.0.0"), true);
+            var keptAside = Directory.GetFiles(folder, "update-preferences.json.unreadable-*").Select(File.ReadAllText).Order().ToArray();
+            assert(reported && keptAside.SequenceEqual(["[ damaged again", "[ not json"]) && preferences.ExclusionFor(Update("2.0.0")) == UpdateExclusion.Held,
+                $"A damaged preferences file was read as empty, overwritten, or lost the new choice: reported {reported}, kept {keptAside.Length}");
         }
         finally { Directory.Delete(folder, true); }
     }
@@ -80,13 +95,17 @@ internal static class PreferenceDiagnosticsRegression
             Authorization: Bearer s3cr3tvalue
             \\WORKSTATION-7\share\folder\file.msi
             signed in as robin on WORKSTATION-7
+            https://mirror-user:p4ssw0rd@mirror.example.com/files/setup.exe
+            https://cdn.example.com/dl/AbCdEf0123456789AbCdEf0123456789xyz/setup.exe
             """;
         var redacted = UpdateDiagnostics.Redact(text, "Robin", "WORKSTATION-7");
-        string[] secrets = ["Robin", "robin", "WORKSTATION-7", "AppData", "X-Amz", "s3cr3tvalue", "ghp_", "Downloads"];
+        string[] secrets = ["Robin", "robin", "WORKSTATION-7", "AppData", "X-Amz", "s3cr3tvalue", "ghp_", "Downloads", "p4ssw0rd", "mirror-user", "AbCdEf0123456789"];
         var leaked = secrets.Where(secret => redacted.Contains(secret, StringComparison.Ordinal)).ToArray();
         assert(leaked.Length == 0 && redacted.Contains(@"<path>\setup.exe failed", StringComparison.Ordinal) &&
                redacted.Contains("https://objects.example.com/release/setup.exe", StringComparison.Ordinal) &&
-               redacted.Contains(@"<network path>\file.msi", StringComparison.Ordinal),
+               redacted.Contains(@"<network path>\file.msi", StringComparison.Ordinal) &&
+               redacted.Contains("https://mirror.example.com/files/setup.exe", StringComparison.Ordinal) &&
+               redacted.Contains("https://cdn.example.com/dl/<redacted>/setup.exe", StringComparison.Ordinal),
             $"The diagnostics report kept a private detail or lost what is needed to read it ({string.Join(", ", leaked)}):{Environment.NewLine}{redacted}");
     }
 
@@ -97,7 +116,7 @@ internal static class PreferenceDiagnosticsRegression
         var failed = new UpdateHistoryEntry(Guid.NewGuid(), "Fixture App", "registry:LocalMachine:Registry64:{11111111-1111-1111-1111-111111111111}",
             "github:vendor/app", "1.0.0", "2.0.0", "1.0.0", UpdateTransactionStage.FailedNeedsAttention, 1603, false,
             @"The updater exited with code 1603. Log: D:\Logs\private\install.log", DateTimeOffset.UtcNow, DateTimeOffset.UtcNow);
-        var report = UpdateDiagnostics.Build(Update("2.0.0", plan: plan), "Failed", "The updater exited with code 1603.", [failed], "0.17.56");
+        var report = UpdateDiagnostics.Build(Update("2.0.0", plan: plan), "Failed", "The updater exited with code 1603.", [failed], "0.17.57");
         assert(report.Contains("download host vendor.example", StringComparison.Ordinal) && report.Contains("exit code 1603", StringComparison.Ordinal) &&
                report.Contains("FailedNeedsAttention", StringComparison.Ordinal) && !report.Contains("sig=abc", StringComparison.Ordinal) &&
                !report.Contains(@"D:\Logs", StringComparison.Ordinal) && report.Contains(@"<path>\install.log", StringComparison.Ordinal),

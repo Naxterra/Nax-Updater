@@ -235,4 +235,6 @@
   <data name="QueueExcludedSkipped" xml:space="preserve"><value>Version {0} wird übersprungen</value></data>
   <data name="QueueExcludedHeld" xml:space="preserve"><value>festgehalten</value></data>
   <data name="PreferenceSaveFailed" xml:space="preserve"><value>Die Auswahl konnte nicht gespeichert werden: {0}</value></data>
+  <data name="PreferencesUnreadableTitle" xml:space="preserve"><value>„Alle aktualisieren“ wurde nicht gestartet</value></data>
+  <data name="DiagnosticsCopyFailedTitle" xml:space="preserve"><value>Die Diagnose konnte nicht kopiert werden</value></data>
 </root>
