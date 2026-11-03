@@ -669,7 +669,7 @@ public sealed partial class ManufacturerDriverService(HttpClient httpClient, Kyo
         try
         {
             using var request = new HttpRequestMessage(HttpMethod.Get, uri);
-            request.Headers.UserAgent.ParseAdd("NaxUpdater/0.17.59");
+            request.Headers.UserAgent.ParseAdd("NaxUpdater/0.17.60");
             using var response = await httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, timeout.Token);
             response.EnsureSuccessStatusCode();
             return await response.Content.ReadAsStringAsync(timeout.Token);
@@ -707,7 +707,7 @@ public sealed partial class ManufacturerDriverService(HttpClient httpClient, Kyo
                 // reporting the replaced Intel and TP-Link drivers in the running app for more than
                 // a minute after Windows had installed the new ones, and it took 1.7 s per read
                 // against 0.35 s for the device list, so it is no longer queried.
-                var driverKey = ReadDeviceDriverKey(deviceId);
+                var driverKey = ReadDeviceDriverKey(deviceId, issues);
                 if (driverKey is not null) presentDriverKeys.Add(driverKey.Path);
                 var provider = driverKey?.Provider ?? "Microsoft";
                 var manufacturer = Text(entity["Manufacturer"]) ?? provider;
@@ -750,7 +750,10 @@ public sealed partial class ManufacturerDriverService(HttpClient httpClient, Kyo
                .. printers];
     }
 
-    private static DeviceDriverKey? ReadDeviceDriverKey(string deviceId)
+    // A device without a "Driver" value has no driver installed, which is normal. A driver key
+    // that is named but cannot be read is reported, because the device would otherwise be taken
+    // for a Microsoft device and drop out of the driver view without a word.
+    private static DeviceDriverKey? ReadDeviceDriverKey(string deviceId, ICollection<string> issues)
     {
         try
         {
@@ -762,6 +765,7 @@ public sealed partial class ManufacturerDriverService(HttpClient httpClient, Kyo
             using var key = Registry.LocalMachine.OpenSubKey($@"{DriverClassPath}\{path}");
             if (key is null)
             {
+                issues.Add($"Driver key of {deviceId}: {path} does not exist.");
                 return null;
             }
             return new DeviceDriverKey(path, Read(key, "ProviderName"), Read(key, "DriverVersion"),
@@ -769,6 +773,7 @@ public sealed partial class ManufacturerDriverService(HttpClient httpClient, Kyo
         }
         catch (Exception exception) when (exception is UnauthorizedAccessException or IOException or System.Security.SecurityException)
         {
+            issues.Add($"Driver key of {deviceId}: {exception.Message}");
             return null;
         }
     }

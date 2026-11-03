@@ -17,7 +17,7 @@ public sealed partial class MainPage : Page
     private readonly ApplicationInventoryService _inventoryService;
     // Some publisher servers refuse requests without a User-Agent (403), so the shared
     // client always sends one; requests that set their own keep it.
-    private readonly HttpClient _httpClient = new() { Timeout = TimeSpan.FromSeconds(30), DefaultRequestHeaders = { { "User-Agent", "NaxUpdater/0.17.59" } } };
+    private readonly HttpClient _httpClient = new() { Timeout = TimeSpan.FromSeconds(30), DefaultRequestHeaders = { { "User-Agent", "NaxUpdater/0.17.60" } } };
     private readonly UpdateExecutionService _updateExecutionService = new();
     private readonly ApplicationRemovalService _applicationRemovalService = new();
     private readonly ApplicationIconService _applicationIconService = new();
@@ -1004,6 +1004,9 @@ public sealed partial class MainPage : Page
                 try { reused = await sources.DriversAsync(); }
                 catch (Exception exception) when (exception is not OperationCanceledException) { reused = null; }
             }
+            // A fresh check replaces the scan's result for good, so switching views cannot bring
+            // the older result back.
+            if (reused is null) _scanSources = null;
             var rawSnapshot = reused ?? await _manufacturerDriverService.CheckAsync();
             var generationId = Guid.NewGuid();
             var snapshot = rawSnapshot with

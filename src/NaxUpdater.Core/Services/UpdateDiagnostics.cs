@@ -89,17 +89,26 @@ public static partial class UpdateDiagnostics
         if (cut >= 0) value = value[..cut];
         var scheme = value.IndexOf("://", StringComparison.Ordinal) + 3;
         var rest = value[scheme..];
-        // The user part ends at the last "@". A password may contain an unencoded "/", so the
-        // "@" may come after a "/": then a ":" before that "/" marks a password, unless what
-        // follows the ":" is a port number. An "@" in a path (npm's /@scope) has no such ":".
-        var at = rest.LastIndexOf('@');
-        if (at > 0)
+        // A well-formed URL names its user part itself; it may be followed by an "@" in the path
+        // (npm's /@scope), which stays.
+        if (Uri.TryCreate(value, UriKind.Absolute, out var parsed) && parsed.UserInfo.Length > 0 &&
+            rest.StartsWith(parsed.UserInfo + "@", StringComparison.Ordinal))
         {
-            var user = rest[..at];
-            var slash = user.IndexOf('/');
-            var colon = user.IndexOf(':');
-            if (slash < 0 || colon >= 0 && colon < slash && !user[(colon + 1)..slash].All(char.IsAsciiDigit))
-                rest = rest[(at + 1)..];
+            rest = rest[(parsed.UserInfo.Length + 1)..];
+        }
+        else
+        {
+            // A password with an unencoded "/" puts the "@" behind a "/", and the parser then
+            // reads the user name as the host. Text before such an "@" is a user part when what
+            // comes before its first "/" is no host name with a dot ("ports.example.com:8443"),
+            // so an "@" in the path of a real host stays.
+            var at = rest.LastIndexOf('@');
+            if (at > 0)
+            {
+                var user = rest[..at];
+                var slash = user.IndexOf('/');
+                if (slash < 0 || !user[..slash].Contains('.')) rest = rest[(at + 1)..];
+            }
         }
         var parts = rest.Split('/');
         for (var index = 1; index < parts.Length; index++)

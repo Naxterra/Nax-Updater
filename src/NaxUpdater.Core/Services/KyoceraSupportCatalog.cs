@@ -160,7 +160,8 @@ public sealed partial class KyoceraSupportCatalog(HttpClient httpClient, string?
                 if (buffer.Length + read > MaxDocumentBytes) throw new InvalidDataException("Kyocera's support data is unexpectedly large.");
                 buffer.Write(chunk, 0, read);
             }
-            var body = System.Text.Encoding.UTF8.GetString(buffer.GetBuffer(), 0, (int)buffer.Length);
+            // GetString keeps a UTF-8 byte order mark as U+FEFF, which the parser would reject.
+            var body = System.Text.Encoding.UTF8.GetString(buffer.GetBuffer(), 0, (int)buffer.Length).TrimStart('﻿');
             var document = JsonDocument.Parse(body);
             if (cache is { } paths)
                 WriteCache(paths, new KyoceraCacheEntry(uri.AbsoluteUri, response.Headers.ETag?.ToString(), response.Content.Headers.LastModified), body);
@@ -174,6 +175,11 @@ public sealed partial class KyoceraSupportCatalog(HttpClient httpClient, string?
 
     private sealed record KyoceraCacheEntry(string Uri, string? ETag, DateTimeOffset? LastModified);
 
+    // A scan's background driver check and a later check of the driver view can use the same
+    // cache folder at the same time, so the cache is read and written under one lock; otherwise
+    // one writer's entry could pair with the other's body.
+    private static readonly Lock CacheLock = new();
+
     private sealed record CachedDocument(KyoceraCacheEntry Entry, string Body);
 
     private (string Body, string Entry)? CachePaths(Uri uri)
@@ -186,6 +192,7 @@ public sealed partial class KyoceraSupportCatalog(HttpClient httpClient, string?
     // A missing, damaged or foreign cache entry only means a full download.
     private static CachedDocument? ReadCache((string Body, string Entry) paths, Uri uri)
     {
+        lock (CacheLock)
         try
         {
             if (!File.Exists(paths.Body) || !File.Exists(paths.Entry)) return null;
@@ -205,6 +212,7 @@ public sealed partial class KyoceraSupportCatalog(HttpClient httpClient, string?
     private static void WriteCache((string Body, string Entry) paths, KyoceraCacheEntry entry, string body)
     {
         if (entry.ETag is null && entry.LastModified is null) return;
+        lock (CacheLock)
         try
         {
             Directory.CreateDirectory(Path.GetDirectoryName(paths.Body)!);

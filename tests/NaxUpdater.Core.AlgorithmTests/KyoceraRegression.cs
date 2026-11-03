@@ -31,6 +31,14 @@ internal static class KyoceraRegression
         await newest_listing_across_printer_models_wins(assert);
         await unchanged_kyocera_files_are_answered_from_the_cache(assert);
         await one_scan_asks_kyocera_once_for_utilities_and_drivers(assert);
+        await kyocera_file_with_byte_order_mark_is_read(assert);
+    }
+
+    private static async Task kyocera_file_with_byte_order_mark_is_read(Action<bool, string> assert)
+    {
+        using var http = new HttpClient(new Pages(byteOrderMark: true));
+        var model = await new KyoceraSupportCatalog(http).FindModelAsync("ECOSYS MA2100cwfx", CancellationToken.None);
+        assert(model?.Id == "358", "A Kyocera file that starts with a UTF-8 byte order mark could not be read.");
     }
 
     // The second check asks with the saved ETag and gets 304 without a body; a changed file is
@@ -172,7 +180,7 @@ internal static class KyoceraRegression
         new($"registry:{name}", name, "KYOCERA Document Solutions Inc.", version, version, "fixture", null, "fixture", null, null,
             InstallScope.Machine, ManagementMode.Registry, ConfidenceLevel.High, false, [], null, []);
 
-    private sealed class Pages(bool failFirst = false) : HttpMessageHandler
+    private sealed class Pages(bool failFirst = false, bool byteOrderMark = false) : HttpMessageHandler
     {
         private bool _failed;
 
@@ -190,6 +198,9 @@ internal static class KyoceraRegression
                 "/support_product/js/models/414.json" => SecondModel,
                 _ => null
             };
+            if (body is not null && byteOrderMark)
+                return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+                    { RequestMessage = request, Content = new ByteArrayContent([.. Encoding.UTF8.GetPreamble(), .. Encoding.UTF8.GetBytes(body)]) });
             return Task.FromResult(body is null
                 ? new HttpResponseMessage(HttpStatusCode.NotFound) { RequestMessage = request }
                 : new HttpResponseMessage(HttpStatusCode.OK) { RequestMessage = request, Content = new StringContent(body, Encoding.UTF8, "application/json") });

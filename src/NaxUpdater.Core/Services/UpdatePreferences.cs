@@ -60,7 +60,10 @@ public sealed class FileUpdatePreferences(string path)
             }
             catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or JsonException)
             {
-                throw new UpdatePreferencesUnreadableException($"The saved skip and hold choices could not be read: {exception.Message} Holding or skipping an application again keeps the damaged file aside and starts a new one.", exception);
+                // Only a damaged file is replaced by a new choice (Change); a locked file is not.
+                throw new UpdatePreferencesUnreadableException(exception is JsonException
+                    ? $"The saved skip and hold choices could not be read: {exception.Message} Holding or skipping an application again keeps the damaged file aside and starts a new one."
+                    : $"The saved skip and hold choices could not be read: {exception.Message}", exception);
             }
         }
     }

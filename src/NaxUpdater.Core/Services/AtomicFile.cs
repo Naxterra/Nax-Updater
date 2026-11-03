@@ -26,8 +26,10 @@ internal static class AtomicFile
         }
     }
 
-    // Every caller writes one file under its own lock, and only one Nax-Updater runs per session,
-    // so a temporary file of the same target that exists now was left by an interrupted write.
+    // Every caller serializes the writes of its file (the journal, the history and the choices
+    // under their own lock, the Store cache and the Kyocera cache under a shared one), and only
+    // one Nax-Updater runs per session, so a temporary file of the same target that exists now
+    // was left by an interrupted write.
     // The fixed ".tmp" name of earlier versions is removed as well.
     private static void RemoveStaleTemporaries(string path)
     {

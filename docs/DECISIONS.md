@@ -2,6 +2,18 @@
 
 Why Nax-Updater works the way it does. Newest first; every release adds its decisions here and updates [DESIGN.md](DESIGN.md). Each entry names the decision, the evidence that led to it, and what was rejected.
 
+## 0.17.60 (2026-11-03)
+
+**A fresh driver check replaces the scan's result.** After "Herstellertreiber prüfen" showed a newer state, switching views within five minutes of the scan brought the scan's older driver result back, so a driver installed from a manufacturer page could look available again. A fresh check now ends the reuse of the scan's result.
+
+**The Kyocera cache is read and written under one lock.** The scan's background driver check and a later check of the driver view can use the cache at the same time, and one writer's entry could pair with the other's body. A UTF-8 byte order mark at the start of a Kyocera file is also removed before parsing.
+
+**An unreadable driver key is reported.** Without Win32_PnPSignedDriver, a present device whose named driver key cannot be read would have been taken for a Microsoft device and left the driver view silently. It is now listed as a check problem. A device with no driver at all stays silent, because that is a normal state.
+
+**The user part of a URL is taken from the URL parser.** The previous rule cut at the last "@", which kept a token followed by an "@" in the path and could cut away the host. The user part now comes from .NET's URI parser, and the rule for a password with an unencoded "/" only applies when no host name with a dot stands before the "@".
+
+**The advice for unreadable choices fits the error.** Holding or skipping again replaces only a damaged file, so the advice is no longer given for a locked file.
+
 ## 0.17.59 (2026-11-03)
 
 **A scan checks the drivers once.** Measured on the owner's PC, the update check took 7.0 to 8.5 s, and its slowest parts were the four driver rows of the update list (5.6 s, a full manufacturer driver check) and the Kyocera utilities (5 s); opening the driver view then ran the same driver check again (4.3 to 6.2 s). The driver check now starts together with the application inventory, the update list and the driver view share its result, and both ask Kyocera through one catalog. A scan followed by the driver view went from 13 to 17 s to 6.4 to 6.8 s, the update check alone to 4.5 to 5.1 s, with identical driver rows. Caching driver results across scans was rejected, because a driver can change outside Nax-Updater; the reuse is limited to five minutes and ends with any change Nax-Updater makes.
