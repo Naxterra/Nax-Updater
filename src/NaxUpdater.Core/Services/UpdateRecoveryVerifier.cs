@@ -11,6 +11,10 @@ public static class UpdateRecoveryVerifier
         if (!string.IsNullOrWhiteSpace(operation.TargetVersion))
         {
             if (VersionOrder.Compare(observedVersion, operation.TargetVersion) < 0) return false;
+            // As in the live transaction, a Store package counts only at exactly its target. A
+            // newer version that Windows installed on its own does not prove that this update ran.
+            if (operation.ExecutionKind == UpdateExecutionKind.StorePackage &&
+                VersionOrder.Compare(observedVersion, operation.TargetVersion) != 0) return false;
             // A same-version repair (Chocolatey reinstalling a version installed outside
             // it) already matched its target before it ran, so the application version
             // proves nothing. Only Chocolatey's own records can, for the package it ran

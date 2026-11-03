@@ -481,6 +481,7 @@ try
     await IntelPackageRegression.RunAsync(Assert);
     TpLinkRegression.Run(Assert);
     await ReleaseReviewRegression.RunAsync(Assert);
+    await SecondReviewRegression.RunAsync(Assert);
     // WinGet's COM server exits after installing a fresh catalog package; only its
     // "server gone" RPC errors are retried on a new server.
     Assert(WingetFallbackUpdateProvider.IsServerGone(new System.Runtime.InteropServices.COMException("gone", unchecked((int)0x800706BE))) &&

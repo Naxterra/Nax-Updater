@@ -678,6 +678,8 @@ en: The assessment does not contain an applicable execution plan.
 de: Die Prüfung enthält keinen anwendbaren Ausführungsplan.
 en: The cached installer {0} does not match the release.
 de: Der zwischengespeicherte Installer {0} passt nicht zum Release.
+en: The download received no data for {0} seconds.
+de: Der Download hat {0} Sekunden lang keine Daten erhalten.
 en: The download redirected to untrusted host '{0}'.
 de: Der Download wurde auf den nicht vertrauenswürdigen Host „{0}“ umgeleitet.
 en: The downloadable installer requires Authenticode but has no approved publisher identity.

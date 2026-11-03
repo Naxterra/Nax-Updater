@@ -2,6 +2,18 @@
 
 Why Nax-Updater works the way it does. Newest first; every release adds its decisions here and updates [DESIGN.md](DESIGN.md). Each entry names the decision, the evidence that led to it, and what was rejected.
 
+## 0.17.53 (2026-11-03)
+
+**The RST row describes the live storage controller.** The row took the highest driver version of all its members, including registrations of controllers that are no longer connected, and the hardware ID of whichever member came first. A retained registration on a newer driver could therefore make an outdated live controller look current, also when an update was verified. The version, hardware ID and INF now come from one live controller, and with several the oldest driver decides. Every driver row now takes its hardware ID from the device whose version it shows.
+
+**A restart request survives an error while verifying.** When reading the installed state threw after an installer had asked for a restart, the outcome was decided without the restart, so a driver could be reported as updated instead of waiting for Windows to restart. Every path after the installer ran now applies the same rule as the normal path.
+
+**Store recovery uses the live rule.** The live check accepts a Store package only at exactly its target, while recovery after a restart accepted any newer version. A newer version that Windows installed on its own is no longer recorded as the success of the interrupted update.
+
+**Downloads end on their own.** A server that stopped sending the body kept the update and the window open until the user canceled, because the HTTP timeout ends with the response headers. A download now fails after 60 seconds without data. A server that advertises byte ranges but answers with the whole file is downloaded once in a single response instead of failing on every attempt.
+
+**Partially updated device groups stay unverified.** The same review noted that when only some devices of a shared driver group reach the new version, the group splits and verification can no longer find the approved device set. The result is then reported as unverified, which is the correct outcome for a partial update, so this was not changed. Tracking each member's result was deferred, because no driver that Nax-Updater installs today belongs to such a group.
+
 ## 0.17.52 (2026-11-02)
 
 **A connected device's driver version is read from its own driver key.** After the Intel I219 and TP-Link updates, Windows had installed the new drivers and the device's driver key held them, but Win32_PnPSignedDriver kept reporting the replaced drivers inside the running app for more than a minute. The update was therefore reported as unverified, and the driver key, read again as a registration, showed the same adapter a second time as not connected. The version, INF, provider and date of a connected device now come from the driver key that its device entry names, and that key is no longer listed as a separate registration. Waiting longer was rejected, because the stale answer outlasted any reasonable wait.

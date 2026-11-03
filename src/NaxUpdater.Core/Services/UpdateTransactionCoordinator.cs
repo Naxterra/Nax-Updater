@@ -380,9 +380,12 @@ public sealed class UpdateTransactionCoordinator
                 {
                     report(UpdateTransactionStage.Verifying, null);
                     var observed = await _backend.RevalidateAsync(freshAssessment, CancellationToken.None);
-                    if (ReachedTarget(freshAssessment, observed) && !repairOnly)
+                    var reached = ReachedTarget(freshAssessment, observed) && !repairOnly;
+                    if (RestartRequested(freshAssessment, observed, execution, reached) is { } pending) return pending;
+                    if (reached)
                     {
-                        return new(UpdateTransactionStage.Succeeded, observed, execution, null);
+                        return new(UpdateTransactionStage.Succeeded, observed, execution, null,
+                            RestartRecommended: execution?.ExitCode is 1641 or 3010);
                     }
                     return new(
                         UpdateTransactionStage.Indeterminate,
@@ -392,7 +395,7 @@ public sealed class UpdateTransactionCoordinator
                 }
                 catch
                 {
-                    return new(
+                    return RestartRequested(freshAssessment, null, execution, false) ?? new(
                         UpdateTransactionStage.Indeterminate,
                         freshAssessment,
                         execution,
@@ -421,20 +424,36 @@ public sealed class UpdateTransactionCoordinator
                 {
                     report(UpdateTransactionStage.Verifying, null);
                     var observed = await _backend.RevalidateAsync(freshAssessment, CancellationToken.None);
-                    if (ReachedTarget(freshAssessment, observed) && !repairOnly)
+                    var reached = ReachedTarget(freshAssessment, observed) && !repairOnly;
+                    if (RestartRequested(freshAssessment, observed, execution, reached) is { } pending) return pending;
+                    if (reached)
                     {
-                        return new(UpdateTransactionStage.Succeeded, observed, execution, null);
+                        return new(UpdateTransactionStage.Succeeded, observed, execution, null,
+                            RestartRecommended: execution?.ExitCode is 1641 or 3010);
                     }
                     return new(UpdateTransactionStage.FailedNeedsAttention, observed, execution, exception.Message);
                 }
                 catch
                 {
-                    return new(UpdateTransactionStage.Indeterminate, freshAssessment, execution, exception.Message);
+                    return RestartRequested(freshAssessment, null, execution, false) ??
+                        new(UpdateTransactionStage.Indeterminate, freshAssessment, execution, exception.Message);
                 }
             }
             return new(UpdateTransactionStage.FailedBeforeChange, freshAssessment, execution, exception.Message);
         }
     }
+
+    // After the installer ran, a restart request decides the outcome the same way when
+    // verification threw or waiting was canceled as on the normal path: a driver that asked for
+    // a restart stays pending even when its version was read, and so does any update whose
+    // target was not verified. Without this, an error while verifying erased the restart.
+    private static UpdateTransactionResult? RestartRequested(
+        UpdateCheckResult assessment, UpdateCheckResult? observed, UpdateExecutionResult? execution, bool reachedTarget) =>
+        execution is { IsSuccess: true, ExitCode: 1641 or 3010 } &&
+        (!reachedTarget || assessment.ProviderId.StartsWith("manufacturer-driver:", StringComparison.Ordinal))
+            ? new(UpdateTransactionStage.PendingReboot, observed ?? assessment, execution,
+                "The updater requested a restart; the target version will be verified after Windows restarts.")
+            : null;
 
     internal static bool SameApprovedOffer(UpdateCheckResult approved, UpdateCheckResult? fresh) =>
         fresh is

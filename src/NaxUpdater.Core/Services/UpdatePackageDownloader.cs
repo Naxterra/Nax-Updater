@@ -8,8 +8,27 @@ namespace NaxUpdater.Core.Services;
 public sealed class UpdatePackageDownloader(
     HttpClient httpClient,
     IAuthenticodeVerifier authenticodeVerifier,
-    long segmentedDownloadThresholdBytes = 64L * 1024 * 1024)
+    long segmentedDownloadThresholdBytes = 64L * 1024 * 1024,
+    TimeSpan? stallTimeout = null)
 {
+    // HttpClient.Timeout ends when the response headers arrive, so a server that stops sending
+    // the body would hold the update, and with it the window, open until the user cancels.
+    private readonly TimeSpan _stallTimeout = stallTimeout ?? TimeSpan.FromSeconds(60);
+
+    private async ValueTask<int> ReadNetworkAsync(Stream input, Memory<byte> buffer, CancellationToken cancellationToken)
+    {
+        using var stall = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        stall.CancelAfter(_stallTimeout);
+        try
+        {
+            return await input.ReadAsync(buffer, stall.Token);
+        }
+        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+        {
+            throw new TimeoutException($"The download received no data for {_stallTimeout.TotalSeconds:0} seconds.");
+        }
+    }
+
     public async Task<VerifiedInstaller> ReverifyAsync(
         UpdateCheckResult update,
         VerifiedInstaller installer,
@@ -140,14 +159,40 @@ public sealed class UpdatePackageDownloader(
             if (supportsRanges)
             {
                 response.Dispose();
-                actualHash = await DownloadSegmentedAsync(
-                    finalUri,
-                    partialPath,
-                    contentLength!.Value,
-                    hashPolicy,
-                    plan,
-                    progress,
-                    cancellationToken);
+                try
+                {
+                    actualHash = await DownloadSegmentedAsync(
+                        finalUri,
+                        partialPath,
+                        contentLength!.Value,
+                        hashPolicy,
+                        plan,
+                        progress,
+                        cancellationToken);
+                }
+                catch (RangeNotHonoredException)
+                {
+                    // The server advertised byte ranges but did not serve them. Every retry would
+                    // fail the same way, so the file is downloaded once in a single response.
+                    DeleteSegments(partialPath);
+                    using var whole = Identified(new HttpRequestMessage(HttpMethod.Get, finalUri));
+                    using var wholeResponse = await httpClient.SendAsync(whole, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
+                    wholeResponse.EnsureSuccessStatusCode();
+                    var wholeUri = wholeResponse.RequestMessage?.RequestUri ?? finalUri;
+                    if (wholeUri.Scheme != Uri.UriSchemeHttps ||
+                        (!plan.AllowHashVerifiedRedirects && !IsAllowedHost(wholeUri.Host, plan.AllowedDownloadHosts)))
+                    {
+                        throw new InvalidOperationException($"The download redirected to untrusted host '{wholeUri.Host}'.");
+                    }
+                    if (File.Exists(partialPath)) File.Delete(partialPath);
+                    actualHash = await DownloadSingleResponseAsync(
+                        wholeResponse,
+                        partialPath,
+                        wholeResponse.Content.Headers.ContentLength,
+                        hashPolicy,
+                        progress,
+                        cancellationToken);
+                }
             }
             else
             {
@@ -185,7 +230,7 @@ public sealed class UpdatePackageDownloader(
         }
     }
 
-    private static async Task<string> DownloadSingleResponseAsync(
+    private async Task<string> DownloadSingleResponseAsync(
         HttpResponseMessage response,
         string partialPath,
         long? contentLength,
@@ -206,7 +251,7 @@ public sealed class UpdatePackageDownloader(
         long received = 0;
         while (true)
         {
-            var read = await input.ReadAsync(buffer, cancellationToken);
+            var read = await ReadNetworkAsync(input, buffer, cancellationToken);
             if (read == 0)
             {
                 break;
@@ -272,7 +317,7 @@ public sealed class UpdatePackageDownloader(
                     response.Content.Headers.ContentRange is not { From: not null, To: not null } range ||
                     range.From.Value != start || range.To.Value != end)
                 {
-                    throw new InvalidDataException($"The server did not honor byte range {start}-{end}.");
+                    throw new RangeNotHonoredException($"The server did not honor byte range {start}-{end}.");
                 }
                 var finalUri = response.RequestMessage?.RequestUri ?? uri;
                 if (finalUri.Scheme != Uri.UriSchemeHttps ||
@@ -291,7 +336,7 @@ public sealed class UpdatePackageDownloader(
                 var buffer = new byte[1024 * 128];
                 while (true)
                 {
-                    var read = await input.ReadAsync(buffer, cancellationToken);
+                    var read = await ReadNetworkAsync(input, buffer, cancellationToken);
                     if (read == 0)
                     {
                         break;
@@ -356,6 +401,16 @@ public sealed class UpdatePackageDownloader(
             }
         }
     }
+
+    private static void DeleteSegments(string partialPath)
+    {
+        foreach (var segment in Directory.EnumerateFiles(Path.GetDirectoryName(partialPath)!, Path.GetFileName(partialPath) + ".segment*"))
+        {
+            File.Delete(segment);
+        }
+    }
+
+    private sealed class RangeNotHonoredException(string message) : IOException(message);
 
     private async Task<FileVerification> VerifyFileAsync(
         string path,
@@ -466,7 +521,7 @@ public sealed class UpdatePackageDownloader(
     // without a User-Agent with 403 Forbidden, so every download names the updater.
     internal static HttpRequestMessage Identified(HttpRequestMessage request)
     {
-        if (request.Headers.UserAgent.Count == 0) request.Headers.UserAgent.ParseAdd("NaxUpdater/0.17.52");
+        if (request.Headers.UserAgent.Count == 0) request.Headers.UserAgent.ParseAdd("NaxUpdater/0.17.53");
         return request;
     }
 

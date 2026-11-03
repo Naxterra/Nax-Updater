@@ -665,7 +665,7 @@ public sealed partial class ManufacturerDriverService(HttpClient httpClient)
         try
         {
             using var request = new HttpRequestMessage(HttpMethod.Get, uri);
-            request.Headers.UserAgent.ParseAdd("NaxUpdater/0.17.52");
+            request.Headers.UserAgent.ParseAdd("NaxUpdater/0.17.53");
             using var response = await httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, timeout.Token);
             response.EnsureSuccessStatusCode();
             return await response.Content.ReadAsStringAsync(timeout.Token);
@@ -880,7 +880,7 @@ public sealed partial class ManufacturerDriverService(HttpClient httpClient)
         return results;
     }
 
-    private static IReadOnlyList<InstalledHardwareDriver> AggregateDriverPackages(IEnumerable<InstalledHardwareDriver> candidates)
+    internal static IReadOnlyList<InstalledHardwareDriver> AggregateDriverPackages(IEnumerable<InstalledHardwareDriver> candidates)
     {
         var results = new List<InstalledHardwareDriver>();
         foreach (var group in candidates.GroupBy(DriverPackageKey, StringComparer.OrdinalIgnoreCase))
@@ -902,18 +902,23 @@ public sealed partial class ManufacturerDriverService(HttpClient httpClient)
                     .ToArray()
                 : distinctNames;
             var name = FriendlyPackageName(group.Key, representative, memberNames);
-            var hardwareId = items.Select(static item => item.HardwareId)
-                .FirstOrDefault(static value => !string.IsNullOrWhiteSpace(value));
             if (group.Key.Equals("intel:rst", StringComparison.OrdinalIgnoreCase))
-                representative = representative with
-                {
-                    // Only readable versions count; a device without a signed-driver record
-                    // reads "—", which would otherwise sort above every number.
-                    InstalledVersion = items.Select(static item => item.InstalledVersion)
-                        .Where(static version => NumericVersionRegex().IsMatch(version))
-                        .OrderByDescending(static version => version, Comparer<string>.Create(VersionOrder.Compare))
-                        .FirstOrDefault() ?? representative.InstalledVersion
-                };
+            {
+                // The row is the live storage controller: its version, hardware ID and INF come
+                // from that one device. A retained registration of a disconnected controller on a
+                // newer driver must not make the live one look updated, so with a live controller
+                // only live devices count, and with several the oldest driver decides. Only
+                // readable versions count; a device without a driver record reads "—".
+                representative = (present.Length > 0 ? present : items)
+                    .Where(static item => NumericVersionRegex().IsMatch(item.InstalledVersion))
+                    .OrderByDescending(static item => item.HardwareId?.StartsWith(@"PCI\", StringComparison.OrdinalIgnoreCase) == true)
+                    .ThenBy(static item => item.InstalledVersion, Comparer<string>.Create(VersionOrder.Compare))
+                    .FirstOrDefault() ?? representative;
+            }
+            // The hardware ID belongs to the device whose version the row shows.
+            var hardwareId = !string.IsNullOrWhiteSpace(representative.HardwareId)
+                ? representative.HardwareId
+                : items.Select(static item => item.HardwareId).FirstOrDefault(static value => !string.IsNullOrWhiteSpace(value));
             results.Add(representative with
             {
                 Identity = DriverUpdateIdentity.ForGroup(group.Key, items),
