@@ -237,4 +237,26 @@
   <data name="PreferenceSaveFailed" xml:space="preserve"><value>Die Auswahl konnte nicht gespeichert werden: {0}</value></data>
   <data name="PreferencesUnreadableTitle" xml:space="preserve"><value>„Alle aktualisieren“ wurde nicht gestartet</value></data>
   <data name="DiagnosticsCopyFailedTitle" xml:space="preserve"><value>Die Diagnose konnte nicht kopiert werden</value></data>
+  <data name="DriverDetailsButton.Content" xml:space="preserve"><value>Treiberdetails</value></data>
+  <data name="DriverDetailsTitle" xml:space="preserve"><value>Treiberdetails: {0}</value></data>
+  <data name="DriverDetailsDevice" xml:space="preserve"><value>Gerät</value></data>
+  <data name="DriverDetailsRunning" xml:space="preserve"><value>Läuft.</value></data>
+  <data name="DriverDetailsAwaitingRestart" xml:space="preserve"><value>Der neue Treiber ist installiert und wartet auf einen Windows-Neustart. Bis dahin läuft der alte.</value></data>
+  <data name="DriverDetailsProblem" xml:space="preserve"><value>Windows meldet ein Problem: {0} (Code {1}).</value></data>
+  <data name="DriverDetailsNoDevice" xml:space="preserve"><value>Zu dieser Zeile gehört kein verbundenes Gerät, daher kann der Windows-Treiberspeicher dazu nicht befragt werden.</value></data>
+  <data name="DriverDetailsActive" xml:space="preserve"><value>Aktiver Treiber</value></data>
+  <data name="DriverDetailsEarlier" xml:space="preserve"><value>Frühere Pakete im Treiberspeicher</value></data>
+  <data name="DriverDetailsNoEarlier" xml:space="preserve"><value>Windows bewahrt für das Gerät kein älteres Paket dieses Anbieters auf.</value></data>
+  <data name="DriverDetailsLastChange" xml:space="preserve"><value>Letzte Änderung durch Nax-Updater</value></data>
+  <data name="DriverDetailsNoChange" xml:space="preserve"><value>Nax-Updater hat diesen Treiber seit Beginn des Verlaufs nicht geändert.</value></data>
+  <data name="DriverDetailsRetained" xml:space="preserve"><value>Von Nax-Updater aufbewahrtes Paket</value></data>
+  <data name="DriverDetailsNoRetained" xml:space="preserve"><value>Nax-Updater bewahrt für diesen Treiber kein heruntergeladenes Paket auf.</value></data>
+  <data name="DriverDetailsRollbackTitle" xml:space="preserve"><value>Zurück zu einer früheren Version</value></data>
+  <data name="DriverDetailsRollback" xml:space="preserve"><value>Nax-Updater setzt Treiber nicht selbst zurück. Öffnen Sie im Geräte-Manager das Gerät, wählen Sie „Treiber aktualisieren“, dann „Auf meinem Computer nach Treibern suchen“ und „Aus einer Liste verfügbarer Treiber auswählen“, und wählen Sie die oben genannte frühere Version. Windows bewahrt dieses Paket auf, es muss nichts heruntergeladen werden.</value></data>
+  <data name="DriverDetailsRollbackDownload" xml:space="preserve"><value>Nax-Updater setzt Treiber nicht selbst zurück, und Windows bewahrt kein früheres Paket dieses Anbieters auf. Eine frühere Version muss von der Supportseite des Herstellers geladen und von dort installiert werden.</value></data>
+  <data name="DriverDetailsBootCritical" xml:space="preserve"><value>Dies ist ein Speichertreiber. Ein falscher Speichertreiber kann Windows am Starten hindern. Legen Sie vor einem Wechsel einen Wiederherstellungspunkt an und stellen Sie sicher, dass Sie die Windows-Wiederherstellungsumgebung erreichen.</value></data>
+  <data name="DriverDetailsCopy" xml:space="preserve"><value>Kopieren</value></data>
+  <data name="DriverDetailsLoading" xml:space="preserve"><value>Treiberspeicher für {0} wird gelesen…</value></data>
+  <data name="DriverDetailsBootCriticalTitle" xml:space="preserve"><value>Speichertreiber</value></data>
+  <data name="DriverDetailsMoreDevices" xml:space="preserve"><value>{0} weitere Geräte dieser Gruppe sind nicht aufgeführt.</value></data>
 </root>

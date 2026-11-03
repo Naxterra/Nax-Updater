@@ -777,6 +777,12 @@ en: Driver key of {0}: {1}
 de: Treiberschlüssel von {0}: {1}
 en: The saved skip and hold choices could not be read: {0}
 de: Die gespeicherten Einstellungen zum Überspringen und Festhalten konnten nicht gelesen werden: {0}
+en: pnputil could not list the drivers of {0} (exit code {1}).
+de: pnputil konnte die Treiber von {0} nicht auflisten (Exitcode {1}).
+en: pnputil did not list the device {0}.
+de: pnputil hat das Gerät {0} nicht aufgeführt.
+en: pnputil's list of drivers for {0} could not be read: {1}
+de: Die Treiberliste von pnputil für {0} konnte nicht gelesen werden: {1}
 en: The journal path has no directory.
 de: Der Pfad des Journals hat keinen Ordner.
 en: The last verified Razer catalog mapping is shown because the live support page did not return complete machine-readable content.

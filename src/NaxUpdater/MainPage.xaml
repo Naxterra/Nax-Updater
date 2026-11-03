@@ -468,6 +468,7 @@
                         </Button>
                         <TextBlock x:Uid="ManufacturerDriversHeader" Grid.Column="1" Text="Manufacturer drivers" FontSize="18" FontWeight="SemiBold" Foreground="{StaticResource NaxPurpleBrush}" VerticalAlignment="Center" />
                         <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
+                            <Button x:Name="DriverDetailsButton" x:Uid="DriverDetailsButton" Content="Driver details" IsEnabled="False" Click="DriverDetailsButton_Click" />
                             <ComboBox x:Name="DriverStatusFilter" MinWidth="165" SelectedIndex="0" SelectionChanged="DriverStatusFilter_SelectionChanged">
                                 <ComboBoxItem x:Uid="DriverFilterAll" Tag="all" Content="All statuses" />
                                 <ComboBoxItem x:Uid="DriverFilterUpdates" Tag="updates" Content="Updates" />
@@ -516,7 +517,7 @@
                             <RowDefinition Height="*" />
                             <RowDefinition Height="Auto" />
                         </Grid.RowDefinitions>
-                        <ListView x:Name="DriversList" SelectionMode="Single">
+                        <ListView x:Name="DriversList" SelectionMode="Single" SelectionChanged="DriversList_SelectionChanged" DoubleTapped="DriversList_DoubleTapped">
                             <ListView.ItemContainerStyle>
                                 <Style TargetType="ListViewItem">
                                     <Setter Property="Padding" Value="0" />

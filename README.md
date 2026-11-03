@@ -141,6 +141,7 @@ The current implementation includes:
 - SHA-256-verified ZIP/NuGet packages containing an explicitly declared nested MSI, with exact-entry extraction, traversal rejection, and silent MSI execution;
 - a sequential **Update all** queue containing verified conventional updates followed only by Store/MSIX packages with a reported applicable upgrade, with shared Store connections and one final inventory/update rescan; before it starts, the queue is shown with each entry's installed and target version, its source and the running programs it will close, and each entry can be deselected;
 - **Skip version** and **Hold this application** in the update details: a skipped release and a held application are still checked and can still be updated one by one, but **Update all** leaves them out and its review names the reason; a skip covers only that release, and the choice is keyed to the application's correlation identity so a change of provider keeps it;
+- **Driver details** in the driver view: for each connected device, its status (including a driver that waits for a restart), the active driver package, older packages of the same provider that Windows' driver store still holds, Nax-Updater's last changes and its kept download, and how to go back in Device Manager; nothing is rolled back automatically, and storage drivers carry a warning;
 - **Copy diagnostics** in the update details copies a plain-text report of the row (versions, provider, plan, source checks, last run and the last outcomes from the history) with local and network paths, the user and computer name, URL query strings and credentials redacted;
 - an update history (**History**) that keeps every finished outcome, including failed and canceled ones, with the requested and observed version, the source, the installer exit code and whether a restart is needed, separately from the recovery journal;
 - honest bulk counts that keep proven newer conventional versions separate from confirmed Store updates;
@@ -235,7 +236,7 @@ From this directory:
 dotnet build NaxUpdater.slnx
 dotnet run --project tests/NaxUpdater.Core.SmokeTests/NaxUpdater.Core.SmokeTests.csproj
 dotnet publish src/NaxUpdater/NaxUpdater.csproj -c Release -r win-x64 --self-contained true -o artifacts/NaxUpdater-win-x64
-./scripts/package-release.ps1 -Version 0.17.60
+./scripts/package-release.ps1 -Version 0.17.61
 ```
 
 The desktop project uses .NET 11, WinUI 3, and the Windows App SDK. It is not an Electron or WebView application.

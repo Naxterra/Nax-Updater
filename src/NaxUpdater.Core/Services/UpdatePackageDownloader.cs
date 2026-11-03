@@ -521,9 +521,12 @@ public sealed class UpdatePackageDownloader(
     // without a User-Agent with 403 Forbidden, so every download names the updater.
     internal static HttpRequestMessage Identified(HttpRequestMessage request)
     {
-        if (request.Headers.UserAgent.Count == 0) request.Headers.UserAgent.ParseAdd("NaxUpdater/0.17.60");
+        if (request.Headers.UserAgent.Count == 0) request.Headers.UserAgent.ParseAdd("NaxUpdater/0.17.61");
         return request;
     }
+
+    // The folder that keeps a provider's downloads, for the driver recovery details.
+    public static string ProviderCacheDirectory(string cacheRoot, string providerId) => Path.Combine(cacheRoot, SanitizePathSegment(providerId));
 
     private static string SanitizePathSegment(string value)
     {

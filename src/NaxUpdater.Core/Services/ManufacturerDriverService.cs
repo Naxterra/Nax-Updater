@@ -669,7 +669,7 @@ public sealed partial class ManufacturerDriverService(HttpClient httpClient, Kyo
         try
         {
             using var request = new HttpRequestMessage(HttpMethod.Get, uri);
-            request.Headers.UserAgent.ParseAdd("NaxUpdater/0.17.60");
+            request.Headers.UserAgent.ParseAdd("NaxUpdater/0.17.61");
             using var response = await httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, timeout.Token);
             response.EnsureSuccessStatusCode();
             return await response.Content.ReadAsStringAsync(timeout.Token);
@@ -891,7 +891,9 @@ public sealed partial class ManufacturerDriverService(HttpClient httpClient, Kyo
                 HardwareId = hardwareId,
                 IsPresent = present.Length > 0,
                 DeviceCount = memberNames.Length,
-                GroupMembers = memberNames
+                GroupMembers = memberNames,
+                DeviceInstanceIds = present.Where(static item => item.Identity.StartsWith("pnp:", StringComparison.OrdinalIgnoreCase))
+                    .Select(static item => item.Identity[4..]).Distinct(StringComparer.OrdinalIgnoreCase).ToArray()
             });
         }
         return results;

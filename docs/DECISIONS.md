@@ -2,6 +2,10 @@
 
 Why Nax-Updater works the way it does. Newest first; every release adds its decisions here and updates [DESIGN.md](DESIGN.md). Each entry names the decision, the evidence that led to it, and what was rejected.
 
+## 0.17.61 (2026-11-03)
+
+**Driver details show evidence and the way back, not a rollback.** After a driver update the owner could not see what the device ran before, whether the old package was still on the PC, or whether the new one waited for a restart. The driver view now shows this per device, read from pnputil's XML list of matching drivers, which is language-independent and needs no administrator rights. The registry's driver database was rejected, because on this Windows build the readable copy under SYSTEM was outdated and the DRIVERS hive is not readable without elevation. An automatic rollback was rejected, because a wrong storage driver can keep Windows from starting; the details describe the way back in Device Manager instead and warn for storage drivers. The details are read when they are opened, so a scan stays as fast as before.
+
 ## 0.17.60 (2026-11-03)
 
 **A fresh driver check replaces the scan's result.** After "Herstellertreiber prüfen" showed a newer state, switching views within five minutes of the scan brought the scan's older driver result back, so a driver installed from a manufacturer page could look available again. A fresh check now ends the reuse of the scan's result.

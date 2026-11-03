@@ -237,4 +237,26 @@
   <data name="PreferenceSaveFailed" xml:space="preserve"><value>The choice could not be saved: {0}</value></data>
   <data name="PreferencesUnreadableTitle" xml:space="preserve"><value>Update All was not started</value></data>
   <data name="DiagnosticsCopyFailedTitle" xml:space="preserve"><value>The diagnostics could not be copied</value></data>
+  <data name="DriverDetailsButton.Content" xml:space="preserve"><value>Driver details</value></data>
+  <data name="DriverDetailsTitle" xml:space="preserve"><value>Driver details: {0}</value></data>
+  <data name="DriverDetailsDevice" xml:space="preserve"><value>Device</value></data>
+  <data name="DriverDetailsRunning" xml:space="preserve"><value>Running.</value></data>
+  <data name="DriverDetailsAwaitingRestart" xml:space="preserve"><value>The new driver is installed and waits for a Windows restart. The old one runs until then.</value></data>
+  <data name="DriverDetailsProblem" xml:space="preserve"><value>Windows reports a problem: {0} (code {1}).</value></data>
+  <data name="DriverDetailsNoDevice" xml:space="preserve"><value>No connected device belongs to this row, so Windows' driver store cannot be asked about it.</value></data>
+  <data name="DriverDetailsActive" xml:space="preserve"><value>Active driver</value></data>
+  <data name="DriverDetailsEarlier" xml:space="preserve"><value>Earlier packages in the driver store</value></data>
+  <data name="DriverDetailsNoEarlier" xml:space="preserve"><value>Windows keeps no older package of this provider for the device.</value></data>
+  <data name="DriverDetailsLastChange" xml:space="preserve"><value>Last change by Nax-Updater</value></data>
+  <data name="DriverDetailsNoChange" xml:space="preserve"><value>Nax-Updater has not changed this driver since its history began.</value></data>
+  <data name="DriverDetailsRetained" xml:space="preserve"><value>Downloaded package kept by Nax-Updater</value></data>
+  <data name="DriverDetailsNoRetained" xml:space="preserve"><value>Nax-Updater keeps no downloaded package for this driver.</value></data>
+  <data name="DriverDetailsRollbackTitle" xml:space="preserve"><value>Going back to an earlier version</value></data>
+  <data name="DriverDetailsRollback" xml:space="preserve"><value>Nax-Updater does not roll drivers back on its own. In Device Manager, open the device, choose Update driver, then Browse my computer and Let me pick from a list, and select the earlier version listed above. Windows keeps that package, so nothing has to be downloaded.</value></data>
+  <data name="DriverDetailsRollbackDownload" xml:space="preserve"><value>Nax-Updater does not roll drivers back on its own, and Windows keeps no earlier package of this provider. An earlier version has to be downloaded from the manufacturer's support page and installed from there.</value></data>
+  <data name="DriverDetailsBootCritical" xml:space="preserve"><value>This is a storage driver. A wrong storage driver can keep Windows from starting. Before changing it, create a restore point and make sure you can reach the Windows recovery environment.</value></data>
+  <data name="DriverDetailsCopy" xml:space="preserve"><value>Copy</value></data>
+  <data name="DriverDetailsLoading" xml:space="preserve"><value>Reading the driver store for {0}…</value></data>
+  <data name="DriverDetailsBootCriticalTitle" xml:space="preserve"><value>Storage driver</value></data>
+  <data name="DriverDetailsMoreDevices" xml:space="preserve"><value>{0} more devices of this group are not listed.</value></data>
 </root>

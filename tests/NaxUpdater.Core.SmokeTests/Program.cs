@@ -1491,6 +1491,15 @@ var connectedAgainAsDisconnected = liveManufacturerDrivers.Results.Where(result 
     connectedDriverRows.Contains($"{result.Driver.DeviceName}|{result.Driver.DeviceClass}")).Select(static result => result.Driver.DeviceName).ToArray();
 Assert(connectedAgainAsDisconnected.Length == 0,
     $"A connected device was listed a second time as not connected: {string.Join(", ", connectedAgainAsDisconnected)}");
+// driver_details_name_the_active_driver_of_each_device: for every single-device row, Windows'
+// driver store (pnputil) names the same active INF as the driver row.
+foreach (var result in liveManufacturerDrivers.Results.Where(static result =>
+             result.Driver is { IsPresent: true, DeviceInstanceIds.Count: 1, InfName: not null }))
+{
+    var (details, error) = await DriverRecovery.ReadAsync(result.Driver.DeviceInstanceIds![0], CancellationToken.None);
+    Assert(details?.Installed?.InfName.Equals(result.Driver.InfName, StringComparison.OrdinalIgnoreCase) == true,
+        $"The driver details of {result.Driver.DeviceName} did not name its active driver {result.Driver.InfName}: {error ?? details?.Installed?.InfName ?? "none"}");
+}
 var liveNvidiaDriver = liveManufacturerDrivers.Results.FirstOrDefault(static result =>
     result.Driver.DeviceName.Contains("NVIDIA GeForce", StringComparison.OrdinalIgnoreCase));
 if (liveNvidiaDriver is not null)

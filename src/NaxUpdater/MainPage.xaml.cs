@@ -17,7 +17,7 @@ public sealed partial class MainPage : Page
     private readonly ApplicationInventoryService _inventoryService;
     // Some publisher servers refuse requests without a User-Agent (403), so the shared
     // client always sends one; requests that set their own keep it.
-    private readonly HttpClient _httpClient = new() { Timeout = TimeSpan.FromSeconds(30), DefaultRequestHeaders = { { "User-Agent", "NaxUpdater/0.17.60" } } };
+    private readonly HttpClient _httpClient = new() { Timeout = TimeSpan.FromSeconds(30), DefaultRequestHeaders = { { "User-Agent", "NaxUpdater/0.17.61" } } };
     private readonly UpdateExecutionService _updateExecutionService = new();
     private readonly ApplicationRemovalService _applicationRemovalService = new();
     private readonly ApplicationIconService _applicationIconService = new();
@@ -987,6 +987,149 @@ public sealed partial class MainPage : Page
         FilterBox.IsEnabled = true;
         ShowSystemComponentsCheckBox.IsEnabled = false;
         await CheckManufacturerDriversAsync(reuseScan: true);
+    }
+
+    private void DriversList_SelectionChanged(object sender, SelectionChangedEventArgs e) =>
+        DriverDetailsButton.IsEnabled = DriversList.SelectedItem is ManufacturerDriverRow;
+
+    private async void DriversList_DoubleTapped(object sender, Microsoft.UI.Xaml.Input.DoubleTappedRoutedEventArgs e)
+    {
+        if (DriversList.SelectedItem is ManufacturerDriverRow row) await ShowDriverDetailsAsync(row);
+    }
+
+    private async void DriverDetailsButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (DriversList.SelectedItem is ManufacturerDriverRow row) await ShowDriverDetailsAsync(row);
+    }
+
+    // Evidence and the way back for one driver row: what Windows runs for each connected device,
+    // what the driver store still holds, what Nax-Updater changed and kept. It only reads; the
+    // driver is never rolled back from here. The text is for the owner's own troubleshooting, so
+    // it is not redacted like the diagnostics report.
+    private const int MaxDetailDevices = 8;
+
+    private async Task ShowDriverDetailsAsync(ManufacturerDriverRow row)
+    {
+        var driver = row.Source.Driver;
+        var previousStatus = StatusText.Text;
+        StatusText.Text = LocalizationService.Format("DriverDetailsLoading", driver.DeviceName);
+        var devices = new List<(string Id, DriverDeviceRecovery? Details, string? Error)>();
+        try
+        {
+            // A group such as the Razer peripherals has two dozen devices; each query takes a
+            // moment, so the first eight are read and the rest are counted.
+            foreach (var id in (driver.DeviceInstanceIds ?? []).Take(MaxDetailDevices))
+            {
+                var (details, error) = await DriverRecovery.ReadAsync(id, CancellationToken.None);
+                devices.Add((id, details, error));
+            }
+        }
+        catch (Exception exception) when (exception is System.ComponentModel.Win32Exception or InvalidOperationException or IOException)
+        {
+            devices.Add(("", null, exception.Message));
+        }
+        finally
+        {
+            StatusText.Text = previousStatus;
+        }
+
+        var report = new System.Text.StringBuilder();
+        var panel = new StackPanel { Spacing = 14 };
+        void Section(string title, IEnumerable<string> lines, string? brush = null)
+        {
+            var body = string.Join(Environment.NewLine, lines);
+            var section = new StackPanel { Spacing = 3 };
+            section.Children.Add(new TextBlock { Text = title, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold });
+            var text = new TextBlock { Text = body, TextWrapping = TextWrapping.Wrap, IsTextSelectionEnabled = true, FontSize = 13 };
+            if (brush is not null) text.Foreground = PresentationBrushes.Get(brush);
+            section.Children.Add(text);
+            panel.Children.Add(section);
+            report.AppendLine(title).AppendLine(body).AppendLine();
+        }
+
+        string Package(DriverStorePackage package) => string.Join(" · ", new[]
+        {
+            package.OriginalName is null ? package.InfName : $"{package.InfName} ({package.OriginalName})",
+            package.Provider, package.Version, package.Date
+        }.Where(static part => !string.IsNullOrWhiteSpace(part)));
+
+        var deviceLines = new List<string>();
+        var activeLines = new List<string>();
+        var earlier = new List<DriverStorePackage>();
+        if (devices.Count == 0) deviceLines.Add(LocalizationService.Get("DriverDetailsNoDevice"));
+        var unread = (driver.DeviceInstanceIds?.Count ?? 0) - MaxDetailDevices;
+        foreach (var (id, details, error) in devices)
+        {
+            if (details is null)
+            {
+                deviceLines.Add($"{id}: {LocalizationService.Text(error)}");
+                continue;
+            }
+            deviceLines.Add($"{details.Description ?? driver.DeviceName} · {details.InstanceId}");
+            deviceLines.Add(details.AwaitingRestart ? LocalizationService.Get("DriverDetailsAwaitingRestart")
+                : details.ProblemCode is { } code ? LocalizationService.Format("DriverDetailsProblem", details.Problem ?? "?", code)
+                : LocalizationService.Get("DriverDetailsRunning"));
+            if (details.Installed is { } installed) activeLines.Add(Package(installed));
+            earlier.AddRange(details.EarlierPackages().Where(package => !earlier.Any(known => known.InfName.Equals(package.InfName, StringComparison.OrdinalIgnoreCase))));
+        }
+        if (unread > 0) deviceLines.Add(LocalizationService.Format("DriverDetailsMoreDevices", unread));
+        if (activeLines.Count == 0)
+            activeLines.Add(string.Join(" · ", new[] { driver.InfName, driver.Provider, driver.InstalledVersion, driver.DriverDate }.Where(static part => !string.IsNullOrWhiteSpace(part))));
+        Section(LocalizationService.Get("DriverDetailsDevice"), deviceLines,
+            devices.Any(static device => device.Details?.AwaitingRestart == true) ? "NaxOrangeBrush" : null);
+        Section(LocalizationService.Get("DriverDetailsActive"), activeLines.Distinct());
+        Section(LocalizationService.Get("DriverDetailsEarlier"),
+            earlier.Count == 0 ? [LocalizationService.Get("DriverDetailsNoEarlier")] : earlier.Select(Package));
+
+        var history = _updateHistory.ReadNewestFirst()
+            .Where(entry => entry.ApplicationIdentity.Equals(driver.Identity, StringComparison.OrdinalIgnoreCase)).ToArray();
+        Section(LocalizationService.Get("DriverDetailsLastChange"), history.Length == 0
+            ? [LocalizationService.Get("DriverDetailsNoChange")]
+            : history.Take(3).Select(static entry =>
+                $"{entry.FinishedAt.ToLocalTime().ToString("g", System.Globalization.CultureInfo.CurrentCulture)}: " +
+                $"{entry.InstalledVersion ?? "?"} → {entry.TargetVersion ?? "?"} · {LocalizationService.Get("HistoryStage" + entry.Stage)}"));
+
+        var cacheRoot = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "NaxUpdater", "DriverDownloads");
+        var providers = history.Select(static entry => entry.ProviderId)
+            .Append(row.Source.ExecutableUpdate?.ProviderId)
+            .Where(static id => !string.IsNullOrWhiteSpace(id)).Distinct(StringComparer.Ordinal);
+        var retained = providers
+            .Select(provider => UpdatePackageDownloader.ProviderCacheDirectory(cacheRoot, provider!))
+            .Where(Directory.Exists)
+            .SelectMany(static folder => Directory.EnumerateFiles(folder, "*", SearchOption.AllDirectories))
+            .Where(static file => !file.EndsWith(".partial", StringComparison.OrdinalIgnoreCase) && !file.EndsWith(".tmp", StringComparison.OrdinalIgnoreCase))
+            .ToArray();
+        Section(LocalizationService.Get("DriverDetailsRetained"), retained.Length == 0 ? [LocalizationService.Get("DriverDetailsNoRetained")] : retained);
+
+        var guidance = new List<string> { LocalizationService.Get(earlier.Count > 0 ? "DriverDetailsRollback" : "DriverDetailsRollbackDownload") };
+        Section(LocalizationService.Get("DriverDetailsRollbackTitle"), guidance);
+        if (DriverRecovery.IsBootCritical(driver.DeviceClass))
+            Section(LocalizationService.Get("DriverDetailsBootCriticalTitle"), [LocalizationService.Get("DriverDetailsBootCritical")], "NaxPinkBrush");
+
+        var dialog = new ContentDialog
+        {
+            XamlRoot = XamlRoot,
+            Title = LocalizationService.Format("DriverDetailsTitle", driver.DeviceName),
+            Content = new ScrollViewer { Content = panel, MaxHeight = 540 },
+            PrimaryButtonText = LocalizationService.Get("DriverDetailsCopy"),
+            CloseButtonText = LocalizationService.Get("CloseDialog"),
+            DefaultButton = ContentDialogButton.Close
+        };
+        if (await dialog.ShowAsync() != ContentDialogResult.Primary) return;
+        try
+        {
+            var package = new Windows.ApplicationModel.DataTransfer.DataPackage();
+            package.SetText($"{LocalizationService.Format("DriverDetailsTitle", driver.DeviceName)}{Environment.NewLine}{Environment.NewLine}{report}");
+            Windows.ApplicationModel.DataTransfer.Clipboard.SetContent(package);
+        }
+        // Another program holding the clipboard must not end the process.
+        catch (Exception exception) when (exception is System.Runtime.InteropServices.COMException or IOException or UnauthorizedAccessException)
+        {
+            UpdateBar.Title = LocalizationService.Get("DiagnosticsCopyFailedTitle");
+            UpdateBar.Message = exception.Message;
+            UpdateBar.Severity = InfoBarSeverity.Error;
+            UpdateBar.IsOpen = true;
+        }
     }
 
     // Opening the driver view shows the latest scan's driver check while it is fresh; "check

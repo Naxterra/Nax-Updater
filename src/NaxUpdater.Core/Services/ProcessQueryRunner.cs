@@ -8,14 +8,16 @@ internal sealed class ProcessQueryRunner
         string executable,
         IEnumerable<string> arguments,
         TimeSpan timeout,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        System.Text.Encoding? outputEncoding = null)
     {
         var startInfo = new ProcessStartInfo(executable)
         {
             UseShellExecute = false,
             CreateNoWindow = true,
             RedirectStandardOutput = true,
-            RedirectStandardError = true
+            RedirectStandardError = true,
+            StandardOutputEncoding = outputEncoding
         };
         foreach (var argument in arguments)
         {
