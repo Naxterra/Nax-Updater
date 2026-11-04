@@ -17,14 +17,12 @@ public sealed partial class MainPage : Page
     private readonly ApplicationInventoryService _inventoryService;
     // Some publisher servers refuse requests without a User-Agent (403), so the shared
     // client always sends one; requests that set their own keep it.
-    private readonly HttpClient _httpClient = new() { Timeout = TimeSpan.FromSeconds(30), DefaultRequestHeaders = { { "User-Agent", "NaxUpdater/0.17.63" } } };
+    private readonly HttpClient _httpClient = new() { Timeout = TimeSpan.FromSeconds(30), DefaultRequestHeaders = { { "User-Agent", "NaxUpdater/0.17.64" } } };
     private readonly UpdateExecutionService _updateExecutionService = new();
     private readonly ApplicationRemovalService _applicationRemovalService = new();
     private readonly ApplicationIconService _applicationIconService = new();
     private readonly ManufacturerDriverService _manufacturerDriverService;
     private readonly FileUpdateOperationJournal _updateOperationJournal;
-    private readonly FileUpdateHistory _updateHistory;
-    private readonly FileUpdatePreferences _updatePreferences;
     private readonly string _sourceCacheRoot;
     // The sources of the latest update check; the driver view reuses its driver check while fresh.
     private SharedScanSources? _scanSources;
@@ -77,8 +75,6 @@ public sealed partial class MainPage : Page
         _sourceCacheRoot = Path.Combine(localStateRoot, "SourceCache");
         _manufacturerDriverService = new ManufacturerDriverService(_httpClient, kyoceraCacheDirectory: _sourceCacheRoot);
         _updateOperationJournal = new FileUpdateOperationJournal(Path.Combine(localStateRoot, "update-operation.json"));
-        _updateHistory = new FileUpdateHistory(Path.Combine(localStateRoot, "update-history.json"));
-        _updatePreferences = new FileUpdatePreferences(Path.Combine(localStateRoot, "update-preferences.json"));
         _updateTransactionLease = new FileUpdateTransactionLeaseProvider(Path.Combine(localStateRoot, "update-transaction.lock"));
         MainInfo.IsOpen = App.ShowSafetyInformation;
         UpdateSortHeaders();
@@ -195,8 +191,6 @@ public sealed partial class MainPage : Page
                 interruptedOperation,
                 recoveredStage,
                 DateTimeOffset.UtcNow,
-                reachedTarget ? null : interruptedOperation.Error ?? "Nax-Updater restarted before the target version could be confirmed.");
-            AppendRecoveredOutcome(interruptedOperation, recoveredStage, observedVersion,
                 reachedTarget ? null : interruptedOperation.Error ?? "Nax-Updater restarted before the target version could be confirmed.");
             // A failed verification is not a reboot requirement. A fresh update
             // transaction revalidates its own target; unrelated apps remain usable.
@@ -929,23 +923,7 @@ public sealed partial class MainPage : Page
         if (operation is null || operation.Stage is not (UpdateTransactionStage.FailedNeedsAttention or UpdateTransactionStage.Indeterminate)) return;
         var assessment = snapshot.Results.FirstOrDefault(r => r.ApplicationIdentity.Equals(operation.ApplicationIdentity, StringComparison.OrdinalIgnoreCase));
         if (UpdateRecoveryVerifier.HasReachedTarget(operation, assessment?.InstalledVersion, assessment))
-        {
             _updateOperationJournal.Record(operation, UpdateTransactionStage.Succeeded, DateTimeOffset.UtcNow);
-            AppendRecoveredOutcome(operation, UpdateTransactionStage.Succeeded, assessment?.InstalledVersion, null);
-        }
-    }
-
-    // An outcome settled after the transaction (on restart or by a later scan) is added to the
-    // history as its own entry; the transaction's first outcome stays as it was recorded.
-    private void AppendRecoveredOutcome(UpdateOperationRecord operation, UpdateTransactionStage stage, string? observedVersion, string? error)
-    {
-        try
-        {
-            _updateHistory.Append(UpdateHistoryEntry.From(operation, stage, observedVersion, null, false, error, DateTimeOffset.UtcNow));
-        }
-        // The outcome is already in the journal, which recovery relies on; a history file that
-        // cannot be written must not stop the startup or the scan.
-        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException) { }
     }
 
     private void ShowApplicationsButton_Click(object sender, RoutedEventArgs e)
@@ -987,177 +965,6 @@ public sealed partial class MainPage : Page
         FilterBox.IsEnabled = true;
         ShowSystemComponentsCheckBox.IsEnabled = false;
         await CheckManufacturerDriversAsync(reuseScan: true);
-    }
-
-    private void DriversList_SelectionChanged(object sender, SelectionChangedEventArgs e) =>
-        DriverDetailsButton.IsEnabled = !_driverDetailsBusy && DriversList.SelectedItem is ManufacturerDriverRow;
-
-    private async void DriversList_DoubleTapped(object sender, Microsoft.UI.Xaml.Input.DoubleTappedRoutedEventArgs e)
-    {
-        if (DriversList.SelectedItem is ManufacturerDriverRow row) await ShowDriverDetailsAsync(row);
-    }
-
-    private async void DriverDetailsButton_Click(object sender, RoutedEventArgs e)
-    {
-        if (DriversList.SelectedItem is ManufacturerDriverRow row) await ShowDriverDetailsAsync(row);
-    }
-
-    // Evidence and the way back for one driver row: what Windows runs for each connected device,
-    // what the driver store still holds, what Nax-Updater changed and kept. It only reads; the
-    // driver is never rolled back from here. The text is for the owner's own troubleshooting, so
-    // it is not redacted like the diagnostics report.
-    private const int MaxDetailDevices = 8;
-
-    private bool _driverDetailsBusy;
-
-    // Only one ContentDialog can be open, and reading a group's devices takes a while, so the
-    // details neither open twice nor while an update or its confirmation runs, a driver install
-    // waits for them, and a failure is shown instead of ending the process from an async void
-    // handler.
-    private async Task ShowDriverDetailsAsync(ManufacturerDriverRow row)
-    {
-        if (_driverDetailsBusy || _updateBusy || _massUpdateBusy) return;
-        _driverDetailsBusy = true;
-        DriverDetailsButton.IsEnabled = false;
-        try
-        {
-            await ShowDriverDetailsCoreAsync(row);
-        }
-        catch (Exception exception)
-        {
-            ShowUnexpectedFailure(LocalizationService.Format("DriverDetailsFailedTitle", row.Name), exception);
-        }
-        finally
-        {
-            _driverDetailsBusy = false;
-            DriverDetailsButton.IsEnabled = DriversList.SelectedItem is ManufacturerDriverRow;
-        }
-    }
-
-    private async Task ShowDriverDetailsCoreAsync(ManufacturerDriverRow row)
-    {
-        var driver = row.Source.Driver;
-        var previousStatus = StatusText.Text;
-        var loading = LocalizationService.Format("DriverDetailsLoading", driver.DeviceName);
-        StatusText.Text = loading;
-        var devices = new List<(string Id, DriverDeviceRecovery? Details, string? Error)>();
-        try
-        {
-            // A group such as the Razer peripherals has two dozen devices; each query takes a
-            // moment, so the first eight are read and the rest are counted.
-            foreach (var id in (driver.DeviceInstanceIds ?? []).Take(MaxDetailDevices))
-            {
-                var (details, error) = await DriverRecovery.ReadAsync(id, CancellationToken.None);
-                devices.Add((id, details, error));
-            }
-        }
-        catch (Exception exception) when (exception is System.ComponentModel.Win32Exception or InvalidOperationException or IOException)
-        {
-            devices.Add(("", null, exception.Message));
-        }
-        finally
-        {
-            // Only the loading text is replaced; a status written meanwhile stays.
-            if (StatusText.Text == loading) StatusText.Text = previousStatus;
-        }
-
-        var report = new System.Text.StringBuilder();
-        var panel = new StackPanel { Spacing = 14 };
-        void Section(string title, IEnumerable<string> lines, string? brush = null)
-        {
-            var body = string.Join(Environment.NewLine, lines);
-            var section = new StackPanel { Spacing = 3 };
-            section.Children.Add(new TextBlock { Text = title, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold });
-            var text = new TextBlock { Text = body, TextWrapping = TextWrapping.Wrap, IsTextSelectionEnabled = true, FontSize = 13 };
-            if (brush is not null) text.Foreground = PresentationBrushes.Get(brush);
-            section.Children.Add(text);
-            panel.Children.Add(section);
-            report.AppendLine(title).AppendLine(body).AppendLine();
-        }
-
-        string Package(DriverStorePackage package) => string.Join(" · ", new[]
-        {
-            package.OriginalName is null ? package.InfName : $"{package.InfName} ({package.OriginalName})",
-            package.Provider, package.Version, package.Date
-        }.Where(static part => !string.IsNullOrWhiteSpace(part)));
-
-        var deviceLines = new List<string>();
-        var activeLines = new List<string>();
-        var earlier = new List<DriverStorePackage>();
-        if (devices.Count == 0) deviceLines.Add(LocalizationService.Get("DriverDetailsNoDevice"));
-        var unread = (driver.DeviceInstanceIds?.Count ?? 0) - MaxDetailDevices;
-        foreach (var (id, details, error) in devices)
-        {
-            if (details is null)
-            {
-                deviceLines.Add($"{id}: {LocalizationService.Text(error)}");
-                continue;
-            }
-            deviceLines.Add($"{details.Description ?? driver.DeviceName} · {details.InstanceId}");
-            deviceLines.Add(details.AwaitingRestart ? LocalizationService.Get("DriverDetailsAwaitingRestart")
-                : details.ProblemCode is { } code ? LocalizationService.Format("DriverDetailsProblem", details.Problem ?? "?", code)
-                : LocalizationService.Get("DriverDetailsRunning"));
-            if (details.Installed is { } installed) activeLines.Add(Package(installed));
-            earlier.AddRange(details.EarlierPackages().Where(package => !earlier.Any(known => known.InfName.Equals(package.InfName, StringComparison.OrdinalIgnoreCase))));
-        }
-        if (unread > 0) deviceLines.Add(LocalizationService.Format("DriverDetailsMoreDevices", unread));
-        if (activeLines.Count == 0)
-            activeLines.Add(string.Join(" · ", new[] { driver.InfName, driver.Provider, driver.InstalledVersion, driver.DriverDate }.Where(static part => !string.IsNullOrWhiteSpace(part))));
-        Section(LocalizationService.Get("DriverDetailsDevice"), deviceLines,
-            devices.Any(static device => device.Details?.AwaitingRestart == true) ? "NaxOrangeBrush" : null);
-        Section(LocalizationService.Get("DriverDetailsActive"), activeLines.Distinct());
-        Section(LocalizationService.Get("DriverDetailsEarlier"),
-            earlier.Count == 0 ? [LocalizationService.Get("DriverDetailsNoEarlier")] : earlier.Select(Package));
-
-        var history = _updateHistory.ReadNewestFirst()
-            .Where(entry => entry.ApplicationIdentity.Equals(driver.Identity, StringComparison.OrdinalIgnoreCase)).ToArray();
-        Section(LocalizationService.Get("DriverDetailsLastChange"), history.Length == 0
-            ? [LocalizationService.Get("DriverDetailsNoChange")]
-            : history.Take(3).Select(static entry =>
-                $"{entry.FinishedAt.ToLocalTime().ToString("g", System.Globalization.CultureInfo.CurrentCulture)}: " +
-                $"{entry.InstalledVersion ?? "?"} → {entry.TargetVersion ?? "?"} · {LocalizationService.Get("HistoryStage" + entry.Stage)}"));
-
-        var cacheRoot = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "NaxUpdater", "DriverDownloads");
-        var providers = history.Select(static entry => entry.ProviderId)
-            .Append(row.Source.ExecutableUpdate?.ProviderId)
-            .Where(static id => !string.IsNullOrWhiteSpace(id)).Distinct(StringComparer.Ordinal);
-        var retained = providers
-            .Select(provider => UpdatePackageDownloader.ProviderCacheDirectory(cacheRoot, provider!))
-            .Where(Directory.Exists)
-            .SelectMany(static folder => Directory.EnumerateFiles(folder, "*", SearchOption.AllDirectories))
-            .Where(static file => !file.EndsWith(".partial", StringComparison.OrdinalIgnoreCase) && !file.EndsWith(".tmp", StringComparison.OrdinalIgnoreCase))
-            .ToArray();
-        Section(LocalizationService.Get("DriverDetailsRetained"), retained.Length == 0 ? [LocalizationService.Get("DriverDetailsNoRetained")] : retained);
-
-        var guidance = new List<string> { LocalizationService.Get(earlier.Count > 0 ? "DriverDetailsRollback" : "DriverDetailsRollbackDownload") };
-        Section(LocalizationService.Get("DriverDetailsRollbackTitle"), guidance);
-        if (DriverRecovery.IsBootCritical(driver.DeviceClass))
-            Section(LocalizationService.Get("DriverDetailsBootCriticalTitle"), [LocalizationService.Get("DriverDetailsBootCritical")], "NaxPinkBrush");
-
-        var dialog = new ContentDialog
-        {
-            XamlRoot = XamlRoot,
-            Title = LocalizationService.Format("DriverDetailsTitle", driver.DeviceName),
-            Content = new ScrollViewer { Content = panel, MaxHeight = 540 },
-            PrimaryButtonText = LocalizationService.Get("DriverDetailsCopy"),
-            CloseButtonText = LocalizationService.Get("CloseDialog"),
-            DefaultButton = ContentDialogButton.Close
-        };
-        if (await dialog.ShowAsync() != ContentDialogResult.Primary) return;
-        try
-        {
-            var package = new Windows.ApplicationModel.DataTransfer.DataPackage();
-            package.SetText($"{LocalizationService.Format("DriverDetailsTitle", driver.DeviceName)}{Environment.NewLine}{Environment.NewLine}{report}");
-            Windows.ApplicationModel.DataTransfer.Clipboard.SetContent(package);
-        }
-        // Another program holding the clipboard must not end the process.
-        catch (Exception exception) when (exception is System.Runtime.InteropServices.COMException or IOException or UnauthorizedAccessException)
-        {
-            UpdateBar.Title = LocalizationService.Get("DiagnosticsCopyFailedTitle");
-            UpdateBar.Message = exception.Message;
-            UpdateBar.Severity = InfoBarSeverity.Error;
-            UpdateBar.IsOpen = true;
-        }
     }
 
     // Opening the driver view shows the latest scan's driver check while it is fresh; "check
@@ -1302,7 +1109,7 @@ public sealed partial class MainPage : Page
 
     private async void DriverRowButton_Click(object sender, RoutedEventArgs e)
     {
-        if (_updateBusy || _massUpdateBusy || _restartPending || _driverDetailsBusy || sender is not Button { DataContext: ManufacturerDriverRow row })
+        if (_updateBusy || _massUpdateBusy || _restartPending || sender is not Button { DataContext: ManufacturerDriverRow row })
         {
             return;
         }
@@ -1351,8 +1158,7 @@ public sealed partial class MainPage : Page
             var transaction = await new UpdateTransactionCoordinator(
                 backend,
                 _updateOperationJournal,
-                _updateTransactionLease,
-                history: _updateHistory).ApplyAsync(
+                _updateTransactionLease).ApplyAsync(
                 update,
                 cacheRoot,
                 progress);
@@ -1511,94 +1317,6 @@ public sealed partial class MainPage : Page
         UpdateSecurityText.Text = row.SecurityDetail;
         UpdateReleaseText.Text = row.ReleaseNotes;
         UpdateMessageText.Text = row.Message;
-        RefreshPreferenceDetails(row);
-    }
-
-    private static UpdateExclusion Exclusion(IReadOnlyDictionary<string, UpdatePreference> preferences, UpdateRow row) =>
-        FileUpdatePreferences.ExclusionFor(preferences.GetValueOrDefault(FileUpdatePreferences.KeyFor(row.Source)), row.Source);
-
-    private void RefreshPreferenceDetails(UpdateRow row)
-    {
-        UpdatePreference? preference = null;
-        string? readError = null;
-        try
-        {
-            preference = _updatePreferences.Get(row.Source);
-        }
-        catch (UpdatePreferencesUnreadableException exception)
-        {
-            readError = LocalizationService.Text(exception.Message);
-        }
-        // The skip button follows the skip itself, also while the application is held, so a skip
-        // can be cleared without releasing the hold first.
-        var skipped = FileUpdatePreferences.SkipsRelease(preference, row.Source);
-        UpdatePreferenceText.Text = readError ??
-            (preference?.Held == true ? LocalizationService.Get("PreferenceHeld")
-            : skipped ? LocalizationService.Format("PreferenceSkipped", preference!.SkippedVersion!)
-            : row.CanInstall ? LocalizationService.Get("PreferenceNone") : string.Empty);
-        var skippable = row.Source is { Status: UpdateStatus.Available, AvailableVersion: not null };
-        SkipVersionButton.Visibility = skippable || skipped ? Visibility.Visible : Visibility.Collapsed;
-        SkipVersionButton.Content = skipped
-            ? LocalizationService.Format("UnskipVersionButton", preference!.SkippedVersion!)
-            : LocalizationService.Format("SkipVersionButton", row.Source.AvailableVersion ?? "—");
-        HoldAppButton.Content = LocalizationService.Get(preference?.Held == true ? "ReleaseHoldButton" : "HoldAppButton");
-    }
-
-    private void SkipVersionButton_Click(object sender, RoutedEventArgs e)
-    {
-        if (_detailsRow is not { } row) return;
-        ChangePreference(row, () => _updatePreferences.ToggleSkippedVersion(row.Source));
-    }
-
-    private void HoldAppButton_Click(object sender, RoutedEventArgs e)
-    {
-        if (_detailsRow is not { } row) return;
-        ChangePreference(row, () => _updatePreferences.ToggleHeld(row.Source));
-    }
-
-    private void ChangePreference(UpdateRow row, Action change)
-    {
-        try
-        {
-            change();
-        }
-        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
-        {
-            UpdateBar.Title = row.Name;
-            UpdateBar.Message = LocalizationService.Format("PreferenceSaveFailed", exception.Message);
-            UpdateBar.Severity = InfoBarSeverity.Error;
-            UpdateBar.IsOpen = true;
-        }
-        RefreshPreferenceDetails(row);
-        RefreshMassUpdateButton();
-    }
-
-    // The report is redacted before it reaches the clipboard (UpdateDiagnostics.Redact).
-    private void CopyDiagnosticsButton_Click(object sender, RoutedEventArgs e)
-    {
-        if (_detailsRow is not { } row) return;
-        try
-        {
-            var history = _updateHistory.ReadNewestFirst().Where(entry =>
-                entry.ApplicationIdentity.Equals(row.Source.ApplicationIdentity, StringComparison.OrdinalIgnoreCase));
-            var report = UpdateDiagnostics.Build(row.Source, row.RunState == UpdateRunState.None ? null : row.RunState.ToString(),
-                row.RunMessage, history, GetApplicationVersion());
-            var package = new Windows.ApplicationModel.DataTransfer.DataPackage();
-            package.SetText(report);
-            Windows.ApplicationModel.DataTransfer.Clipboard.SetContent(package);
-            UpdateBar.Title = LocalizationService.Get("DiagnosticsCopiedTitle");
-            UpdateBar.Message = LocalizationService.Format("DiagnosticsCopiedMessage", row.Name);
-            UpdateBar.Severity = InfoBarSeverity.Success;
-        }
-        // Another program holding the clipboard (a clipboard manager, remote desktop) makes
-        // SetContent throw; that must not end the process, possibly during an update.
-        catch (Exception exception) when (exception is System.Runtime.InteropServices.COMException or IOException or UnauthorizedAccessException)
-        {
-            UpdateBar.Title = LocalizationService.Get("DiagnosticsCopyFailedTitle");
-            UpdateBar.Message = exception.Message;
-            UpdateBar.Severity = InfoBarSeverity.Error;
-        }
-        UpdateBar.IsOpen = true;
     }
 
     private async void UpdateRowButton_Click(object sender, RoutedEventArgs e)
@@ -1618,39 +1336,15 @@ public sealed partial class MainPage : Page
         {
             return;
         }
-        IReadOnlyDictionary<string, UpdatePreference> preferences;
-        try
-        {
-            preferences = _updatePreferences.ReadAll();
-        }
-        catch (UpdatePreferencesUnreadableException exception)
-        {
-            // Without the saved choices every held application would be updated.
-            UpdateBar.Title = LocalizationService.Get("PreferencesUnreadableTitle");
-            UpdateBar.Message = LocalizationService.Text(exception.Message);
-            UpdateBar.Severity = InfoBarSeverity.Error;
-            UpdateBar.IsOpen = true;
-            return;
-        }
-        var installable = _allUpdates.Where(static row => row.CanInstall).ToArray();
-        // A held application and a skipped release are still checked, but stay out of the batch.
-        var excluded = installable.Where(row => Exclusion(preferences, row) != UpdateExclusion.None).ToArray();
-        var queue = installable.Except(excluded)
+        var queue = _allUpdates
+            .Where(static row => row.CanInstall)
             .OrderBy(static row => row.Source.ExecutionPlan?.Kind is UpdateExecutionKind.StorePackage or UpdateExecutionKind.NativeStorePackage or UpdateExecutionKind.NativeStoreQueue ? 1 : 0)
             .ThenBy(static row => row.Name, StringComparer.CurrentCultureIgnoreCase)
             .ToArray();
-        if (queue.Length == 0 && excluded.Length == 0)
+        if (queue.Length == 0)
         {
             return;
         }
-        // The filter of the update list does not decide the batch, so the exact batch is shown
-        // first and each entry can be deselected.
-        var selected = await ReviewUpdateQueueAsync(queue, excluded, preferences);
-        if (selected is not { Length: > 0 } || _updateBusy || _massUpdateBusy || _restartPending)
-        {
-            return;
-        }
-        queue = selected;
 
         _massUpdateBusy = true;
         _stopBatch = false;
@@ -1700,174 +1394,6 @@ public sealed partial class MainPage : Page
             RefreshMassUpdateButton();
             EndMutation();
         }
-    }
-
-    // Each entry shows its versions, its source and the running programs that the update will
-    // close. Returns the selected entries in their order, or null when the batch was canceled.
-    // A Store item that Windows already queued has no known target version; the batch resumes
-    // Windows' own operation, so the entry says so instead of pointing to an empty version.
-    private static string QueueVersionText(UpdateRow row) => row.Source.AvailableVersion is null
-        ? $"{row.Installed} · {LocalizationService.Get(row.Source.Status == UpdateStatus.StoreQueued ? "QueueResumesStoreQueue" : "QueueStoreDecidesVersion")}"
-        : $"{row.Installed} → {row.Available}";
-
-    private async Task<UpdateRow[]?> ReviewUpdateQueueAsync(
-        UpdateRow[] queue, UpdateRow[] excluded, IReadOnlyDictionary<string, UpdatePreference> preferences)
-    {
-        var boxes = new List<(CheckBox Box, UpdateRow Row)>();
-        var list = new StackPanel { Spacing = 8 };
-        foreach (var row in queue)
-        {
-            var running = _updateExecutionService.FindRunningProcesses(row.Source);
-            var detail = $"{QueueVersionText(row)} · {row.Provider}";
-            if (running.Count > 0) detail += " · " + LocalizationService.Format("QueueCloses", string.Join(", ", running));
-            var box = new CheckBox
-            {
-                IsChecked = true,
-                Content = new StackPanel
-                {
-                    Children =
-                    {
-                        new TextBlock { Text = row.Name, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold, TextWrapping = TextWrapping.Wrap },
-                        new TextBlock
-                        {
-                            Text = detail,
-                            FontSize = 12,
-                            TextWrapping = TextWrapping.Wrap,
-                            Foreground = PresentationBrushes.Get(running.Count > 0 ? "NaxOrangeBrush" : "NaxBlueBrush")
-                        }
-                    }
-                }
-            };
-            boxes.Add((box, row));
-            list.Children.Add(box);
-        }
-        if (excluded.Length > 0)
-        {
-            list.Children.Add(new TextBlock
-            {
-                Text = LocalizationService.Get("QueueExcludedHeader"),
-                FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
-                Margin = new Thickness(0, 8, 0, 0),
-                Style = (Style)Application.Current.Resources["MutedTextStyle"]
-            });
-            foreach (var row in excluded)
-            {
-                var preference = preferences.GetValueOrDefault(FileUpdatePreferences.KeyFor(row.Source));
-                var reason = Exclusion(preferences, row) == UpdateExclusion.Held
-                    ? LocalizationService.Get("QueueExcludedHeld")
-                    : LocalizationService.Format("QueueExcludedSkipped", preference?.SkippedVersion ?? row.Available);
-                list.Children.Add(new TextBlock
-                {
-                    Text = $"{row.Name} · {QueueVersionText(row)} · {reason}",
-                    FontSize = 12,
-                    TextWrapping = TextWrapping.Wrap,
-                    Foreground = PresentationBrushes.Get("NaxPurpleBrush")
-                });
-            }
-        }
-        var selectAll = new CheckBox
-        {
-            Content = LocalizationService.Get("QueueSelectAll"),
-            IsChecked = true,
-            Visibility = queue.Length > 0 ? Visibility.Visible : Visibility.Collapsed
-        };
-        var dialog = new ContentDialog
-        {
-            XamlRoot = XamlRoot,
-            Title = LocalizationService.Get("QueueTitle"),
-            Content = new StackPanel
-            {
-                Spacing = 10,
-                Children =
-                {
-                    new TextBlock { Text = LocalizationService.Get("QueueIntro"), TextWrapping = TextWrapping.Wrap },
-                    selectAll,
-                    new ScrollViewer { Content = list, MaxHeight = 420 }
-                }
-            },
-            PrimaryButtonText = LocalizationService.Format("QueueStart", queue.Length),
-            IsPrimaryButtonEnabled = queue.Length > 0,
-            CloseButtonText = LocalizationService.Get("Cancel"),
-            DefaultButton = ContentDialogButton.Primary
-        };
-        var syncing = false;
-        void Refresh()
-        {
-            var count = boxes.Count(static entry => entry.Box.IsChecked == true);
-            dialog.PrimaryButtonText = LocalizationService.Format("QueueStart", count);
-            dialog.IsPrimaryButtonEnabled = count > 0;
-            syncing = true;
-            selectAll.IsChecked = count == boxes.Count ? true : count == 0 ? false : null;
-            syncing = false;
-        }
-        void SetAll(bool value)
-        {
-            if (syncing) return;
-            syncing = true;
-            foreach (var entry in boxes) entry.Box.IsChecked = value;
-            syncing = false;
-            Refresh();
-        }
-        selectAll.Checked += (_, _) => SetAll(true);
-        selectAll.Unchecked += (_, _) => SetAll(false);
-        foreach (var entry in boxes)
-        {
-            entry.Box.Checked += (_, _) => { if (!syncing) Refresh(); };
-            entry.Box.Unchecked += (_, _) => { if (!syncing) Refresh(); };
-        }
-        return await dialog.ShowAsync() == ContentDialogResult.Primary
-            ? boxes.Where(static entry => entry.Box.IsChecked == true).Select(static entry => entry.Row).ToArray()
-            : null;
-    }
-
-    private async void HistoryButton_Click(object sender, RoutedEventArgs e)
-    {
-        var entries = _updateHistory.ReadNewestFirst();
-        var list = new StackPanel { Spacing = 14 };
-        if (entries.Count == 0)
-        {
-            list.Children.Add(new TextBlock { Text = LocalizationService.Get("HistoryEmpty"), TextWrapping = TextWrapping.Wrap });
-        }
-        foreach (var entry in entries)
-        {
-            var details = new List<string> { $"{entry.InstalledVersion ?? "?"} → {entry.TargetVersion ?? "?"}" };
-            if (!string.IsNullOrWhiteSpace(entry.ObservedVersion)) details.Add(LocalizationService.Format("HistoryObserved", entry.ObservedVersion));
-            details.Add(LocalizationService.ProviderName(entry.ProviderId));
-            if (entry.ExitCode is int exitCode) details.Add(LocalizationService.Format("HistoryExitCode", exitCode));
-            if (entry.RestartRecommended) details.Add(LocalizationService.Get("HistoryRestartRecommended"));
-            var panel = new StackPanel { Spacing = 2 };
-            panel.Children.Add(new TextBlock
-            {
-                Text = $"{entry.DisplayName} · {LocalizationService.Get("HistoryStage" + entry.Stage)}",
-                FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
-                TextWrapping = TextWrapping.Wrap,
-                Foreground = PresentationBrushes.Get(entry.Stage switch
-                {
-                    UpdateTransactionStage.Succeeded => "NaxGreenBrush",
-                    UpdateTransactionStage.PendingReboot => "NaxOrangeBrush",
-                    UpdateTransactionStage.FailedBeforeChange or UpdateTransactionStage.FailedNeedsAttention or UpdateTransactionStage.Indeterminate => "NaxPinkBrush",
-                    _ => "NaxPurpleBrush"
-                })
-            });
-            panel.Children.Add(new TextBlock { Text = string.Join(" · ", details), FontSize = 12, TextWrapping = TextWrapping.Wrap, IsTextSelectionEnabled = true });
-            if (!string.IsNullOrWhiteSpace(entry.Error))
-                panel.Children.Add(new TextBlock { Text = LocalizationService.Text(entry.Error), FontSize = 12, TextWrapping = TextWrapping.Wrap, IsTextSelectionEnabled = true });
-            panel.Children.Add(new TextBlock
-            {
-                Text = entry.FinishedAt.ToLocalTime().ToString("g", System.Globalization.CultureInfo.CurrentCulture),
-                FontSize = 11,
-                Style = (Style)Application.Current.Resources["MutedTextStyle"]
-            });
-            list.Children.Add(panel);
-        }
-        await new ContentDialog
-        {
-            XamlRoot = XamlRoot,
-            Title = LocalizationService.Get("HistoryTitle"),
-            Content = new ScrollViewer { Content = list, MaxHeight = 520 },
-            CloseButtonText = LocalizationService.Get("CloseDialog"),
-            DefaultButton = ContentDialogButton.Close
-        }.ShowAsync();
     }
 
     private async Task<bool> ExecuteUpdateAsync(UpdateRow row, bool rescanAfterSuccess)
@@ -1927,8 +1453,7 @@ public sealed partial class MainPage : Page
             var transaction = await new UpdateTransactionCoordinator(
                 backend,
                 _updateOperationJournal,
-                _updateTransactionLease,
-                history: _updateHistory).ApplyAsync(
+                _updateTransactionLease).ApplyAsync(
                 row.Source,
                 cacheRoot,
                 transactionProgress, operationCancellation.Token);
@@ -2061,22 +1586,16 @@ public sealed partial class MainPage : Page
     {
         // Same predicate as UpdateAllButton_Click (CanInstall), so queued Store
         // rows that "Update all" will resume are counted, not shown as (0).
-        // Held applications and skipped releases are not counted, because the batch leaves them out.
-        // When the choices cannot be read, the count includes everything; Update All itself then
-        // refuses to run and says why.
-        IReadOnlyDictionary<string, UpdatePreference> preferences;
-        try { preferences = _updatePreferences.ReadAll(); }
-        catch (UpdatePreferencesUnreadableException) { preferences = new Dictionary<string, UpdatePreference>(); }
-        var batch = _allUpdates.Where(row => row.CanInstall && Exclusion(preferences, row) == UpdateExclusion.None).ToArray();
-        var verifiedUpdates = batch.Count(static row =>
+        var verifiedUpdates = _allUpdates.Count(static row =>
+            row.CanInstall &&
             row.Source.ExecutionPlan?.Kind is not (UpdateExecutionKind.StorePackage or UpdateExecutionKind.NativeStorePackage or UpdateExecutionKind.NativeStoreQueue));
-        var storeActions = batch.Count(static row =>
+        var storeActions = _allUpdates.Count(static row =>
+            row.CanInstall &&
             row.Source.ExecutionPlan?.Kind is UpdateExecutionKind.StorePackage or UpdateExecutionKind.NativeStorePackage or UpdateExecutionKind.NativeStoreQueue);
         UpdateAllButton.Content = storeActions > 0
             ? LocalizationService.Format("UpdateAllCountWithStore", verifiedUpdates, storeActions)
             : LocalizationService.Format("UpdateAllCount", verifiedUpdates);
-        UpdateAllButton.IsEnabled = !_updateBusy && !_massUpdateBusy && !_restartPending &&
-                                    _allUpdates.Any(static row => row.CanInstall);
+        UpdateAllButton.IsEnabled = !_updateBusy && !_massUpdateBusy && !_restartPending && verifiedUpdates + storeActions > 0;
         var locked = _updateBusy || _massUpdateBusy || _restartPending;
         foreach (var row in _allUpdates) row.ActionsLocked = locked;
     }

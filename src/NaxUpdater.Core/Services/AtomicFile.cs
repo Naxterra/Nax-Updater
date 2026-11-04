@@ -26,10 +26,9 @@ internal static class AtomicFile
         }
     }
 
-    // Every caller serializes the writes of its file (the journal, the history and the choices
-    // under their own lock, the Store cache and the Kyocera cache under a shared one), and only
-    // one Nax-Updater runs per session, so a temporary file of the same target that exists now
-    // was left by an interrupted write.
+    // Every caller serializes the writes of its file (the journal under its own lock, the Store
+    // cache and the Kyocera cache under a shared one), and only one Nax-Updater runs per session,
+    // so a temporary file of the same target that exists now was left by an interrupted write.
     // The fixed ".tmp" name of earlier versions is removed as well.
     private static void RemoveStaleTemporaries(string path)
     {
@@ -47,14 +46,5 @@ internal static class AtomicFile
                 // A leftover that cannot be removed now is tried again on the next write.
             }
         }
-    }
-
-    // A damaged file is kept under a name of its own, so a second damage cannot replace the
-    // copy that was kept the first time.
-    public static string KeepAside(string path)
-    {
-        var target = $"{path}.unreadable-{DateTime.UtcNow:yyyyMMddHHmmssfff}";
-        File.Move(path, target);
-        return target;
     }
 }

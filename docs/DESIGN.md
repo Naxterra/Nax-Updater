@@ -1,6 +1,6 @@
 # Nax-Updater design
 
-Current as of 0.17.63. Updated with every release; the reasons behind each rule are in [DECISIONS.md](DECISIONS.md).
+Current as of 0.17.64. Updated with every release; the reasons behind each rule are in [DECISIONS.md](DECISIONS.md).
 
 ## Goal
 
@@ -8,7 +8,7 @@ One window that finds every installed Windows application, tells the truth about
 
 Hard requirements:
 
-- **Update all means update all.** Every installable update is in "Alle aktualisieren"; the owner never has to click apps one by one. Driver updates are the one deliberate exception (see below). Before the batch runs, a review lists every entry with its installed and target version, its source and the running programs it will close. All entries are selected, so one more click starts the whole batch, and any entry can be deselected. A held application and a skipped release (both set in the update details) are left out of the batch and listed in the review with the reason. They are still checked and can still be updated one by one. A skip covers exactly one release, so the next release is in the batch again. When the saved choices cannot be read, Update All does not start and says why, because reading them as empty would update every held application.
+- **Update all means update all.** Every installable update is in "Alle aktualisieren"; the owner never has to click apps one by one. Driver updates are the one deliberate exception (see below).
 - **Systemic fixes only.** A problem with one app is fixed in the rule that produced it, never with a per-app exception.
 - **Elevation shows UAC.** Nothing that needs administrator rights runs silently without a prompt.
 - **Scan speed comparable to WinGet or the Store** (about 10 s for roughly 150 applications).
@@ -32,7 +32,7 @@ Hard requirements:
 2. **Ownership** (`ExternalManagementClassifier`, `ChocolateyOwnership`): who installed or updates the app (Store, Chocolatey, a vendor's own updater, the driver view). Ownership can block providers that must not touch the app.
 3. **Checks** (`UpdateCheckService`): every compatible provider is asked, grouped into authority tiers that run in parallel. Each source has a timeout; a slow source fails alone.
 4. **Selection**: one result per app, chosen by source order (below). All source results stay visible in the details panel.
-5. **Execution** (`UpdateTransactionCoordinator`): revalidate, download and verify, close bound processes, install, then re-check the installed version. A journal and a lease make interrupted updates recoverable.
+5. **Execution** (`UpdateTransactionCoordinator`): revalidate, download and verify, close bound processes, install, then re-check the installed version. A journal and a lease make interrupted updates recoverable. The journal, like the Store search cache and the Kyocera cache, is written to a temporary file of its own, forced to disk and only then moved over the old file.
 
 ## While updates run
 
@@ -41,10 +41,6 @@ The update list stays reachable from the application view while a change runs, a
 An installer exit code 1641 or 3010 (restart requested) after a verified target counts as a completed update with a restart note, and Update All continues. Only an update whose target is not yet verified waits for the restart, and so does every driver install that asks for one, because Windows reports a staged driver version before the restart loads the driver. A waiting update blocks further changes until Windows has restarted (an application update also when its target is found installed).
 
 The update and driver lists stay enabled, so they can be scrolled and every row's details read during an update; only the row actions and "Alle aktualisieren" are locked. Each row in a run shows its own state in the status column (in Warteschlange, wird vorbereitet, Anwendung wird geschlossen, wird installiert, wird geprüft, then aktualisiert, fehlgeschlagen, nicht mehr anwendbar, Neustart erforderlich or übersprungen). Outcomes stay on the rows after the closing rescan until the next manual scan; a failed row shows its reason above the provider notes. A row that is still installable after a reported success shows the remaining offer instead of "aktualisiert".
-
-Every finished update, including failed, canceled and no longer applicable ones, is added to the update history (Verlauf, `update-history.json`, the newest 500 entries). An entry keeps the installed, target and afterwards read version, the source, the installer exit code, the outcome and its reason. The recovery journal stays separate and holds only the latest transaction. An outcome settled later (after a restart or by a later scan) is added as its own entry, and a damaged history file is kept aside as `update-history.json.unreadable-<time>` instead of being overwritten. The journal, the history, the skip and hold choices and the Store search cache are written to a temporary file of their own, forced to disk and only then moved over the old file.
-
-"Diagnose kopieren" in the update details copies a plain-text report of the selected row for an issue: versions, provider, plan, source checks, the last run and the row's last five history entries. It is redacted before it reaches the clipboard. Local and network paths keep only their file name, the Windows user and computer name are replaced, URLs lose their query string (signed download links carry credentials there), and tokens, bearer values and other credential-like values are removed.
 
 ## Source order
 
@@ -101,8 +97,6 @@ Electron applications use electron-updater, which keeps a random UUID in `%APPDA
 ## Drivers
 
 Drivers have their own view (Treiber) and are never part of "Alle aktualisieren". The update list shows a driver row only as information ("Treiberupdate verfügbar · im Treiber-Bereich", with the driver version when it uses the package's version scheme). Manufacturer sources are queried directly, each request capped at 10 s. A scan checks the drivers once, starting together with the application inventory; the driver rows of the update list and the driver view use that result, and opening the driver view within five minutes of the scan shows it at once. "Herstellertreiber prüfen", the check after a driver install and any change to the system run a new check. Kyocera is asked once per scan, and its files are kept with their ETag, so an unchanged file comes back as 304 without its body. A connected device's driver (version, INF, provider, date) is read from its own driver key; Win32_PnPSignedDriver is not queried, because it reported replaced drivers for over a minute and took 1.7 s per read.
-
-"Treiberdetails" (button in the driver view, or a double click on a row) shows the evidence for one row and the way back, and changes nothing. For each connected device (up to eight per row) it reads pnputil's XML list of the device's matching drivers, which is the same in every display language and needs no administrator rights. It shows the device and whether its new driver waits for a restart, the active package, older packages of the same provider that the driver store still holds, Nax-Updater's last changes to the row from the history and the downloaded package Nax-Updater keeps. The way back is described in words (Device Manager, pick the older package from the list), with a warning for storage drivers. Nax-Updater never rolls a driver back by itself, because a wrong storage driver can keep Windows from starting. NVIDIA desktop GeForce RTX cards are checked against the WHQL Game Ready list of their own series, whose ID is read by name from NVIDIA's series list.
 
 Network printers have no present PnP device, so the KX drivers of Kyocera printers are read from the print spooler's driver list (MSFT_PrinterDriver), and the printer model is taken from the driver name. Kyocera's global user support site publishes one JSON file per model with every driver and utility, its version and its download address. The KX driver is checked there, and a newer one is offered as the exact download page, because Kyocera publishes no package hash. Kyocera's utilities in the application list (TWAIN driver, Status Monitor, Quick Scan, Wi-Fi Setup Tool) are checked against the same model file.
 

@@ -141,33 +141,6 @@ public sealed record UpdateOperationRecord(
     // records for a same-version repair, which the application version cannot prove.
     ChocolateyUpdateTarget? ChocolateyTarget = null);
 
-// One finished update as the history shows it: what was requested, what was read afterwards,
-// how the installer exited and how the transaction ended.
-public sealed record UpdateHistoryEntry(
-    Guid OperationId,
-    string DisplayName,
-    string ApplicationIdentity,
-    string ProviderId,
-    string? InstalledVersion,
-    string? TargetVersion,
-    string? ObservedVersion,
-    UpdateTransactionStage Stage,
-    int? ExitCode,
-    bool RestartRecommended,
-    string? Error,
-    DateTimeOffset StartedAt,
-    DateTimeOffset FinishedAt,
-    UpdateExecutionKind? ExecutionKind = null)
-{
-    public bool RequiresRestart => Stage == UpdateTransactionStage.PendingReboot;
-
-    public static UpdateHistoryEntry From(UpdateOperationRecord operation, UpdateTransactionStage stage, string? observedVersion,
-        int? exitCode, bool restartRecommended, string? error, DateTimeOffset finishedAt) =>
-        new(operation.OperationId, operation.DisplayName, operation.ApplicationIdentity, operation.ProviderId, operation.InstalledVersion,
-            operation.TargetVersion, observedVersion, stage, exitCode, restartRecommended, error, operation.StartedAt, finishedAt,
-            operation.ExecutionKind);
-}
-
 public sealed record UpdateExecutionPlan(
     UpdateExecutionKind Kind,
     Uri? DownloadUri,

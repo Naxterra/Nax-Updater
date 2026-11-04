@@ -23,9 +23,7 @@ public sealed record InstalledHardwareDriver(
     string? InfName,
     bool IsPresent = true,
     int DeviceCount = 1,
-    IReadOnlyList<string>? GroupMembers = null,
-    // The Windows device instance IDs of the row's connected devices, for the recovery details.
-    IReadOnlyList<string>? DeviceInstanceIds = null);
+    IReadOnlyList<string>? GroupMembers = null);
 
 public sealed record ManufacturerDriverResult(
     InstalledHardwareDriver Driver,

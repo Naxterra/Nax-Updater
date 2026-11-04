@@ -2,6 +2,10 @@
 
 Why Nax-Updater works the way it does. Newest first; every release adds its decisions here and updates [DESIGN.md](DESIGN.md). Each entry names the decision, the evidence that led to it, and what was rejected.
 
+## 0.17.64 (2026-11-04)
+
+**Nax-Updater stays a simple updater.** The Update All review, the update history, skipping or holding a release, copying diagnostics and the driver details were removed again. The owner's rule is that Update All updates everything with one click, and every extra dialog or button worked against that. The fixes made alongside them stay: durable state files, the removal of interrupted writes, the scan that checks drivers once and Kyocera conditionally, and the MSI scope.
+
 ## 0.17.63 (2026-11-04)
 
 **The Update All review describes queued Store items.** ChatGPT and XBOX appeared as "version → —", because Windows had already queued their Store updates and the target version is unknown; the batch only resumes Windows' operation. Such entries now say that the update Windows queued is resumed, and a Store package without a known version says that the Store decides it.

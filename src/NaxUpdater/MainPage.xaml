@@ -39,7 +39,6 @@
                 <ColumnDefinition Width="Auto" />
                 <ColumnDefinition Width="Auto" />
                 <ColumnDefinition Width="Auto" />
-                <ColumnDefinition Width="Auto" />
             </Grid.ColumnDefinitions>
             <Button x:Name="ScanButton" Height="36" Padding="14,0" Click="ScanButton_Click" Style="{StaticResource BlueActionButtonStyle}">
                 <StackPanel Orientation="Horizontal" Spacing="8">
@@ -68,13 +67,7 @@
                     <TextBlock x:Uid="DriversButtonText" Text="Drivers" />
                 </StackPanel>
             </Button>
-            <Button x:Name="HistoryButton" Grid.Column="4" Height="36" Padding="11,0" Click="HistoryButton_Click">
-                <StackPanel Orientation="Horizontal" Spacing="6">
-                    <FontIcon Glyph="&#xE81C;" FontSize="14" />
-                    <TextBlock x:Uid="HistoryButtonText" Text="History" />
-                </StackPanel>
-            </Button>
-            <Button x:Name="LanguageButton" Grid.Column="5" Height="36" Padding="11,0" Click="LanguageButton_Click">
+            <Button x:Name="LanguageButton" Grid.Column="4" Height="36" Padding="11,0" Click="LanguageButton_Click">
                 <StackPanel Orientation="Horizontal" Spacing="6">
                     <FontIcon Glyph="&#xE713;" FontSize="14" />
                     <TextBlock x:Uid="LanguageButtonText" Text="Settings" />
@@ -429,14 +422,6 @@
                             <TextBlock x:Uid="CheckedSourcesLabel" Text="Source check results" Style="{StaticResource DetailLabelStyle}" />
                             <TextBlock x:Name="UpdateSourcesText" TextWrapping="Wrap" IsTextSelectionEnabled="True" />
 
-                            <TextBlock x:Uid="BatchPreferenceLabel" Text="Update All" Style="{StaticResource DetailLabelStyle}" />
-                            <TextBlock x:Name="UpdatePreferenceText" TextWrapping="Wrap" />
-                            <StackPanel Spacing="6" Margin="0,6,0,0">
-                                <Button x:Name="SkipVersionButton" Click="SkipVersionButton_Click" />
-                                <Button x:Name="HoldAppButton" Click="HoldAppButton_Click" />
-                                <Button x:Name="CopyDiagnosticsButton" x:Uid="CopyDiagnosticsButton" Content="Copy diagnostics" Click="CopyDiagnosticsButton_Click" />
-                            </StackPanel>
-
                             <ProgressBar x:Name="UpdateProgress" Visibility="Collapsed" Margin="0,18,0,8" Minimum="0" Maximum="100" />
                             <Button x:Name="StopOperationButton" Visibility="Collapsed" Click="StopOperationButton_Click" Content="Stop after current" />
                             <TextBlock x:Uid="CloseAppsHint" Text="Starting an update authorizes Nax-Updater to close its listed application processes and force-terminate them if necessary." Style="{StaticResource MutedTextStyle}" FontSize="11" TextWrapping="Wrap" Margin="0,7,0,0" />
@@ -468,7 +453,6 @@
                         </Button>
                         <TextBlock x:Uid="ManufacturerDriversHeader" Grid.Column="1" Text="Manufacturer drivers" FontSize="18" FontWeight="SemiBold" Foreground="{StaticResource NaxPurpleBrush}" VerticalAlignment="Center" />
                         <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
-                            <Button x:Name="DriverDetailsButton" x:Uid="DriverDetailsButton" Content="Driver details" IsEnabled="False" Click="DriverDetailsButton_Click" />
                             <ComboBox x:Name="DriverStatusFilter" MinWidth="165" SelectedIndex="0" SelectionChanged="DriverStatusFilter_SelectionChanged">
                                 <ComboBoxItem x:Uid="DriverFilterAll" Tag="all" Content="All statuses" />
                                 <ComboBoxItem x:Uid="DriverFilterUpdates" Tag="updates" Content="Updates" />
@@ -517,7 +501,7 @@
                             <RowDefinition Height="*" />
                             <RowDefinition Height="Auto" />
                         </Grid.RowDefinitions>
-                        <ListView x:Name="DriversList" SelectionMode="Single" SelectionChanged="DriversList_SelectionChanged" DoubleTapped="DriversList_DoubleTapped">
+                        <ListView x:Name="DriversList" SelectionMode="Single">
                             <ListView.ItemContainerStyle>
                                 <Style TargetType="ListViewItem">
                                     <Setter Property="Padding" Value="0" />

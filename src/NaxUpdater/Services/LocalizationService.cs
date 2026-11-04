@@ -27,32 +27,26 @@ public static partial class LocalizationService
     public static string Format(string key, params object?[] arguments) =>
         string.Format(System.Globalization.CultureInfo.CurrentCulture, Get(key), arguments);
 
-    public static string ProviderName(UpdateCheckResult update) => ProviderName(update.ProviderId, update.ProviderDisplayName);
-
-    // The history keeps only the provider ID, so its display name falls back to the ID.
-    public static string ProviderName(string providerId, string? providerDisplayName = null)
+    public static string ProviderName(UpdateCheckResult update)
     {
-        var displayName = providerDisplayName ?? providerId;
-        if (providerId.StartsWith("manufacturer-driver:", StringComparison.Ordinal) && providerDisplayName is null)
-            return Get("ProviderManufacturerDriver");
-        if (providerId == "mozilla-firefox") return Get("ProviderMozilla");
-        if (providerId == "zero-install") return Get("ProviderZeroInstall");
-        if (providerId == "wsl-native") return Get("ProviderWsl");
-        if (providerId == "native-updater") return displayName == "NaxUpdater manufacturer-driver view"
-            ? Get("ProviderDriverWorkspace") : Text(displayName);
-        if (providerId == "unverified") return Get("ProviderUnverified");
-        if (providerId == "msix-store") return Get("ProviderMsixStore");
-        if (providerId == "installed-updater-metadata") return Get("ProviderInstalledMetadata");
-        if (providerId == "gog-galaxy-native") return Get("ProviderGogGalaxyNative");
-        if (providerId == "rarlab-winrar") return Get("ProviderWinRar");
-        if (providerId == "winget-fallback") return Get("ProviderWingetFallback");
-        if (providerId == "superseded-registration") return Get("ProviderSupersededRegistration");
-        if (providerId.StartsWith("github:", StringComparison.Ordinal))
+        if (update.ProviderId == "mozilla-firefox") return Get("ProviderMozilla");
+        if (update.ProviderId == "zero-install") return Get("ProviderZeroInstall");
+        if (update.ProviderId == "wsl-native") return Get("ProviderWsl");
+        if (update.ProviderId == "native-updater") return update.ProviderDisplayName == "NaxUpdater manufacturer-driver view"
+            ? Get("ProviderDriverWorkspace") : Text(update.ProviderDisplayName);
+        if (update.ProviderId == "unverified") return Get("ProviderUnverified");
+        if (update.ProviderId == "msix-store") return Get("ProviderMsixStore");
+        if (update.ProviderId == "installed-updater-metadata") return Get("ProviderInstalledMetadata");
+        if (update.ProviderId == "gog-galaxy-native") return Get("ProviderGogGalaxyNative");
+        if (update.ProviderId == "rarlab-winrar") return Get("ProviderWinRar");
+        if (update.ProviderId == "winget-fallback") return Get("ProviderWingetFallback");
+        if (update.ProviderId == "superseded-registration") return Get("ProviderSupersededRegistration");
+        if (update.ProviderId.StartsWith("github:", StringComparison.Ordinal))
         {
-            return Format("ProviderGitHub", providerId[7..]);
+            return Format("ProviderGitHub", update.ProviderId[7..]);
         }
-        if (providerId.StartsWith("official:", StringComparison.Ordinal)) return Get("ProviderOfficialSite");
-        return Text(displayName);
+        if (update.ProviderId.StartsWith("official:", StringComparison.Ordinal)) return Get("ProviderOfficialSite");
+        return Text(update.ProviderDisplayName);
     }
 
     // Text from the checks and the update engine is English; the German interface shows it
