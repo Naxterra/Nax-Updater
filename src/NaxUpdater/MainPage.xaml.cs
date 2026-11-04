@@ -17,7 +17,7 @@ public sealed partial class MainPage : Page
     private readonly ApplicationInventoryService _inventoryService;
     // Some publisher servers refuse requests without a User-Agent (403), so the shared
     // client always sends one; requests that set their own keep it.
-    private readonly HttpClient _httpClient = new() { Timeout = TimeSpan.FromSeconds(30), DefaultRequestHeaders = { { "User-Agent", "NaxUpdater/0.17.62" } } };
+    private readonly HttpClient _httpClient = new() { Timeout = TimeSpan.FromSeconds(30), DefaultRequestHeaders = { { "User-Agent", "NaxUpdater/0.17.63" } } };
     private readonly UpdateExecutionService _updateExecutionService = new();
     private readonly ApplicationRemovalService _applicationRemovalService = new();
     private readonly ApplicationIconService _applicationIconService = new();
@@ -1704,6 +1704,12 @@ public sealed partial class MainPage : Page
 
     // Each entry shows its versions, its source and the running programs that the update will
     // close. Returns the selected entries in their order, or null when the batch was canceled.
+    // A Store item that Windows already queued has no known target version; the batch resumes
+    // Windows' own operation, so the entry says so instead of pointing to an empty version.
+    private static string QueueVersionText(UpdateRow row) => row.Source.AvailableVersion is null
+        ? $"{row.Installed} · {LocalizationService.Get(row.Source.Status == UpdateStatus.StoreQueued ? "QueueResumesStoreQueue" : "QueueStoreDecidesVersion")}"
+        : $"{row.Installed} → {row.Available}";
+
     private async Task<UpdateRow[]?> ReviewUpdateQueueAsync(
         UpdateRow[] queue, UpdateRow[] excluded, IReadOnlyDictionary<string, UpdatePreference> preferences)
     {
@@ -1712,7 +1718,7 @@ public sealed partial class MainPage : Page
         foreach (var row in queue)
         {
             var running = _updateExecutionService.FindRunningProcesses(row.Source);
-            var detail = $"{row.Installed} → {row.Available} · {row.Provider}";
+            var detail = $"{QueueVersionText(row)} · {row.Provider}";
             if (running.Count > 0) detail += " · " + LocalizationService.Format("QueueCloses", string.Join(", ", running));
             var box = new CheckBox
             {
@@ -1752,7 +1758,7 @@ public sealed partial class MainPage : Page
                     : LocalizationService.Format("QueueExcludedSkipped", preference?.SkippedVersion ?? row.Available);
                 list.Children.Add(new TextBlock
                 {
-                    Text = $"{row.Name} · {row.Installed} → {row.Available} · {reason}",
+                    Text = $"{row.Name} · {QueueVersionText(row)} · {reason}",
                     FontSize = 12,
                     TextWrapping = TextWrapping.Wrap,
                     Foreground = PresentationBrushes.Get("NaxPurpleBrush")

@@ -260,4 +260,6 @@
   <data name="DriverDetailsBootCriticalTitle" xml:space="preserve"><value>Storage driver</value></data>
   <data name="DriverDetailsMoreDevices" xml:space="preserve"><value>{0} more devices of this group are not listed.</value></data>
   <data name="DriverDetailsFailedTitle" xml:space="preserve"><value>The driver details of {0} could not be shown</value></data>
+  <data name="QueueResumesStoreQueue" xml:space="preserve"><value>resumes the update Windows already queued in the Store</value></data>
+  <data name="QueueStoreDecidesVersion" xml:space="preserve"><value>the Store decides the new version</value></data>
 </root>

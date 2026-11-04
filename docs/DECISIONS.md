@@ -2,6 +2,10 @@
 
 Why Nax-Updater works the way it does. Newest first; every release adds its decisions here and updates [DESIGN.md](DESIGN.md). Each entry names the decision, the evidence that led to it, and what was rejected.
 
+## 0.17.63 (2026-11-04)
+
+**The Update All review describes queued Store items.** ChatGPT and XBOX appeared as "version → —", because Windows had already queued their Store updates and the target version is unknown; the batch only resumes Windows' operation. Such entries now say that the update Windows queued is resumed, and a Store package without a known version says that the Store decides it.
+
 ## 0.17.62 (2026-11-03)
 
 **Driver details cannot end the app.** Reading a group's devices takes a while, and a second click or a driver install's confirmation could open a second dialog, which Windows refuses with an exception that ended the process. The details now open only when no update runs and no other details are loading, a driver install waits for them, and any failure is shown in the status bar. The loading message no longer replaces a status written meanwhile.

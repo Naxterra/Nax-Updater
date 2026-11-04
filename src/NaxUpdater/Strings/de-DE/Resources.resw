@@ -260,4 +260,6 @@
   <data name="DriverDetailsBootCriticalTitle" xml:space="preserve"><value>Speichertreiber</value></data>
   <data name="DriverDetailsMoreDevices" xml:space="preserve"><value>{0} weitere Geräte dieser Gruppe sind nicht aufgeführt.</value></data>
   <data name="DriverDetailsFailedTitle" xml:space="preserve"><value>Die Treiberdetails von {0} konnten nicht angezeigt werden</value></data>
+  <data name="QueueResumesStoreQueue" xml:space="preserve"><value>setzt das Update fort, das Windows schon in die Store-Warteschlange gestellt hat</value></data>
+  <data name="QueueStoreDecidesVersion" xml:space="preserve"><value>die neue Version bestimmt der Store</value></data>
 </root>
