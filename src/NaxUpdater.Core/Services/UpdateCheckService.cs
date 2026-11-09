@@ -7,6 +7,7 @@ public sealed class UpdateCheckService
     private readonly IReadOnlyList<IUpdateProvider> _providers;
     private readonly SemaphoreSlim _checkSlots = new(16, 16);
     private readonly SemaphoreSlim _storeCheckSlots = new(8, 8);
+    private readonly SharedScanSources? _sharedSources;
     // Longer than NativeStoreUpdateClient's 10-second unresponsive cooldown.
     private static readonly TimeSpan StoreRetryDelay = TimeSpan.FromSeconds(11);
     private readonly TimeSpan _providerTimeout = TimeSpan.FromSeconds(45);
@@ -14,9 +15,11 @@ public sealed class UpdateCheckService
     private readonly TimeSpan _sourceCheckTimeout = TimeSpan.FromSeconds(30);
 
     public UpdateCheckService(IReadOnlyList<IUpdateProvider> providers,
-        TimeSpan? providerTimeout = null, TimeSpan? sourceTimeout = null, TimeSpan? sourceCheckTimeout = null)
+        TimeSpan? providerTimeout = null, TimeSpan? sourceTimeout = null, TimeSpan? sourceCheckTimeout = null,
+        SharedScanSources? sharedSources = null)
     {
         _providers = providers;
+        _sharedSources = sharedSources;
         if (sourceCheckTimeout is not null) _sourceCheckTimeout = sourceCheckTimeout.Value > TimeSpan.Zero
             ? sourceCheckTimeout.Value : throw new ArgumentOutOfRangeException(nameof(sourceCheckTimeout));
         if (providerTimeout is not null) _providerTimeout = providerTimeout.Value > TimeSpan.Zero
@@ -28,6 +31,7 @@ public sealed class UpdateCheckService
     public UpdateCheckService(HttpClient httpClient, UpdateProviderCatalog catalog, FirefoxMetadataDetector? firefoxMetadataDetector = null,
         SharedScanSources? sharedSources = null, bool useStoreBatchCheck = true)
     {
+        _sharedSources = sharedSources;
         var providers = new List<IUpdateProvider>
         {
             new FirefoxUpdateProvider(httpClient, firefoxMetadataDetector ?? new FirefoxMetadataDetector()),
@@ -109,7 +113,8 @@ public sealed class UpdateCheckService
         var applications = inventory.Applications.Where(static app => !app.IsSystemComponent).ToArray();
         // A batch result belongs to this scan even when a caller reuses the
         // checker. Keep the provider set local, including concurrent scan calls.
-        var providers = _providers.Select(p => p is MsixStoreUpdateProvider store ? store.ForNewScan() : p).ToArray();
+        var startedStoreBatch = _sharedSources?.TakeStoreBatch();
+        var providers = _providers.Select(p => p is MsixStoreUpdateProvider store ? store.ForNewScan(startedStoreBatch) : p).ToArray();
         var generation = Guid.NewGuid();
         var refreshFailures = new Dictionary<string, string>(StringComparer.Ordinal);
         foreach (var provider in providers)

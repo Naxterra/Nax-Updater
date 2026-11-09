@@ -59,8 +59,13 @@ internal static class StoreBatchRegression
             "A missing trusted Store CLI was treated as a completed check.");
         var timedOut = new StoreUpdateBatchQuery(() => "trusted-store.exe",
             async (_, _, _, token) => { await Task.Delay(Timeout.Infinite, token); return new(0, Empty, ""); }, TimeSpan.FromMilliseconds(40));
-        assert(await timedOut.CheckAsync(CancellationToken.None) == StoreBatchCheck.CheckIndividually,
-            "A timed-out Store batch was treated as a successful empty result.");
+        assert(await timedOut.CheckAsync(CancellationToken.None) == StoreBatchCheck.TimedOut,
+            "A timed-out Store batch was treated as a successful empty result, or was not told apart from an answer that needs per-app checks.");
+        // The process runner ends a query at its limit with an error result instead of an exception.
+        var endedByRunner = new StoreUpdateBatchQuery(() => "trusted-store.exe",
+            async (_, _, timeout, _) => { await Task.Delay(timeout); return new(-1, "", "The query timed out."); }, TimeSpan.FromMilliseconds(40));
+        assert(await endedByRunner.CheckAsync(CancellationToken.None) == StoreBatchCheck.TimedOut,
+            "A Store batch that the process runner ended at its time limit was not recognized as timed out.");
         var failure = new StoreUpdateBatchQuery(() => "trusted-store.exe", (_, _, _, _) => throw new IOException("Cannot start."));
         assert(await failure.CheckAsync(CancellationToken.None) == StoreBatchCheck.CheckIndividually,
             "A process-launch failure was treated as a completed no-update check.");
@@ -103,6 +108,38 @@ internal static class StoreBatchRegression
         provider = new(http, new NoStoreUpdate(), native, null, batch);
         assert((await provider.CheckAsync(app, CancellationToken.None)).Status == UpdateStatus.Error,
             "A failed batch and failed native fallback were falsely reported Current.");
+
+        // store_batch_started_with_the_scan_is_used_by_its_first_check: the scan starts the query
+        // together with the inventory; its first check waits for that query and a later check on
+        // the same sources asks the Store again.
+        var launches = 0;
+        StoreUpdateBatchQuery Counted() => new(() => "trusted-store.exe", (_, _, _, _) =>
+        {
+            Interlocked.Increment(ref launches);
+            return Task.FromResult(new ProcessQueryResult(0, Empty, ""));
+        });
+        var scanSources = new SharedScanSources(http);
+        scanSources.StartStoreBatch(Counted());
+        var launchedWithScan = launches;
+        var scanService = new UpdateCheckService([new MsixStoreUpdateProvider(http, new NoStoreUpdate(), new Native(), null, Counted())], sharedSources: scanSources);
+        var firstCheck = await scanService.CheckAsync(new(DateTimeOffset.UtcNow, [app], [], []));
+        var afterFirstCheck = launches;
+        await scanService.CheckAsync(new(DateTimeOffset.UtcNow, [app], [], []));
+        assert(launchedWithScan == 1 && afterFirstCheck == 1 && launches == 2 && firstCheck.AllCurrent,
+            $"The Store query that the scan started was not used by its first check, or a later check reused it: {launchedWithScan} · {afterFirstCheck} · {launches}");
+
+        // slow_store_batch_does_not_start_a_native_query_per_app: when the one query for all apps
+        // runs out of time, a query per app would take far longer. An app with a recent "no
+        // update" answer stays current; any other app is reported as not checked.
+        StoreUpdateBatchQuery Slow() => new(() => "trusted-store.exe",
+            async (_, _, _, token) => { await Task.Delay(Timeout.Infinite, token); return new(0, Empty, ""); }, TimeSpan.FromMilliseconds(40));
+        native = new Native();
+        var recent = new StoreSearchCache(Path.Combine(fixture, "batch-" + Guid.NewGuid().ToString("N") + ".json"));
+        recent.RecordNoUpdate(StoreSearchCache.Key("Fixture.App_publisher", "1.0.0.0", "2.0.0.0"));
+        var answeredEarlier = await new MsixStoreUpdateProvider(http, new NoStoreUpdate(), native, recent, Slow()).CheckAsync(app, CancellationToken.None);
+        var neverAnswered = await new MsixStoreUpdateProvider(http, new NoStoreUpdate(), native, null, Slow()).CheckAsync(app, CancellationToken.None);
+        assert(answeredEarlier.Status == UpdateStatus.Current && neverAnswered is { Status: UpdateStatus.Error, IsInstallable: false } && native.Queries.Count == 0,
+            $"A Store batch that ran out of time started per-app native queries or was reported current without evidence: {answeredEarlier.Status} · {neverAnswered.Status} · {native.Queries.Count} native queries");
 
         var queue = new NativeStoreQueueEntry("9FIXTURE", "Fixture.App_publisher", AppInstallState.Pending);
         foreach (var arrivesDuringBatch in new[] { false, true })

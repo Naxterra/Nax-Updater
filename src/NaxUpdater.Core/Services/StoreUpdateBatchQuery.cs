@@ -1,12 +1,16 @@
 namespace NaxUpdater.Core.Services;
 
-internal enum StoreBatchCheck { Unavailable, NoUpdates, CheckIndividually }
+internal enum StoreBatchCheck { Unavailable, NoUpdates, CheckIndividually, TimedOut }
 
 // One fresh, read-only Store-owned query replaces the repeated per-product/SKU
 // searches on a cold scan. An unrecognised response is never evidence of currency.
 internal sealed class StoreUpdateBatchQuery
 {
-    internal static readonly TimeSpan QueryTimeout = TimeSpan.FromSeconds(12);
+    // On the owner's PC the query answered in about 5 s on one day and in 15 to 18 s on another.
+    // With a limit of 12 s the slow day fell back to one native query per app, which the Store
+    // answers one at a time: 14 apps took 83 s. The limit stays below the 30 s that one source
+    // check may take, so the catalog lookup before it still fits.
+    internal static readonly TimeSpan QueryTimeout = TimeSpan.FromSeconds(25);
     private readonly Func<string?> _resolve;
     private readonly Func<string, IReadOnlyList<string>, TimeSpan, CancellationToken, Task<ProcessQueryResult>> _run;
     private readonly TimeSpan _timeout;
@@ -46,6 +50,10 @@ internal sealed class StoreUpdateBatchQuery
     private async Task<StoreBatchCheck> QueryAsync()
     {
         Task<ProcessQueryResult>? query = null;
+        var started = System.Diagnostics.Stopwatch.GetTimestamp();
+        // A query that ran out of time is its own outcome: the per-app queries go through the
+        // same Store service and would take longer still, so they are not started for it.
+        bool RanOutOfTime() => System.Diagnostics.Stopwatch.GetElapsedTime(started) >= _timeout * 0.9;
         try
         {
             var path = _resolve();
@@ -54,14 +62,19 @@ internal sealed class StoreUpdateBatchQuery
             // No --apply, filters, shell, PATH lookup or deployment command.
             query = _run(path, ["updates"], _timeout, deadline.Token);
             var result = await query.WaitAsync(deadline.Token);
-            return Parse(result);
+            var check = Parse(result);
+            // The process runner ends a query at its limit with an error result.
+            return check == StoreBatchCheck.CheckIndividually && RanOutOfTime() ? StoreBatchCheck.TimedOut : check;
         }
-        catch (Exception)
+        catch (Exception exception)
         {
             if (query is not null)
                 _ = query.ContinueWith(t => { _ = t.Exception; }, CancellationToken.None,
                     TaskContinuationOptions.OnlyOnFaulted | TaskContinuationOptions.ExecuteSynchronously, TaskScheduler.Default);
-            return StoreBatchCheck.CheckIndividually;
+            // Only the query's own deadline cancels it; no caller's token reaches it.
+            return exception is OperationCanceledException or TimeoutException
+                ? StoreBatchCheck.TimedOut
+                : StoreBatchCheck.CheckIndividually;
         }
     }
 

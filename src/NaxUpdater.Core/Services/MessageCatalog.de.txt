@@ -1189,6 +1189,8 @@ de: Die Download-URL verwendet ein nicht vertrauenswürdiges Protokoll oder den 
 en: The download has too many redirects or a redirect has no location.
 de: Der Download enthält zu viele Weiterleitungen oder eine Weiterleitung hat kein Ziel.
 
+en: Microsoft Store did not answer its update query within {0} seconds, so this app was not checked this time.
+de: Der Microsoft Store hat seine Updateabfrage nicht innerhalb von {0} Sekunden beantwortet, daher wurde diese App diesmal nicht geprüft.
 en: Microsoft Store checked installed apps in one fresh read-only batch and reported no updates.
 de: Microsoft Store hat die installierten Apps gemeinsam neu geprüft und keine Updates gemeldet.
 same: Checking for updates…

@@ -48,7 +48,9 @@ public sealed class MsixStoreUpdateProvider : IUpdateProvider
     public bool CanHandle(InstalledApplication application) => application.ManagementMode == ManagementMode.Msix;
     public bool OwnsResultProviderId(string resultProviderId) => resultProviderId.Equals(Id, StringComparison.Ordinal);
 
-    internal MsixStoreUpdateProvider ForNewScan() => new(_httpClient, _store, _nativeStore, _searchCache, _batchQuery?.ForNewScan());
+    // A scan that already started the Store's batch query hands it in; otherwise this scan starts its own.
+    internal MsixStoreUpdateProvider ForNewScan(StoreUpdateBatchQuery? started = null) =>
+        new(_httpClient, _store, _nativeStore, _searchCache, _batchQuery is null ? null : started ?? _batchQuery.ForNewScan());
 
     public async Task<UpdateCheckResult> CheckAsync(InstalledApplication application, CancellationToken cancellationToken)
     {
@@ -139,9 +141,16 @@ public sealed class MsixStoreUpdateProvider : IUpdateProvider
                 }
                 // A fresh batch that reports offers or cannot be understood must
                 // not be hidden by an earlier cached negative for this family.
-                if (batch == StoreBatchCheck.Unavailable && cacheKey is not null && _searchCache?.FindNoUpdate(cacheKey) is { } searchedAt)
+                if (batch is StoreBatchCheck.Unavailable or StoreBatchCheck.TimedOut && cacheKey is not null && _searchCache?.FindNoUpdate(cacheKey) is { } searchedAt)
                     return Result(application, null, UpdateStatus.Current, null, product.Identity.ProductId,
                         $"The native Microsoft Store check at {searchedAt.ToLocalTime():g} found no applicable update; the installed version and the Store catalog are unchanged since.");
+                // The Store answers its per-app queries one at a time through the same service.
+                // When its one query for all apps did not finish in time, a query per app takes
+                // far longer (83 s for 14 apps on the owner's PC), so the app is reported as not
+                // checked and can be checked again, instead of holding the whole scan.
+                if (batch == StoreBatchCheck.TimedOut)
+                    return Result(application, null, UpdateStatus.Error, null, product.Identity.ProductId,
+                        $"Microsoft Store did not answer its update query within {StoreUpdateBatchQuery.QueryTimeout.TotalSeconds:0} seconds, so this app was not checked this time.");
                 var offers = new List<(StoreProductIdentity Identity, NativeStoreOffer Offer)>();
                 // One native request per admitted Store family. Parallel SKU
                 // fan-out otherwise consumes all broker slots before later

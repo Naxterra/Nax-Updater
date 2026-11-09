@@ -17,7 +17,7 @@ public sealed partial class MainPage : Page
     private readonly ApplicationInventoryService _inventoryService;
     // Some publisher servers refuse requests without a User-Agent (403), so the shared
     // client always sends one; requests that set their own keep it.
-    private readonly HttpClient _httpClient = new() { Timeout = TimeSpan.FromSeconds(30), DefaultRequestHeaders = { { "User-Agent", "NaxUpdater/0.17.72" } } };
+    private readonly HttpClient _httpClient = new() { Timeout = TimeSpan.FromSeconds(30), DefaultRequestHeaders = { { "User-Agent", "NaxUpdater/0.17.73" } } };
     private readonly UpdateExecutionService _updateExecutionService = new();
     private readonly ApplicationRemovalService _applicationRemovalService = new();
     private readonly ApplicationIconService _applicationIconService = new();
@@ -276,6 +276,8 @@ public sealed partial class MainPage : Page
         ShowUpdatesButton.Content = LocalizationService.Get("UpdatesLabel");
         var sources = new SharedScanSources(_httpClient, _sourceCacheRoot, token);
         _ = sources.DriversAsync();
+        // The Store's query for all apps is the slowest single answer of a scan; it starts now.
+        sources.StartStoreBatch();
         await ScanInventoryCoreAsync(token);
         if (_snapshot is not null)
             await CheckUpdatesCoreAsync(false, sources, token);

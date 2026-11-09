@@ -678,7 +678,7 @@ public sealed partial class ManufacturerDriverService(HttpClient httpClient, Kyo
         try
         {
             using var request = new HttpRequestMessage(HttpMethod.Get, uri);
-            request.Headers.UserAgent.ParseAdd("NaxUpdater/0.17.72");
+            request.Headers.UserAgent.ParseAdd("NaxUpdater/0.17.73");
             using var response = await httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, timeout.Token);
             response.EnsureSuccessStatusCode();
             return await HttpBodyLimit.ReadStringAsync(response.Content, timeout.Token);

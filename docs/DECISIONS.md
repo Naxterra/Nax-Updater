@@ -2,6 +2,10 @@
 
 Why Nax-Updater works the way it does. Newest first; every release adds its decisions here and updates [DESIGN.md](DESIGN.md). Each entry names the decision, the evidence that led to it, and what was rejected.
 
+## 0.17.73 (2026-11-10)
+
+**A slow Store answer no longer multiplies the scan time.** A scan on the owner's PC took 83 seconds. The Store's one query for all apps answered "no updates" after 15 to 18 seconds that evening, against about 5 seconds earlier the same day. Its limit was 12 seconds, so the scan fell back to one native query per app, and the Store answers those one at a time: 14 apps took 15 to 27 seconds each. The query may now take 25 seconds, which still fits into the 30 seconds one source check may take, and it starts together with the inventory. The same scan then took about 21 seconds, of which the Store's own answer was 18. When the query runs out of time, no per-app queries are started. An app with a "no update" answer from the last six hours stays current, and any other app is reported as not checked. Falling back to per-app queries after a timeout was rejected, because they go through the same slow service and would bring the long scan back.
+
 ## 0.17.72 (2026-11-10)
 
 An independent review of the whole project produced the following changes.

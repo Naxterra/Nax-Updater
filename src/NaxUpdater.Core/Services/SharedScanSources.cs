@@ -16,6 +16,35 @@ public sealed class SharedScanSources(HttpClient httpClient, string? cacheDirect
 
     public DateTimeOffset? DriversStartedAt { get; private set; }
 
+    private StoreUpdateBatchQuery? _storeBatch;
+    private bool _storeBatchTaken;
+
+    // The Store's one query for all apps needs no inventory and takes 5 to 18 s, so a scan starts
+    // it together with the inventory and the driver check instead of after them.
+    public void StartStoreBatch() => StartStoreBatch(new StoreUpdateBatchQuery());
+
+    internal void StartStoreBatch(StoreUpdateBatchQuery batch)
+    {
+        lock (_gate)
+        {
+            if (_storeBatch is not null) return;
+            _storeBatch = batch;
+            _ = batch.CheckAsync(CancellationToken.None);
+        }
+    }
+
+    // The started query belongs to the first update check of these sources; a later check on
+    // the same sources (a retry) asks the Store again.
+    internal StoreUpdateBatchQuery? TakeStoreBatch()
+    {
+        lock (_gate)
+        {
+            if (_storeBatchTaken) return null;
+            _storeBatchTaken = true;
+            return _storeBatch;
+        }
+    }
+
     public Task<ManufacturerDriverSnapshot> DriversAsync()
     {
         lock (_gate)
