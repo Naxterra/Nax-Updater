@@ -281,9 +281,10 @@ public sealed class ChocolateyPackageService : IChocolateyPackageService
 
     // The package ID and version come from a feed and end up in an elevated cmd.exe command line,
     // so only the characters of NuGet IDs and versions are accepted. A value such as
-    // 1.0" & calc & rem " would otherwise run a second command as administrator.
+    // 1.0" & calc & rem " would otherwise run a second command as administrator. The pattern
+    // ends with \z, because $ also matches before a line feed at the end of the value.
     private static readonly System.Text.RegularExpressions.Regex SafeToken =
-        new(@"^[A-Za-z0-9][A-Za-z0-9._+\-]*$", System.Text.RegularExpressions.RegexOptions.CultureInvariant);
+        new(@"^[A-Za-z0-9][A-Za-z0-9._+\-]*\z", System.Text.RegularExpressions.RegexOptions.CultureInvariant);
 
     internal static bool IsSafeTarget(ChocolateyUpdateTarget target) =>
         SafeToken.IsMatch(target.PackageId) && SafeToken.IsMatch(target.Version);

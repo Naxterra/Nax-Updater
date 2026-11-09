@@ -19,6 +19,150 @@ internal static class ReleaseAuditRegression
         cache_sweep_keeps_only_current_offers_and_every_driver_package(assert);
         await unavailable_github_api_does_not_report_current_git_as_outdated(assert);
         await server_answer_without_length_is_read_only_up_to_the_limit(assert);
+        // Findings of the second review of the whole project, fixed after the Store timeout release.
+        await removal_wait_ends_although_a_left_behind_process_keeps_running(assert);
+        await removal_wait_ends_once_the_entry_is_gone_although_the_started_program_stays_open(assert);
+        prerelease_named_after_other_words_is_older_than_its_release(assert);
+        await database_driver_and_driver_tool_are_not_device_drivers(assert);
+        cache_folder_name_is_the_one_windows_stores(assert);
+        cache_sweep_does_not_delete_through_a_link(assert);
+        app_that_stopped_below_the_offered_version_is_not_reported_as_updated(assert);
+    }
+
+    private static async Task removal_wait_ends_although_a_left_behind_process_keeps_running(Action<bool, string> assert)
+    {
+        // The uninstaller was canceled: its entry stays, and a process that it started keeps running.
+        using var uninstaller = Process.Start(new ProcessStartInfo("cmd.exe", "/d /c start \"\" /b ping -n 9 127.0.0.1")
+        {
+            UseShellExecute = false, CreateNoWindow = true, RedirectStandardOutput = true
+        })!;
+        var timer = Stopwatch.StartNew();
+        var ended = await ApplicationRemovalService.WaitForUninstallerAsync(uninstaller, static () => true, CancellationToken.None,
+            leftBehindLimit: TimeSpan.FromSeconds(1.5));
+        assert(ended && timer.Elapsed < TimeSpan.FromSeconds(6),
+            $"The removal waited for a left-behind process beyond its limit: {timer.Elapsed.TotalSeconds:N1} s");
+    }
+
+    private static async Task removal_wait_ends_once_the_entry_is_gone_although_the_started_program_stays_open(Action<bool, string> assert)
+    {
+        // Like a game launcher: the registered command starts a program that stays open after the removal.
+        using var launcher = Process.Start(new ProcessStartInfo("ping.exe", "-n 30 127.0.0.1")
+        {
+            UseShellExecute = false, CreateNoWindow = true, RedirectStandardOutput = true
+        })!;
+        try
+        {
+            var timer = Stopwatch.StartNew();
+            var ended = await ApplicationRemovalService.WaitForUninstallerAsync(launcher, static () => false, CancellationToken.None,
+                removedGrace: TimeSpan.FromSeconds(1));
+            assert(!ended && !launcher.HasExited && timer.Elapsed < TimeSpan.FromSeconds(6),
+                $"The removal kept waiting for a program that stays open although the uninstall entry was gone: {timer.Elapsed.TotalSeconds:N1} s");
+        }
+        finally
+        {
+            try { launcher.Kill(); }
+            catch (InvalidOperationException) { }
+        }
+    }
+
+    private static void prerelease_named_after_other_words_is_older_than_its_release(Action<bool, string> assert)
+    {
+        (string Installed, string Release)[] prereleases =
+        [
+            ("3.0 Release Candidate 1", "3.0"), ("3.0 Technical Preview", "3.0"), ("3.0 Public Beta 2", "3.0"), ("3.0-CTP1", "3.0"),
+            ("3.0-prealpha", "3.0"), ("1.2.3-x64-beta1", "1.2.3")
+        ];
+        var notOlder = prereleases.Where(static pair => VersionOrder.Compare(pair.Installed, pair.Release) >= 0).Select(static pair => pair.Installed).ToArray();
+        assert(notOlder.Length == 0, $"These prereleases counted as their finished release, which was then never offered: {string.Join(", ", notOlder)}");
+        assert(VersionOrder.Compare("3.0 Release Candidate 1", "3.0 RC1") == 0 && VersionOrder.Compare("3.0 Release Candidate 2", "3.0-rc1") > 0 &&
+               VersionOrder.Compare("3.0 Public Beta 2", "3.0 RC1") < 0,
+            "The same prerelease in two spellings was ordered differently, or a beta was not older than a release candidate.");
+        // "b456" is a build number: the release must not be offered as an update of itself.
+        assert(VersionOrder.Compare("1.2.3", "1.2.3 b456") == 0 && VersionOrder.Compare("155.0b5", "155.0") < 0 && VersionOrder.Compare("3.13.0b12", "3.13.0") < 0,
+            "A build number after a letter counted as a beta, or a numbered beta no longer did.");
+    }
+
+    private static async Task database_driver_and_driver_tool_are_not_device_drivers(Action<bool, string> assert)
+    {
+        string[] programs =
+        [
+            "Microsoft ODBC Driver 18 for SQL Server", "MongoDB ODBC Driver", "PostgreSQL JDBC Driver", "Display Driver Uninstaller", "Driver Booster 12",
+            "Intel® Driver & Support Assistant", "Windows Driver Kit", "Screwdriver Tool"
+        ];
+        string[] drivers = ["Realtek Audio Driver", "Intel Graphics Drivers", "NVIDIA Grafiktreiber 621.14", "Samsung USB Driver for Mobile Phones"];
+        var blocked = programs.Where(ExternalManagementClassifier.IsDriverPackageName).ToArray();
+        var allowed = drivers.Where(static name => !ExternalManagementClassifier.IsDriverPackageName(name)).ToArray();
+        assert(blocked.Length == 0 && allowed.Length == 0,
+            $"Programs taken for device drivers: {string.Join(", ", blocked)}. Device drivers taken for programs: {string.Join(", ", allowed)}.");
+        InstalledApplication App(string name) => new("registry:" + name, name, "Vendor", "1.0.0", "1.0.0", "fixture",
+            null, "fixture", null, null, InstallScope.Machine, ManagementMode.Registry, ConfidenceLevel.High, false, [], null, []);
+        var snapshot = await new UpdateCheckService([new Catalog()]).CheckAsync(new(DateTimeOffset.UtcNow, [App(programs[0])], [], []));
+        assert(snapshot.Results.Single().IsInstallable, "A database driver lost its update from a package catalog.");
+    }
+
+    private static void cache_folder_name_is_the_one_windows_stores(Action<bool, string> assert)
+    {
+        assert(UpdatePackageDownloader.SanitizePathSegment("1.2.") == "1.2" && UpdatePackageDownloader.SanitizePathSegment("1.2 ") == "1.2" &&
+               UpdatePackageDownloader.SanitizePathSegment("..") == "unknown" && UpdatePackageDownloader.SanitizePathSegment(".") == "unknown" &&
+               UpdatePackageDownloader.SanitizePathSegment("2.0.0") == "2.0.0",
+            "A version that ends in a dot or a space, or that is only dots, did not become the folder name that Windows stores.");
+        var cache = Path.Combine(Path.GetTempPath(), "nax-folder-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            var installer = Path.Combine(Directory.CreateDirectory(Path.Combine(cache, "official_Vendor.App", "2.0.0")).FullName, "setup.exe");
+            File.WriteAllText(installer, "payload");
+            UpdatePayloadCache.Sweep(cache, [Result(Plan([1])) with { AvailableVersion = "2.0.0." }]);
+            assert(File.Exists(installer), "The cache sweep removed the download of a current offer whose version ends in a dot.");
+        }
+        finally { if (Directory.Exists(cache)) Directory.Delete(cache, true); }
+    }
+
+    private static void cache_sweep_does_not_delete_through_a_link(Action<bool, string> assert)
+    {
+        var root = Path.Combine(Path.GetTempPath(), "nax-link-" + Guid.NewGuid().ToString("N"));
+        var cache = Path.Combine(root, "cache");
+        var outside = Path.Combine(root, "outside");
+        // One junction stands where a source folder would, one where a version folder would.
+        string[] links = [Path.Combine(cache, "linked-source"), Path.Combine(cache, "official_Vendor.App", "1.0.0")];
+        try
+        {
+            Directory.CreateDirectory(Path.Combine(cache, "official_Vendor.App"));
+            var document = Path.Combine(Directory.CreateDirectory(Path.Combine(outside, "documents")).FullName, "letter.txt");
+            File.WriteAllText(document, "text");
+            foreach (var link in links)
+            {
+                // A junction needs no administrator rights.
+                using var mklink = Process.Start(new ProcessStartInfo("cmd.exe", $"/d /c mklink /J \"{link}\" \"{outside}\"")
+                {
+                    UseShellExecute = false, CreateNoWindow = true, RedirectStandardOutput = true, RedirectStandardError = true
+                })!;
+                mklink.WaitForExit();
+            }
+            assert(links.All(static link => Directory.Exists(link) && File.GetAttributes(link).HasFlag(FileAttributes.ReparsePoint)),
+                "The junctions of the link scenario could not be created.");
+            UpdatePayloadCache.Sweep(cache, []);
+            assert(File.Exists(document), "The cache sweep deleted a folder outside the cache through a link.");
+        }
+        finally
+        {
+            // Deleting a junction itself removes the link only.
+            foreach (var link in links) if (Directory.Exists(link)) Directory.Delete(link);
+            if (Directory.Exists(root)) Directory.Delete(root, true);
+        }
+    }
+
+    private static void app_that_stopped_below_the_offered_version_is_not_reported_as_updated(Action<bool, string> assert)
+    {
+        // The offer is 1.0.0 to 2.0.0. Before the action runs, the app is found current at another version.
+        var offer = Result(Plan([1]));
+        UpdateTransactionResult FoundCurrentAt(string installed) => new(UpdateTransactionStage.NoLongerApplicable,
+            offer with { InstalledVersion = installed, Status = UpdateStatus.Current, ExecutionPlan = null }, null, null);
+        assert(UpdateTransactionCoordinator.CompletedElsewhere(FoundCurrentAt("2.0.0"), offer) &&
+               UpdateTransactionCoordinator.CompletedElsewhere(FoundCurrentAt("2.1.0"), offer) &&
+               !UpdateTransactionCoordinator.CompletedElsewhere(FoundCurrentAt("1.5.0"), offer) &&
+               !UpdateTransactionCoordinator.CompletedElsewhere(FoundCurrentAt("1.0.0"), offer) &&
+               UpdateTransactionCoordinator.CompletedElsewhere(FoundCurrentAt("1.5.0"), offer with { AvailableVersion = null }),
+            "An app that had not reached the offered version was reported as updated, or one that had reached it was not.");
     }
 
     private static void version_suffix_is_a_prerelease_only_when_it_says_so(Action<bool, string> assert)
@@ -60,8 +204,9 @@ internal static class ReleaseAuditRegression
     {
         assert(ChocolateyPackageService.IsSafeTarget(new("git.install", "2.47.0")) && ChocolateyPackageService.IsSafeTarget(new("7zip", "24.9.0-beta1+build.5")) &&
                !ChocolateyPackageService.IsSafeTarget(new("git.install", "1.0\" & calc & rem \"")) &&
-               !ChocolateyPackageService.IsSafeTarget(new("git & calc", "1.0")) && !ChocolateyPackageService.IsSafeTarget(new("git", "1.0 > file")),
-            "A Chocolatey package ID or version with shell characters was accepted for the elevated command, or a normal one was refused.");
+               !ChocolateyPackageService.IsSafeTarget(new("git & calc", "1.0")) && !ChocolateyPackageService.IsSafeTarget(new("git", "1.0 > file")) &&
+               !ChocolateyPackageService.IsSafeTarget(new("git\n", "1.0")) && !ChocolateyPackageService.IsSafeTarget(new("git", "1.0\n")),
+            "A Chocolatey package ID or version with shell characters or a final line feed was accepted for the elevated command, or a normal one was refused.");
     }
 
     private static async Task driver_named_package_is_not_installable_from_a_fallback_catalog(Action<bool, string> assert)

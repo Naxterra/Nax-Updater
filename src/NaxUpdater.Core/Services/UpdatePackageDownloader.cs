@@ -595,7 +595,7 @@ public sealed class UpdatePackageDownloader
     // without a User-Agent with 403 Forbidden, so every download names the updater.
     internal static HttpRequestMessage Identified(HttpRequestMessage request)
     {
-        if (request.Headers.UserAgent.Count == 0) request.Headers.UserAgent.ParseAdd("NaxUpdater/0.17.73");
+        if (request.Headers.UserAgent.Count == 0) request.Headers.UserAgent.ParseAdd("NaxUpdater/0.17.74");
         return request;
     }
 
@@ -603,6 +603,10 @@ public sealed class UpdatePackageDownloader
     {
         var invalid = Path.GetInvalidFileNameChars();
         var result = string.Concat(value.Select(character => invalid.Contains(character) || character is ':' or '/' or '\\' ? '_' : character));
+        // Windows drops dots and spaces at the end of a folder name, so "1.2." is stored as "1.2"
+        // and the cache sweep, which compares names, removed the download of that current offer.
+        // "." and ".." are no folder names at all.
+        result = result.TrimEnd('.', ' ');
         return string.IsNullOrWhiteSpace(result) ? "unknown" : result;
     }
 

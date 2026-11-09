@@ -17,7 +17,7 @@ public sealed partial class MainPage : Page
     private readonly ApplicationInventoryService _inventoryService;
     // Some publisher servers refuse requests without a User-Agent (403), so the shared
     // client always sends one; requests that set their own keep it.
-    private readonly HttpClient _httpClient = new() { Timeout = TimeSpan.FromSeconds(30), DefaultRequestHeaders = { { "User-Agent", "NaxUpdater/0.17.73" } } };
+    private readonly HttpClient _httpClient = new() { Timeout = TimeSpan.FromSeconds(30), DefaultRequestHeaders = { { "User-Agent", "NaxUpdater/0.17.74" } } };
     private readonly UpdateExecutionService _updateExecutionService = new();
     private readonly ApplicationRemovalService _applicationRemovalService = new();
     private readonly ApplicationIconService _applicationIconService = new();
@@ -908,8 +908,10 @@ public sealed partial class MainPage : Page
             ReconcileCompletedOperation(result);
             await SaveScanDiagnosticsAsync(result, checkTimer.Elapsed);
             _checksComplete = true;
-            // With every check answered, cached installers that no offer needs are removed.
-            if (result.FailedCheckCount == 0)
+            // With every check answered, cached installers that no offer needs are removed. An
+            // inventory that could not read one of its sources lacks apps, and their downloads
+            // would count as unneeded.
+            if (result.FailedCheckCount == 0 && inventory.Issues.Count == 0)
             {
                 var downloads = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "NaxUpdater", "Downloads");
                 await Task.Run(() => UpdatePayloadCache.Sweep(downloads, result.Results));
@@ -1021,9 +1023,11 @@ public sealed partial class MainPage : Page
             ManufacturerDriverSnapshot? reused = null;
             if (reuseScan && _scanSources is { DriversStartedAt: { } started } sources && DateTimeOffset.UtcNow - started < ScanDriverReuse)
             {
-                // A failed shared check is not shown; the driver view runs its own instead.
+                // A failed shared check is not shown; the driver view runs its own instead. That
+                // includes a shared check that ended by a time limit of its own: only this
+                // view's cancellation ends the read.
                 try { reused = await sources.DriversAsync().WaitAsync(token); }
-                catch (Exception exception) when (exception is not OperationCanceledException) { reused = null; }
+                catch (Exception) when (!token.IsCancellationRequested) { reused = null; }
             }
             // A fresh check replaces the scan's result for good, so switching views cannot bring
             // the older result back.
@@ -1424,8 +1428,7 @@ public sealed partial class MainPage : Page
                 row.RunState = UpdateRunState.Skipped;
                 _runOutcomes[row.Source.ApplicationIdentity] = (UpdateRunState.Skipped, null);
             }
-            await ScanAsync();
-            if (_snapshot is not null) await CheckUpdatesAsync(showWorkspace: true);
+            await RescanAfterChangeAsync();
             UpdateBar.Title = LocalizationService.Get("MassUpdateCompleteTitle");
             UpdateBar.Message = LocalizationService.Format("MassUpdateCompleteMessage", completed, failed) +
                 (_restartRecommended ? Environment.NewLine + LocalizationService.Get("MassUpdateRestartRecommended") : string.Empty);
@@ -1502,12 +1505,7 @@ public sealed partial class MainPage : Page
                 cacheRoot,
                 transactionProgress, operationCancellation.Token);
 
-            // Windows (e.g. the Store working through its own queue) can finish the
-            // same update between the scan and this action; revalidation then finds
-            // no offer because the app is already newer. That is a completed update.
-            var alreadyUpdated = transaction.Stage == UpdateTransactionStage.NoLongerApplicable &&
-                transaction.FreshAssessment is { Status: UpdateStatus.Current } fresh &&
-                VersionOrder.Compare(fresh.InstalledVersion, row.Source.InstalledVersion) > 0;
+            var alreadyUpdated = UpdateTransactionCoordinator.CompletedElsewhere(transaction, row.Source);
             var succeeded = transaction.IsSuccess || alreadyUpdated;
             UpdateBar.Title = succeeded
                 ? LocalizationService.Format("UpdateCompletedTitle", row.Name)
@@ -1547,14 +1545,7 @@ public sealed partial class MainPage : Page
                 : transaction.RestartRecommended ? LocalizationService.Get("UpdateCompletedRestartRecommended") : null;
             _runOutcomes[row.Source.ApplicationIdentity] = (row.RunState, row.RunMessage);
 
-            if (rescanAfterSuccess)
-            {
-                await ScanAsync();
-                if (_snapshot is not null)
-                {
-                    await CheckUpdatesAsync(showWorkspace: true);
-                }
-            }
+            if (rescanAfterSuccess) await RescanAfterChangeAsync();
             return succeeded;
         }
         catch (Exception exception)
@@ -1628,6 +1619,21 @@ public sealed partial class MainPage : Page
         {
             StatusText.Text = message;
         }
+    }
+
+    // After a change the inventory and the offers are read again. A rescan that the user stops
+    // leaves no inventory and skips the check, so the offers from before the change must not
+    // stay installable or be counted for "Update all".
+    private async Task RescanAfterChangeAsync()
+    {
+        await ScanAsync();
+        if (_snapshot is not null)
+        {
+            await CheckUpdatesAsync(showWorkspace: true);
+            return;
+        }
+        _checksComplete = false;
+        RefreshMassUpdateButton();
     }
 
     private void RefreshMassUpdateButton()

@@ -33,7 +33,10 @@ public sealed class ApplicationRemovalService
         try
         {
             using var process = Process.Start(startInfo) ?? throw new InvalidOperationException("The registered uninstaller did not start.");
-            await WaitForUninstallerAsync(process, () => RegistryInventoryScanner.IsRegistered(application.Identity), cancellationToken);
+            var ended = await WaitForUninstallerAsync(process, () => RegistryInventoryScanner.IsRegistered(application.Identity), cancellationToken);
+            // The uninstall entry is gone and the started program keeps running: the removal has
+            // happened, and the program has no exit code to report yet.
+            if (!ended) return new RemovalResult(true, null, false, null);
             var exitCode = process.ExitCode;
             return new RemovalResult(
                 IsSuccessfulExitCode(exitCode),
@@ -54,21 +57,39 @@ public sealed class ApplicationRemovalService
     // 0; the removal was then reported as finished and the next change could start while the
     // real uninstaller was still open. The wait also ends when the application's uninstall entry
     // is gone, so a browser page that an uninstaller opens at its end does not hold it.
-    internal static async Task WaitForUninstallerAsync(Process process, Func<bool?> stillRegistered, CancellationToken cancellationToken)
+    //
+    // Both waits have an end. An uninstaller that the user cancels keeps its entry and can leave
+    // a helper or a browser running; that wait had no limit, so every action stayed locked and
+    // the window could not be closed. A registered command can also start a program that stays
+    // open, such as a game launcher; once the entry is gone it is waited for only briefly. The
+    // result is false when that program was still running then. While the first process runs
+    // and the entry exists, the wait goes on: that is an uninstaller the user has open.
+    internal static readonly TimeSpan LeftBehindLimit = TimeSpan.FromMinutes(10);
+    internal static readonly TimeSpan RemovedGrace = TimeSpan.FromSeconds(60);
+
+    internal static async Task<bool> WaitForUninstallerAsync(Process process, Func<bool?> stillRegistered, CancellationToken cancellationToken,
+        TimeSpan? leftBehindLimit = null, TimeSpan? removedGrace = null)
     {
         var descendants = new ProcessDescendants(process);
+        long? removedAt = null;
         while (!process.HasExited)
         {
             descendants.Refresh();
             await Task.WhenAny(process.WaitForExitAsync(cancellationToken), Task.Delay(250, cancellationToken));
             cancellationToken.ThrowIfCancellationRequested();
+            if (process.HasExited) break;
+            if (removedAt is null && stillRegistered() == false) removedAt = Stopwatch.GetTimestamp();
+            if (removedAt is { } removed && Stopwatch.GetElapsedTime(removed) >= (removedGrace ?? RemovedGrace)) return false;
         }
         descendants.Refresh();
-        while (stillRegistered() != false && descendants.AnyDescendantRunning())
+        var firstEnded = Stopwatch.GetTimestamp();
+        while (stillRegistered() != false && descendants.AnyDescendantRunning() &&
+               Stopwatch.GetElapsedTime(firstEnded) < (leftBehindLimit ?? LeftBehindLimit))
         {
             await Task.Delay(500, cancellationToken);
             descendants.Refresh();
         }
+        return true;
     }
 
     private static async Task<RemovalResult> RemoveMsixAsync(RemovalPlan plan, CancellationToken cancellationToken)

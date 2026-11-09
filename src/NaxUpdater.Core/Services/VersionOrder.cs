@@ -49,6 +49,16 @@ public static partial class VersionOrder
         "ea", "eap", "exp", "experimental", "test", "testing", "unstable", "next", "edge", "milestone"
     };
 
+    // These words mark a prerelease wherever they stand after the numbers. Only the first word
+    // was read, so "3.0 Release Candidate 1", "3.0 Public Beta 2" and "1.2.3-x64-beta1" counted
+    // as the finished release and that release was never offered. The words of the list above
+    // that also occur in product and edition names ("edge", "next", "test") count only in first
+    // place.
+    private static readonly HashSet<string> PrereleaseAnywhere = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "alpha", "beta", "rc", "candidate", "preview", "prerelease", "prealpha", "nightly", "snapshot", "canary", "ctp"
+    };
+
     // A word followed by a number that marks a later patch level of the same release.
     private static readonly HashSet<string> PatchLevelWords = new(StringComparer.OrdinalIgnoreCase)
     {
@@ -85,15 +95,36 @@ public static partial class VersionOrder
         if (tokens.Length == 0) return (core.ToArray(), SuffixKind.Release, null);
         var first = tokens[0];
         var numbered = tokens.Length > 1 && tokens[1].All(char.IsAsciiDigit);
-        // "155.0b5" and "3.13.0a1" are a beta and an alpha; "m1" is a milestone.
-        if (PrereleaseWords.Contains(first) || numbered && first.ToLowerInvariant() is "a" or "b" or "m")
-            return (core.ToArray(), SuffixKind.Prerelease, suffix);
+        // "155.0b5" and "3.13.0a1" are a beta and an alpha; "m1" is a milestone. Three or more
+        // digits after the letter are a build number ("1.2.3 b456"), which says nothing about
+        // the order.
+        if (numbered && first.ToLowerInvariant() is "a" or "b" or "m")
+            return tokens[1].Length <= 2
+                ? (core.ToArray(), SuffixKind.Prerelease, PrereleaseSuffix(tokens, 0))
+                : (core.ToArray(), SuffixKind.Release, null);
+        var prerelease = PrereleaseWords.Contains(first) ? 0 : Array.FindIndex(tokens, PrereleaseAnywhere.Contains);
+        if (prerelease >= 0) return (core.ToArray(), SuffixKind.Prerelease, PrereleaseSuffix(tokens, prerelease));
         // A single letter alone ("1.0.2a", "7.1a") is a patch release, as is "SP1" or "u401".
         if (tokens.Length == 1 && first.Length == 1 && char.IsAsciiLetter(first[0]) || numbered && PatchLevelWords.Contains(first))
             return (core.ToArray(), SuffixKind.PatchLevel, suffix);
         // Any other text ("stable", "-I001", an edition name) says nothing about the order, so
         // the version counts as the release with these numbers.
         return (core.ToArray(), SuffixKind.Release, null);
+    }
+
+    // The suffix from its prerelease word on, with one spelling per stage, so that "3.0 RC 1",
+    // "3.0-rc1" and "3.0 Release Candidate 1" are the same prerelease.
+    private static string PrereleaseSuffix(string[] tokens, int index)
+    {
+        var word = tokens[index].ToLowerInvariant() switch
+        {
+            "a" => "alpha",
+            "b" => "beta",
+            "candidate" => "rc",
+            "pre" => "preview",
+            var other => other
+        };
+        return string.Join(' ', tokens[(index + 1)..].Prepend(word));
     }
 
     private static int CompareParts(string[] left, string[] right, bool prerelease = false)
@@ -133,7 +164,7 @@ public static partial class VersionOrder
         var token = Tokens(suffix).FirstOrDefault()?.ToLowerInvariant();
         return token switch
         {
-            "dev" or "nightly" or "snapshot" or "canary" => 0,
+            "dev" or "nightly" or "snapshot" or "canary" or "prealpha" => 0,
             "a" or "alpha" => 1,
             "b" or "beta" => 2,
             "pre" or "preview" => 3,

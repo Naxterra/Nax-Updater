@@ -399,7 +399,7 @@ public sealed partial class ElectronBuilderUpdateProvider(HttpClient httpClient,
     [GeneratedRegex(@"(?m)^version:\s*(?<value>.+)$", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
     private static partial Regex VersionRegex();
 
-    [GeneratedRegex(@"^[A-Za-z0-9_.-]+$", RegexOptions.CultureInvariant)]
+    [GeneratedRegex(@"^[A-Za-z0-9_.-]+\z", RegexOptions.CultureInvariant)]
     private static partial Regex RepositoryPartRegex();
 
     private sealed record UpdateConfiguration(

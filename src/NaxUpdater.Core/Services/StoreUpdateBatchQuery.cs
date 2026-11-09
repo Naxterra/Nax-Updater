@@ -45,10 +45,11 @@ internal sealed class StoreUpdateBatchQuery
     }
 
     // Starts the query once, before the per-app checks need it. Only the scan's own token ends it
-    // early; the token of one application's check never does.
+    // early; the token of one application's check never does. The scan starts it from the window's
+    // thread, so finding the Store's program and starting it run on a pool thread.
     internal Task<StoreBatchCheck> Start(CancellationToken scanToken)
     {
-        lock (_gate) return _check ??= QueryAsync(scanToken);
+        lock (_gate) return _check ??= Task.Run(() => QueryAsync(scanToken));
     }
 
     internal StoreUpdateBatchQuery ForNewScan() => new(_resolve, _run, _timeout);

@@ -20,24 +20,32 @@ public partial class App : Application
         CultureInfo.DefaultThreadCurrentUICulture = culture;
         InitializeComponent();
         UnhandledException += OnUnhandledException;
+        // The handler above sees only exceptions on the window's thread. One that escapes on
+        // another thread still ends the process; it is at least written down first.
+        AppDomain.CurrentDomain.UnhandledException += static (_, e) => WriteLastError(e.ExceptionObject);
     }
 
-    // An exception that no handler caught would end the process, possibly while it waits for a
-    // running installer and holds the update lock. It is shown in the window and written to
-    // last-error.txt next to the settings, and the app keeps running so that the installer's
-    // result can still be read and recorded.
+    // An exception that no handler caught on the window's thread would end the process, possibly
+    // while it waits for a running installer and holds the update lock. It is shown in the window
+    // and written to last-error.txt next to the settings, and the app keeps running so that the
+    // installer's result can still be read and recorded.
     private static void OnUnhandledException(object sender, Microsoft.UI.Xaml.UnhandledExceptionEventArgs e)
     {
         e.Handled = true;
+        WriteLastError(e.Exception);
+        try { (MainWindow as NaxUpdater.MainWindow)?.ShowUnexpectedError(e.Exception); }
+        catch (Exception) { } // Reporting the error must not raise the next one.
+    }
+
+    private static void WriteLastError(object error)
+    {
         try
         {
             var directory = GetSettingsDirectory();
             Directory.CreateDirectory(directory);
-            File.WriteAllText(Path.Combine(directory, "last-error.txt"), $"{DateTimeOffset.Now:u}{Environment.NewLine}{e.Exception}");
+            File.WriteAllText(Path.Combine(directory, "last-error.txt"), $"{DateTimeOffset.Now:u}{Environment.NewLine}{error}");
         }
         catch (Exception exception) when (exception is IOException or UnauthorizedAccessException) { }
-        try { (MainWindow as NaxUpdater.MainWindow)?.ShowUnexpectedError(e.Exception); }
-        catch (Exception) { } // Reporting the error must not raise the next one.
     }
 
     protected override void OnLaunched(LaunchActivatedEventArgs args)

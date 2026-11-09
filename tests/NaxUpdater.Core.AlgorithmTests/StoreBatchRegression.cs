@@ -87,6 +87,17 @@ internal static class StoreBatchRegression
         await running;
         assert(await Task.WhenAny(helperCanceled.Task, Task.Delay(5000)) == helperCanceled.Task,
             "Canceling the scan did not end the Store query that the scan had started.");
+        // store_query_does_not_start_on_the_callers_thread: the scan starts the query from the
+        // window's thread, which must not wait for the Store's program to be found and started.
+        using var found = new ManualResetEventSlim();
+        var offThread = new StoreUpdateBatchQuery(() => { found.Wait(TimeSpan.FromSeconds(5)); return "trusted-store.exe"; },
+            (_, _, _, _) => Task.FromResult(new ProcessQueryResult(0, Empty, "")));
+        var startTimer = System.Diagnostics.Stopwatch.StartNew();
+        var startedOffThread = offThread.Start(CancellationToken.None);
+        var startReturned = startTimer.Elapsed;
+        found.Set();
+        assert(startReturned < TimeSpan.FromSeconds(1) && await startedOffThread == StoreBatchCheck.NoUpdates,
+            $"Starting the Store query blocked its caller for {startReturned.TotalSeconds:N1} s, or the query gave no answer.");
         var failure = new StoreUpdateBatchQuery(() => "trusted-store.exe", (_, _, _, _) => throw new IOException("Cannot start."));
         assert(await failure.CheckAsync(CancellationToken.None) == StoreBatchCheck.CheckIndividually,
             "A process-launch failure was treated as a completed no-update check.");
@@ -134,13 +145,17 @@ internal static class StoreBatchRegression
         // together with the inventory; its first check waits for that query and a later check on
         // the same sources asks the Store again.
         var launches = 0;
+        var launched = new TaskCompletionSource();
         StoreUpdateBatchQuery Counted() => new(() => "trusted-store.exe", (_, _, _, _) =>
         {
             Interlocked.Increment(ref launches);
+            launched.TrySetResult();
             return Task.FromResult(new ProcessQueryResult(0, Empty, ""));
         });
         var scanSources = new SharedScanSources(http);
         scanSources.StartStoreBatch(Counted());
+        // The query starts on a pool thread, so the launch follows the call after a moment.
+        await Task.WhenAny(launched.Task, Task.Delay(5000));
         var launchedWithScan = launches;
         var scanService = new UpdateCheckService([new MsixStoreUpdateProvider(http, new NoStoreUpdate(), new Native(), null, Counted())], sharedSources: scanSources);
         var firstCheck = await scanService.CheckAsync(new(DateTimeOffset.UtcNow, [app], [], []));

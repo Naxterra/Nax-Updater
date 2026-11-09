@@ -25,9 +25,12 @@ public static class UpdatePayloadCache
             if (Path.GetFileName(provider).StartsWith("manufacturer-driver", StringComparison.OrdinalIgnoreCase)) continue;
             try
             {
+                // A junction or link in the cache points to a folder elsewhere. Its content is
+                // not the cache's, so the sweep neither reads nor deletes through it.
+                if (IsLink(provider)) continue;
                 foreach (var version in Directory.EnumerateDirectories(provider))
                 {
-                    if (!keep.Contains(Path.Combine(Path.GetFileName(provider), Path.GetFileName(version))))
+                    if (!IsLink(version) && !keep.Contains(Path.Combine(Path.GetFileName(provider), Path.GetFileName(version))))
                         Directory.Delete(version, recursive: true);
                 }
                 if (!Directory.EnumerateFileSystemEntries(provider).Any()) Directory.Delete(provider);
@@ -36,6 +39,8 @@ public static class UpdatePayloadCache
             catch (Exception exception) when (exception is IOException or UnauthorizedAccessException) { }
         }
     }
+
+    private static bool IsLink(string directory) => File.GetAttributes(directory).HasFlag(FileAttributes.ReparsePoint);
 
     public static void ReleaseCompleted(string cacheRoot, string installerPath, string providerId)
     {

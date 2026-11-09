@@ -121,6 +121,16 @@ public sealed class DefaultUpdateTransactionBackend(
 
 public sealed class UpdateTransactionCoordinator
 {
+    // Windows (for example the Store working through its own queue) can finish the same update
+    // between the scan and the action; revalidation then finds no offer because the app already
+    // has the offered version, and that is a completed update. An app that only moved to a
+    // version below the offer has not reached it and is not reported as updated.
+    public static bool CompletedElsewhere(UpdateTransactionResult transaction, UpdateCheckResult offer) =>
+        transaction.Stage == UpdateTransactionStage.NoLongerApplicable &&
+        transaction.FreshAssessment is { Status: UpdateStatus.Current } fresh &&
+        VersionOrder.Compare(fresh.InstalledVersion, offer.InstalledVersion) > 0 &&
+        (string.IsNullOrWhiteSpace(offer.AvailableVersion) || VersionOrder.Compare(fresh.InstalledVersion, offer.AvailableVersion) >= 0);
+
     private readonly IUpdateTransactionBackend _backend;
     private readonly IUpdateOperationJournal? _journal;
     private readonly IUpdateTransactionLeaseProvider? _leaseProvider;

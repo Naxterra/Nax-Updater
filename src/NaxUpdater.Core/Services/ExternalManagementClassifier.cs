@@ -117,8 +117,18 @@ internal static class ExternalManagementClassifier
     // "Realtek Audio Driver", "Intel Graphics Drivers", "Netzwerktreiber": the product name itself
     // says that the package is a driver. German names are compounds, so "treiber" also counts at
     // the end of a word.
+    //
+    // The word alone also names ordinary programs, which then lost their update from a package
+    // catalog: a database driver ("Microsoft ODBC Driver 18 for SQL Server", a JDBC driver) is a
+    // library, and "Display Driver Uninstaller", "Driver Booster", "Intel Driver & Support
+    // Assistant" or the "Windows Driver Kit" are tools. A name with one of these words is no
+    // device driver. A name that stays unclear counts as a driver, because a driver must never
+    // become part of "Update all".
     public static bool IsDriverPackageName(string displayName) =>
         System.Text.RegularExpressions.Regex.IsMatch(displayName, @"\bdrivers?\b|treiber\b",
+            System.Text.RegularExpressions.RegexOptions.IgnoreCase | System.Text.RegularExpressions.RegexOptions.CultureInvariant) &&
+        !System.Text.RegularExpressions.Regex.IsMatch(displayName,
+            @"\b(?:odbc|jdbc|ole\s?db|sql|database|datenbank|mongodb|uninstaller|booster|easy|genius|updater|assistant|kit)\b",
             System.Text.RegularExpressions.RegexOptions.IgnoreCase | System.Text.RegularExpressions.RegexOptions.CultureInvariant);
 
     private static bool IsManufacturerDriverComponent(InstalledApplication application)

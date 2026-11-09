@@ -459,7 +459,7 @@ public sealed class UpdateCheckService
                     Status = UpdateStatus.NewerReleaseKnown,
                     ExecutionPlan = null,
                     Applicability = UpdateApplicability.NotApplicable,
-                    Message = $"A package catalog lists version {result.AvailableVersion} of this driver package. Nax-Updater installs drivers only from the Drivers view, so this update is not installed from a package catalog."
+                    Message = $"A package catalog lists version {result.AvailableVersion} of this driver package. Nax-Updater does not install drivers from a package catalog. If the Drivers view lists the device, update it there."
                 };
             }
             var hasApplicablePlan = result.ExecutionPlan is not null &&

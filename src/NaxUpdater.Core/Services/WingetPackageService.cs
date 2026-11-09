@@ -267,7 +267,7 @@ public sealed partial class WingetPackageService : IWingetPackageService
         return "\"" + value + new string('\\', trailing) + "\"";
     }
 
-    [System.Text.RegularExpressions.GeneratedRegex(@"^[A-Za-z0-9][A-Za-z0-9._+\-]*$")]
+    [System.Text.RegularExpressions.GeneratedRegex(@"^[A-Za-z0-9][A-Za-z0-9._+\-]*\z")]
     private static partial System.Text.RegularExpressions.Regex SafeToken();
 
     private static void ValidatePrepared(CatalogPackage package, PackageVersionId key, InstallOptions options, WingetUpdateTarget target)
