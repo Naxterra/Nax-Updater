@@ -22,6 +22,7 @@ internal static class ReleaseAuditRegression
         // Findings of the second review of the whole project, fixed after the Store timeout release.
         await removal_wait_ends_although_a_left_behind_process_keeps_running(assert);
         await relocated_uninstaller_is_waited_for_beyond_the_limit_for_other_processes(assert);
+        await removal_ends_once_the_entry_is_gone_although_the_started_program_stays_open(assert);
         prerelease_named_after_other_words_is_older_than_its_release(assert);
         await database_driver_and_driver_tool_are_not_device_drivers(assert);
         cache_folder_name_is_the_one_windows_stores(assert);
@@ -57,15 +58,50 @@ internal static class ReleaseAuditRegression
             isUninstaller: static path => path is not null && Path.GetFileName(path).Equals("ping.exe", StringComparison.OrdinalIgnoreCase));
         assert(timer.Elapsed > TimeSpan.FromSeconds(2.5) && timer.Elapsed < TimeSpan.FromSeconds(30),
             $"The removal did not wait for the relocated uninstaller until it ended: {timer.Elapsed.TotalSeconds:N1} s");
-        var registered = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "Fixture", "uninstall.exe");
-        assert(ApplicationRemovalService.IsUninstallerProgram(Path.Combine(Path.GetTempPath(), "~nsuA.tmp", "Un_A.exe"), registered) &&
-               ApplicationRemovalService.IsUninstallerProgram(Path.Combine(Environment.SystemDirectory, "msiexec.exe"), registered) &&
-               ApplicationRemovalService.IsUninstallerProgram(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "Fixture", "bin", "Uninstall.exe"), registered) &&
-               !ApplicationRemovalService.IsUninstallerProgram(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "Browser", "browser.exe"), registered) &&
-               !ApplicationRemovalService.IsUninstallerProgram(null, registered),
-            "A copy in the temp folder, Windows Installer or the registered uninstaller was not taken for the uninstaller, or a browser or an unreadable path was.");
+        // An application that is its own uninstaller can start itself again and stay open, so a
+        // process in a program folder is never the uninstaller, whatever its name.
+        var programs = Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles);
+        assert(ApplicationRemovalService.IsUninstallerProgram(Path.Combine(Path.GetTempPath(), "~nsuA.tmp", "Un_A.exe")) &&
+               ApplicationRemovalService.IsUninstallerProgram(Path.Combine(Environment.SystemDirectory, "msiexec.exe")) &&
+               !ApplicationRemovalService.IsUninstallerProgram(Path.Combine(programs, "Fixture", "Update.exe")) &&
+               !ApplicationRemovalService.IsUninstallerProgram(Path.Combine(programs, "Browser", "browser.exe")) &&
+               !ApplicationRemovalService.IsUninstallerProgram(null),
+            "A copy in the temp folder or Windows Installer was not taken for the uninstaller, or a program in a program folder or an unreadable path was.");
         assert(string.Equals(ProcessDescendants.ImagePath(Environment.ProcessId), Environment.ProcessPath, StringComparison.OrdinalIgnoreCase),
             "The program path of a running process could not be read.");
+    }
+
+    private static async Task removal_ends_once_the_entry_is_gone_although_the_started_program_stays_open(Action<bool, string> assert)
+    {
+        // Like a game launcher: the registered command starts a program that stays open after the removal.
+        static Process StaysOpen(int seconds) => Process.Start(new ProcessStartInfo("ping.exe", $"-n {seconds + 1} 127.0.0.1")
+        {
+            UseShellExecute = false, CreateNoWindow = true, RedirectStandardOutput = true
+        })!;
+        using var launcher = StaysOpen(30);
+        try
+        {
+            var timer = Stopwatch.StartNew();
+            var ended = await ApplicationRemovalService.WaitForUninstallerAsync(launcher, static () => false, CancellationToken.None,
+                removedGrace: TimeSpan.FromSeconds(1));
+            assert(!ended && !launcher.HasExited && timer.Elapsed < TimeSpan.FromSeconds(6),
+                $"The removal kept waiting for a program that stays open although the uninstall entry was gone: {timer.Elapsed.TotalSeconds:N1} s");
+        }
+        finally
+        {
+            try { launcher.Kill(); }
+            catch (InvalidOperationException) { }
+        }
+        // Windows Installer removes its entry before it asks for a restart, so it gets no such
+        // grace: it is waited for until it ends, and its exit code is read.
+        using var installer = StaysOpen(3);
+        var installerTimer = Stopwatch.StartNew();
+        var installerEnded = await ApplicationRemovalService.WaitForUninstallerAsync(installer, static () => false, CancellationToken.None,
+            removedGrace: ApplicationRemovalService.RemovedGraceFor(Path.Combine(Environment.SystemDirectory, "MsiExec.exe")));
+        assert(installerEnded && installer.HasExited && installerTimer.Elapsed > TimeSpan.FromSeconds(1.5) &&
+               ApplicationRemovalService.RemovedGraceFor(Path.Combine(programs(), "Launcher", "launcher.exe")) == ApplicationRemovalService.RemovedGrace,
+            $"Windows Installer was not waited for after its entry was gone, or another program got no grace: {installerTimer.Elapsed.TotalSeconds:N1} s");
+        static string programs() => Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles);
     }
 
     private static void prerelease_named_after_other_words_is_older_than_its_release(Action<bool, string> assert)
@@ -90,7 +126,8 @@ internal static class ReleaseAuditRegression
         string[] programs =
         [
             "Microsoft ODBC Driver 18 for SQL Server", "MongoDB ODBC Driver", "PostgreSQL JDBC Driver", "Display Driver Uninstaller", "Driver Booster 12",
-            "Driver Easy 6.1", "Driver Genius 24", "Intel® Driver & Support Assistant", "Windows Driver Kit", "Screwdriver Tool"
+            "Driver Easy 6.1", "Driver Genius 24", "Intel® Driver & Support Assistant", "Windows Driver Kit", "Screwdriver Tool",
+            "Oracle Database Driver", "MongoDB Driver 3.2", "Datenbanktreiber für Firebird"
         ];
         // A brand or a common word in a device driver's name must not make it a program.
         string[] drivers =

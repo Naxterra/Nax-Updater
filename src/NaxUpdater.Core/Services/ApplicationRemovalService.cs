@@ -33,8 +33,11 @@ public sealed class ApplicationRemovalService
         try
         {
             using var process = Process.Start(startInfo) ?? throw new InvalidOperationException("The registered uninstaller did not start.");
-            await WaitForUninstallerAsync(process, () => RegistryInventoryScanner.IsRegistered(application.Identity), cancellationToken,
-                isUninstaller: path => IsUninstallerProgram(path, plan.Executable));
+            var ended = await WaitForUninstallerAsync(process, () => RegistryInventoryScanner.IsRegistered(application.Identity), cancellationToken,
+                removedGrace: RemovedGraceFor(plan.Executable));
+            // The uninstall entry is gone and the started program stays open: the removal has
+            // happened, and the program has no exit code to report.
+            if (!ended) return new RemovalResult(true, null, false, null);
             var exitCode = process.ExitCode;
             return new RemovalResult(
                 IsSuccessfulExitCode(exitCode),
@@ -60,21 +63,37 @@ public sealed class ApplicationRemovalService
     // running. That wait had no limit, so every action stayed locked and the window could not be
     // closed. A left-behind process that is the uninstaller itself is still waited for as long
     // as it runs, because the user has it open. Any other left-behind process is waited for
-    // this long at most, counted from the moment no uninstaller was running any more. The first
-    // process is always waited for: only its end gives the exit code, and Windows Installer
-    // removes the uninstall entry before it asks for a restart.
+    // this long at most, counted from the moment no uninstaller was running any more.
     internal static readonly TimeSpan LeftBehindLimit = TimeSpan.FromMinutes(10);
 
-    internal static async Task WaitForUninstallerAsync(Process process, Func<bool?> stillRegistered, CancellationToken cancellationToken,
-        TimeSpan? leftBehindLimit = null, Func<string?, bool>? isUninstaller = null)
+    // A registered command can start a program that stays open after the removal, such as a game
+    // launcher. Once the uninstall entry is gone, the first process is waited for this long only;
+    // the removal otherwise lasted until the user closed that program. Windows Installer is
+    // always waited for: it removes the entry before it asks for a restart, and only its end
+    // gives the exit code that says whether a restart is needed.
+    internal static readonly TimeSpan RemovedGrace = TimeSpan.FromMinutes(2);
+
+    internal static TimeSpan? RemovedGraceFor(string executable) => IsWindowsInstaller(executable) ? null : RemovedGrace;
+
+    private static bool IsWindowsInstaller(string path) =>
+        Path.GetFileName(path).Equals("msiexec.exe", StringComparison.OrdinalIgnoreCase);
+
+    // The result is false when the first process was still running after the uninstall entry had
+    // been gone for "removedGrace". Without a grace the first process is waited for until it ends.
+    internal static async Task<bool> WaitForUninstallerAsync(Process process, Func<bool?> stillRegistered, CancellationToken cancellationToken,
+        TimeSpan? leftBehindLimit = null, Func<string?, bool>? isUninstaller = null, TimeSpan? removedGrace = null)
     {
-        isUninstaller ??= static path => IsUninstallerProgram(path, null);
+        isUninstaller ??= IsUninstallerProgram;
         var descendants = new ProcessDescendants(process);
+        long? removedAt = null;
         while (!process.HasExited)
         {
             descendants.Refresh();
             await Task.WhenAny(process.WaitForExitAsync(cancellationToken), Task.Delay(250, cancellationToken));
             cancellationToken.ThrowIfCancellationRequested();
+            if (removedGrace is not { } grace || process.HasExited) continue;
+            if (removedAt is null && stillRegistered() == false) removedAt = Stopwatch.GetTimestamp();
+            if (removedAt is { } removed && Stopwatch.GetElapsedTime(removed) >= grace) return false;
         }
         descendants.Refresh();
         var uninstallerSeen = Stopwatch.GetTimestamp();
@@ -85,19 +104,19 @@ public sealed class ApplicationRemovalService
             await Task.Delay(500, cancellationToken);
             descendants.Refresh();
         }
+        return true;
     }
 
     // A process that the uninstaller started is the uninstaller itself when it runs from a temp
-    // folder (NSIS and Inno Setup copy themselves there and end their first process), when it is
-    // Windows Installer, or when it has the file name of the registered uninstaller. A helper or
-    // a browser runs from its own program folder. A path that cannot be read is no uninstaller.
-    internal static bool IsUninstallerProgram(string? path, string? registeredUninstaller)
+    // folder (NSIS and Inno Setup copy themselves there and end their first process) or is
+    // Windows Installer. A helper, a browser or another instance of the application runs from a
+    // program folder; the registered file name does not count, because an application that is
+    // its own uninstaller ("Update.exe --uninstall") can start itself again and stay open. A
+    // path that cannot be read is no uninstaller.
+    internal static bool IsUninstallerProgram(string? path)
     {
         if (string.IsNullOrWhiteSpace(path)) return false;
-        var name = Path.GetFileName(path);
-        if (name.Equals("msiexec.exe", StringComparison.OrdinalIgnoreCase)) return true;
-        if (!string.IsNullOrWhiteSpace(registeredUninstaller) &&
-            name.Equals(Path.GetFileName(registeredUninstaller), StringComparison.OrdinalIgnoreCase)) return true;
+        if (IsWindowsInstaller(path)) return true;
         // An uninstaller that an administrator account started uses that account's temp folder.
         return path.StartsWith(Path.GetTempPath(), StringComparison.OrdinalIgnoreCase) ||
                path.StartsWith(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Windows), "Temp") + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase) ||
