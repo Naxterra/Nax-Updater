@@ -44,7 +44,7 @@ public sealed partial class ManufacturerDriverService
                 using var deadline = CancellationTokenSource.CreateLinkedTokenSource(token);
                 deadline.CancelAfter(RequestTimeout);
                 using var request = new HttpRequestMessage(HttpMethod.Get, archive.Url);
-                request.Headers.UserAgent.ParseAdd("NaxUpdater/0.17.74");
+                request.Headers.UserAgent.ParseAdd("NaxUpdater/0.17.75");
                 using var response = await httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, deadline.Token);
                 response.EnsureSuccessStatusCode();
                 const long maximumSize = 80L * 1024 * 1024;

@@ -58,15 +58,19 @@ internal static class ReleaseAuditRegression
             isUninstaller: static path => path is not null && Path.GetFileName(path).Equals("ping.exe", StringComparison.OrdinalIgnoreCase));
         assert(timer.Elapsed > TimeSpan.FromSeconds(2.5) && timer.Elapsed < TimeSpan.FromSeconds(30),
             $"The removal did not wait for the relocated uninstaller until it ended: {timer.Elapsed.TotalSeconds:N1} s");
-        // An application that is its own uninstaller can start itself again and stay open, so a
-        // process in a program folder is never the uninstaller, whatever its name.
+        // An application that is its own uninstaller ("Update.exe --uninstall") can start itself
+        // again and stay open, so another instance of the registered program is no uninstaller.
+        // A copy of it in another folder is, and so is a program that is an installer by its name.
         var programs = Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles);
-        assert(ApplicationRemovalService.IsUninstallerProgram(Path.Combine(Path.GetTempPath(), "~nsuA.tmp", "Un_A.exe")) &&
-               ApplicationRemovalService.IsUninstallerProgram(Path.Combine(Environment.SystemDirectory, "msiexec.exe")) &&
-               !ApplicationRemovalService.IsUninstallerProgram(Path.Combine(programs, "Fixture", "Update.exe")) &&
-               !ApplicationRemovalService.IsUninstallerProgram(Path.Combine(programs, "Browser", "browser.exe")) &&
-               !ApplicationRemovalService.IsUninstallerProgram(null),
-            "A copy in the temp folder or Windows Installer was not taken for the uninstaller, or a program in a program folder or an unreadable path was.");
+        var registered = Path.Combine(programs, "Fixture", "Update.exe");
+        assert(ApplicationRemovalService.IsUninstallerProgram(Path.Combine(Path.GetTempPath(), "~nsuA.tmp", "Un_A.exe"), registered) &&
+               ApplicationRemovalService.IsUninstallerProgram(Path.Combine(Environment.SystemDirectory, "msiexec.exe"), registered) &&
+               ApplicationRemovalService.IsUninstallerProgram(Path.Combine(programs, "Other", "unins000.exe"), registered) &&
+               ApplicationRemovalService.IsUninstallerProgram(Path.Combine(programs, "Fixture", "cache", "Update.exe"), registered) &&
+               !ApplicationRemovalService.IsUninstallerProgram(registered, registered) &&
+               !ApplicationRemovalService.IsUninstallerProgram(Path.Combine(programs, "Browser", "browser.exe"), registered) &&
+               !ApplicationRemovalService.IsUninstallerProgram(null, registered),
+            "A temp-folder copy, Windows Installer, an installer by name or a copy of the registered uninstaller was not taken for the uninstaller, or the registered program itself, a browser or an unreadable path was.");
         assert(string.Equals(ProcessDescendants.ImagePath(Environment.ProcessId), Environment.ProcessPath, StringComparison.OrdinalIgnoreCase),
             "The program path of a running process could not be read.");
     }
@@ -92,16 +96,28 @@ internal static class ReleaseAuditRegression
             try { launcher.Kill(); }
             catch (InvalidOperationException) { }
         }
-        // Windows Installer removes its entry before it asks for a restart, so it gets no such
-        // grace: it is waited for until it ends, and its exit code is read.
+        // Only a command that hands a link to a launcher gets that grace. An uninstaller or a
+        // bootstrapper removes its entry and can then wait for the user while it holds the exit
+        // code that asks for a restart, so it is waited for until it ends.
+        assert(ApplicationRemovalService.RemovedGraceFor("steam://uninstall/730") == ApplicationRemovalService.RemovedGrace &&
+               ApplicationRemovalService.RemovedGraceFor("-silent com.vendor.launcher://apps/42?action=uninstall") == ApplicationRemovalService.RemovedGrace &&
+               ApplicationRemovalService.RemovedGraceFor("/X{0F3A2C61-7B1D-4E55-9C0A-5D2E8B7A1C33}") is null &&
+               ApplicationRemovalService.RemovedGraceFor("/uninstall") is null && ApplicationRemovalService.RemovedGraceFor(null) is null &&
+               ApplicationRemovalService.RemovedGraceFor("/S /feedback=https://vendor.example/bye") is null,
+            "A launcher link got no grace, or an uninstaller command got one.");
         using var installer = StaysOpen(3);
         var installerTimer = Stopwatch.StartNew();
         var installerEnded = await ApplicationRemovalService.WaitForUninstallerAsync(installer, static () => false, CancellationToken.None,
-            removedGrace: ApplicationRemovalService.RemovedGraceFor(Path.Combine(Environment.SystemDirectory, "MsiExec.exe")));
-        assert(installerEnded && installer.HasExited && installerTimer.Elapsed > TimeSpan.FromSeconds(1.5) &&
-               ApplicationRemovalService.RemovedGraceFor(Path.Combine(programs(), "Launcher", "launcher.exe")) == ApplicationRemovalService.RemovedGrace,
-            $"Windows Installer was not waited for after its entry was gone, or another program got no grace: {installerTimer.Elapsed.TotalSeconds:N1} s");
-        static string programs() => Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles);
+            removedGrace: ApplicationRemovalService.RemovedGraceFor("/uninstall"));
+        assert(installerEnded && installer.HasExited && installerTimer.Elapsed > TimeSpan.FromSeconds(1.5),
+            $"An uninstaller was not waited for after its entry was gone: {installerTimer.Elapsed.TotalSeconds:N1} s");
+        // A removal that is rolled back puts the entry back; the grace must then not run out.
+        using var rolledBack = StaysOpen(3);
+        var rollbackTimer = Stopwatch.StartNew();
+        var rolledBackEnded = await ApplicationRemovalService.WaitForUninstallerAsync(rolledBack, () => rollbackTimer.Elapsed > TimeSpan.FromSeconds(0.7),
+            CancellationToken.None, removedGrace: TimeSpan.FromSeconds(1.2));
+        assert(rolledBackEnded && rolledBack.HasExited,
+            $"The wait ended although the uninstall entry had come back: {rollbackTimer.Elapsed.TotalSeconds:N1} s");
     }
 
     private static void prerelease_named_after_other_words_is_older_than_its_release(Action<bool, string> assert)

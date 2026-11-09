@@ -34,7 +34,7 @@ public sealed class ApplicationRemovalService
         {
             using var process = Process.Start(startInfo) ?? throw new InvalidOperationException("The registered uninstaller did not start.");
             var ended = await WaitForUninstallerAsync(process, () => RegistryInventoryScanner.IsRegistered(application.Identity), cancellationToken,
-                removedGrace: RemovedGraceFor(plan.Executable));
+                isUninstaller: path => IsUninstallerProgram(path, plan.Executable), removedGrace: RemovedGraceFor(plan.Arguments));
             // The uninstall entry is gone and the started program stays open: the removal has
             // happened, and the program has no exit code to report.
             if (!ended) return new RemovalResult(true, null, false, null);
@@ -66,14 +66,21 @@ public sealed class ApplicationRemovalService
     // this long at most, counted from the moment no uninstaller was running any more.
     internal static readonly TimeSpan LeftBehindLimit = TimeSpan.FromMinutes(10);
 
-    // A registered command can start a program that stays open after the removal, such as a game
-    // launcher. Once the uninstall entry is gone, the first process is waited for this long only;
-    // the removal otherwise lasted until the user closed that program. Windows Installer is
-    // always waited for: it removes the entry before it asks for a restart, and only its end
-    // gives the exit code that says whether a restart is needed.
+    // A registered command can hand a link to a launcher ("steam.exe steam://uninstall/730"); the
+    // launcher removes the application and stays open, and the removal then lasted until the
+    // user closed it. Once the uninstall entry is gone, the first process of such a command is
+    // waited for this long only. Every other command is waited for until its first process
+    // ends: an uninstaller or a bootstrapper (Windows Installer, a WiX bundle, InstallShield)
+    // can remove its entry and then wait for the user while it still holds the exit code that
+    // says a restart is needed, and it must not lose the change lock while it runs.
     internal static readonly TimeSpan RemovedGrace = TimeSpan.FromMinutes(2);
 
-    internal static TimeSpan? RemovedGraceFor(string executable) => IsWindowsInstaller(executable) ? null : RemovedGrace;
+    private static readonly System.Text.RegularExpressions.Regex LauncherLink = new(
+        @"(?<![A-Za-z0-9+.\-])(?!https?://|ftp://|file://)[A-Za-z][A-Za-z0-9+.\-]*://",
+        System.Text.RegularExpressions.RegexOptions.IgnoreCase | System.Text.RegularExpressions.RegexOptions.CultureInvariant);
+
+    internal static TimeSpan? RemovedGraceFor(string? arguments) =>
+        arguments is not null && LauncherLink.IsMatch(arguments) ? RemovedGrace : null;
 
     private static bool IsWindowsInstaller(string path) =>
         Path.GetFileName(path).Equals("msiexec.exe", StringComparison.OrdinalIgnoreCase);
@@ -83,7 +90,7 @@ public sealed class ApplicationRemovalService
     internal static async Task<bool> WaitForUninstallerAsync(Process process, Func<bool?> stillRegistered, CancellationToken cancellationToken,
         TimeSpan? leftBehindLimit = null, Func<string?, bool>? isUninstaller = null, TimeSpan? removedGrace = null)
     {
-        isUninstaller ??= IsUninstallerProgram;
+        isUninstaller ??= static path => IsUninstallerProgram(path, null);
         var descendants = new ProcessDescendants(process);
         long? removedAt = null;
         while (!process.HasExited)
@@ -92,7 +99,9 @@ public sealed class ApplicationRemovalService
             await Task.WhenAny(process.WaitForExitAsync(cancellationToken), Task.Delay(250, cancellationToken));
             cancellationToken.ThrowIfCancellationRequested();
             if (removedGrace is not { } grace || process.HasExited) continue;
-            if (removedAt is null && stillRegistered() == false) removedAt = Stopwatch.GetTimestamp();
+            // An entry that is back (a removal that was rolled back) starts the count again.
+            if (stillRegistered() != false) removedAt = null;
+            else removedAt ??= Stopwatch.GetTimestamp();
             if (removedAt is { } removed && Stopwatch.GetElapsedTime(removed) >= grace) return false;
         }
         descendants.Refresh();
@@ -109,14 +118,21 @@ public sealed class ApplicationRemovalService
 
     // A process that the uninstaller started is the uninstaller itself when it runs from a temp
     // folder (NSIS and Inno Setup copy themselves there and end their first process) or is
-    // Windows Installer. A helper, a browser or another instance of the application runs from a
-    // program folder; the registered file name does not count, because an application that is
-    // its own uninstaller ("Update.exe --uninstall") can start itself again and stay open. A
-    // path that cannot be read is no uninstaller.
-    internal static bool IsUninstallerProgram(string? path)
+    // Windows Installer, when its file name says so ("uninstall.exe", "unins000.exe",
+    // "setup.exe", also when it restarts itself elevated), or when it is a copy of the
+    // registered uninstaller in another folder. A helper or a browser runs from a program
+    // folder under another name. Another instance of the registered program itself does not
+    // count, because an application that is its own uninstaller ("Update.exe --uninstall") can
+    // start itself again and stay open. A path that cannot be read is no uninstaller.
+    internal static bool IsUninstallerProgram(string? path, string? registeredUninstaller)
     {
         if (string.IsNullOrWhiteSpace(path)) return false;
         if (IsWindowsInstaller(path)) return true;
+        var name = Path.GetFileName(path);
+        if (name.Contains("unins", StringComparison.OrdinalIgnoreCase) || name.Contains("setup", StringComparison.OrdinalIgnoreCase)) return true;
+        if (!string.IsNullOrWhiteSpace(registeredUninstaller) &&
+            name.Equals(Path.GetFileName(registeredUninstaller), StringComparison.OrdinalIgnoreCase) &&
+            !string.Equals(Path.GetFullPath(path), Path.GetFullPath(registeredUninstaller), StringComparison.OrdinalIgnoreCase)) return true;
         // An uninstaller that an administrator account started uses that account's temp folder.
         return path.StartsWith(Path.GetTempPath(), StringComparison.OrdinalIgnoreCase) ||
                path.StartsWith(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Windows), "Temp") + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase) ||
