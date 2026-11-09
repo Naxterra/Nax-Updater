@@ -20,7 +20,8 @@ public enum UpdateApplicability
 }
 
 public enum UpdateAvailabilityReason { None, AwaitingStorePublication, AwaitingStoreOffer, NoApplicableStoreUpdate, StoreQueued, StoreUpdating, StorePaused, AwaitingReleaseVerification, StagedRollout, DriverUpdateInDriversView }
-public sealed record UpdateCheckProgress(int Completed, int Total, string Phase, string? ApplicationName);
+public sealed record UpdateCheckProgress(int Completed, int Total, string Phase, string? ApplicationName,
+    UpdateCheckResult? Result = null);
 
 public enum UpdateExecutionKind
 {
@@ -178,7 +179,10 @@ public sealed record UpdateExecutionPlan(
     bool SignatureOnly = false,
     // For a download whose URL does not name the version: the version the installer's
     // own version resource must declare before it may run.
-    string? ExpectedInstallerVersion = null);
+    string? ExpectedInstallerVersion = null,
+    // Some publisher installers need CABs, response files and subdirectories beside
+    // their EXE. This is permitted only for an archive protected by a release hash.
+    bool ExtractInstallerDirectory = false);
 
 public sealed record StoreQueueTarget(string ProductId, string PackageFamilyName, string InstalledVersion);
 

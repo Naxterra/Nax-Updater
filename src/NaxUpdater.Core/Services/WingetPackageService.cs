@@ -107,9 +107,8 @@ public sealed partial class WingetPackageService : IWingetPackageService
             ?? throw new InvalidOperationException("The approved WinGet package is no longer present.");
         var key = VersionKey(package, target.Version)
             ?? throw new InvalidOperationException("The approved WinGet version is no longer present.");
-        var options = CreateOptions(key, target.Scope, target.InstallLocation);
+        var options = CreateOptions(key, target.Scope, target.InstallLocation, Enum.Parse<PackageInstallerType>(target.InstallerType));
         SetArchitecture(options, target.Architecture);
-        options.InstallerType = Enum.Parse<PackageInstallerType>(target.InstallerType);
         ValidatePrepared(package, key, options, target);
         // Keep this catalog package, version key and options alive through Apply.
         return new PreparedCatalogUpdate(target, async (progress, cancellationToken) =>
@@ -201,15 +200,7 @@ public sealed partial class WingetPackageService : IWingetPackageService
             return new UpdateExecutionResult(-1, false, "The approved WinGet target contains characters that cannot be passed to an elevated installer safely.");
         var alias = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Microsoft", "WindowsApps", "winget.exe");
         var winget = File.Exists(alias) ? $"\"{alias}\"" : "winget.exe";
-        var arguments = new List<string>
-        {
-            "upgrade", "--id", target.PackageId, "--exact", "--version", target.Version, "--source", "winget",
-            "--scope", "machine", "--architecture", target.Architecture.ToLowerInvariant(),
-            "--installer-type", target.InstallerType.ToLowerInvariant(),
-            "--silent", "--accept-package-agreements", "--accept-source-agreements", "--disable-interactivity"
-        };
-        if (target.Locale.Length > 0) arguments.AddRange(["--locale", target.Locale]);
-        if (target.InstallLocation is not null) arguments.AddRange(["--location", QuoteArgument(target.InstallLocation)]);
+        var arguments = CliUpgradeArguments(target);
         var logPath = Path.Combine(Path.GetTempPath(), $"naxupdater-winget-{Guid.NewGuid():N}.log");
         try
         {
@@ -245,6 +236,27 @@ public sealed partial class WingetPackageService : IWingetPackageService
         }
     }
 
+    internal static IReadOnlyList<string> CliUpgradeArguments(WingetUpdateTarget target)
+    {
+        var arguments = new List<string>
+        {
+            "upgrade", "--id", target.PackageId, "--exact", "--version", target.Version, "--source", "winget",
+            "--architecture", target.Architecture.ToLowerInvariant(),
+            "--installer-type", target.InstallerType.ToLowerInvariant(),
+            "--silent", "--accept-package-agreements", "--accept-source-agreements", "--disable-interactivity"
+        };
+        if (target.Scope != InstallScope.Unknown)
+            arguments.AddRange(["--scope", target.Scope == InstallScope.Machine ? "machine" : "user"]);
+        var scopeArguments = InstallerScopeArguments(target.Scope, Enum.Parse<PackageInstallerType>(target.InstallerType));
+        if (scopeArguments.Length > 0) arguments.AddRange(["--custom", scopeArguments]);
+        if (target.Locale.Length > 0) arguments.AddRange(["--locale", target.Locale]);
+        if (target.InstallLocation is not null) arguments.AddRange(["--location", QuoteArgument(target.InstallLocation)]);
+        return arguments;
+    }
+
+    private static string InstallerScopeArguments(InstallScope scope, PackageInstallerType type) =>
+        scope == InstallScope.Machine && type is PackageInstallerType.Msi or PackageInstallerType.Wix ? "ALLUSERS=1" : "";
+
     // Quotes a value that contains no '"'. Windows argument parsing reads
     // backslashes before the closing quote as escapes, so an install folder
     // ending in '\' ("C:\Program Files\LibreOffice\") swallowed the quote and
@@ -274,11 +286,14 @@ public sealed partial class WingetPackageService : IWingetPackageService
             throw new InvalidOperationException("The approved WinGet installer variant is no longer applicable.");
     }
 
-    internal static InstallOptions CreateOptions(PackageVersionId? key, InstallScope scope, string? location)
+    internal static InstallOptions CreateOptions(PackageVersionId? key, InstallScope scope, string? location,
+        PackageInstallerType installerType = PackageInstallerType.Unknown)
     {
         var options = new InstallOptions
         {
             PackageInstallMode = PackageInstallMode.Silent,
+            InstallerType = installerType,
+            AdditionalInstallerArguments = InstallerScopeArguments(scope, installerType),
             PackageInstallScope = scope switch
             {
                 InstallScope.CurrentUser => PackageInstallScope.UserOrUnknown,

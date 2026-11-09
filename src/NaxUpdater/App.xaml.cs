@@ -23,6 +23,7 @@ public partial class App : Application
 
     protected override void OnLaunched(LaunchActivatedEventArgs args)
     {
+        if (Services.ManufacturerPageQuery.TryStart(Environment.GetCommandLineArgs())) return;
         if (Environment.ProcessPath is { } executable &&
             Core.Services.UpdateHostLifetime.TryDetachFromLauncher(Environment.GetCommandLineArgs(), executable))
         {
@@ -101,6 +102,7 @@ public partial class App : Application
             return;
         }
         // Hand the single-instance lock over before the replacement starts.
+        if (MainWindow is NaxUpdater.MainWindow window) window.SaveViewPreferences();
         _instanceLock?.ReleaseMutex();
         _instanceLock?.Dispose();
         _instanceLock = null;

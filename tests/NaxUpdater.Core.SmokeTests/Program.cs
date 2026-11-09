@@ -95,10 +95,20 @@ Assert(!normalStoreInstallOptions.Force &&
        !normalStoreInstallOptions.AllowUpgradeToUnknownVersion &&
        normalStoreInstallOptions.PackageInstallMode == Microsoft.Management.Deployment.PackageInstallMode.Silent,
     "The Store upgrade route is not configured for a silent, non-forced deployment.");
-using (var intelClient = new HttpClient(new StubHttpMessageHandler(_ => new HttpResponseMessage(HttpStatusCode.OK)
+byte[] intelFixtureArchive;
+using (var intelMemory = new MemoryStream())
 {
-    Content = new StringContent("Intel(R) Network Connections Software, Release 31.2.2\nJuly 2026\nIntel(R) Ethernet Connection I219")
-})))
+    using (var intelZip = new ZipArchive(intelMemory, ZipArchiveMode.Create, true))
+    using (var intelInf = new StreamWriter(intelZip.CreateEntry("PRO1000/Winx64/W11/e1d.inf").Open()))
+        intelInf.Write("[Version]\nDriverVer=07/10/2026,12.19.2.64\n[Models]\nDevice=Install,PCI\\VEN_8086&DEV_15BC\n");
+    intelFixtureArchive = intelMemory.ToArray();
+}
+var intelFixtureHash = Convert.ToHexString(SHA256.HashData(intelFixtureArchive));
+using (var intelClient = new HttpClient(new StubHttpMessageHandler(request => request.RequestUri!.AbsolutePath.EndsWith(".zip")
+    ? new HttpResponseMessage(HttpStatusCode.OK) { Content = new ByteArrayContent(intelFixtureArchive) }
+    : new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(
+        "<meta property='og:url' content='https://www.intel.com/content/www/us/en/download/727998/fixture.html'><meta name='DownloadVersion' content='31.2.2'>" +
+        $"<a href='https://downloadmirror.intel.com/923981/Wired_driver_31.2.2_x64.zip'>Download</a><li>SHA256: {intelFixtureHash}</li>") })))
 {
     var intelService = new ManufacturerDriverService(intelClient);
     var intelDriver = new InstalledHardwareDriver(
@@ -118,7 +128,7 @@ using (var intelClient = new HttpClient(new StubHttpMessageHandler(_ => new Http
            intelUpdate.ExecutableUpdate?.ExecutionPlan is
            {
                Kind: UpdateExecutionKind.DownloadedZipDriver,
-               Sha256: "2CBFF42AA02519E49F02D8E95A6572C44310E97FE67C42E299F2ABA6EA9344F5",
+               Sha256.Length: 64,
                NestedInstallerRelativePath: "PRO1000\\Winx64\\W11\\e1d.inf",
                ExpectedHardwareId: "PCI\\VEN_8086&DEV_15BC"
            },
@@ -126,8 +136,8 @@ using (var intelClient = new HttpClient(new StubHttpMessageHandler(_ => new Http
     var intelCurrent = await intelService.CheckIntelI219Async(
         intelDriver with { InstalledVersion = "12.19.2.64" },
         CancellationToken.None);
-    Assert(intelCurrent.Status == ManufacturerDriverStatus.Current && intelCurrent.ExecutableUpdate is null,
-        "The exact Intel 31.2.2 Windows 11 I219 INF was not recognized as already installed.");
+    Assert(intelCurrent.Status == ManufacturerDriverStatus.Current && intelCurrent.IsLiveChecked && intelCurrent.ExecutableUpdate is null,
+        "The current producer-verified Intel archive did not establish the installed exact INF version.");
 }
 using (var storeFixture = JsonDocument.Parse("""
 {
@@ -1179,6 +1189,7 @@ Assert(PolicyService.IsMatch(battleNetPolicy, "Battle.net", "Blizzard Entertainm
 Assert(!PolicyService.IsMatch(battleNetPolicy, "Battle.net", "Unrelated Publisher"), "Publisher matching accepted an unrelated app.");
 
 var snapshot = await new ApplicationInventoryService(policyPath).ScanAsync();
+await StorePackageInventoryRegression.RunAsync(Assert, snapshot, policyPath);
 // per_user_registration_is_listed_once: HKCU is not split into 32-bit and 64-bit views,
 // so reading it in both listed every per-user entry twice (rustup without an install path).
 var repeatedPerUser = snapshot.Applications
@@ -1482,7 +1493,14 @@ AssertIntegrationAttached(
     expectedPackageFamily: "RazerDynamicLighting_qemfkr3nbbywc");
 
 using var liveManufacturerClient = new HttpClient { Timeout = TimeSpan.FromSeconds(30) };
-var liveManufacturerDrivers = await new ManufacturerDriverService(liveManufacturerClient).CheckAsync();
+var manufacturerRepo = AppContext.BaseDirectory;
+while (!File.Exists(Path.Combine(manufacturerRepo, "NaxUpdater.slnx"))) manufacturerRepo = Path.GetDirectoryName(manufacturerRepo) ?? throw new DirectoryNotFoundException("Repository root not found.");
+var manufacturerApp = Path.Combine(manufacturerRepo, "src", "NaxUpdater", "bin", "Release", "net11.0-windows10.0.26100.0", "win-x64", "Nax-Updater.exe");
+var liveManufacturerDrivers = await new ManufacturerDriverService(liveManufacturerClient, manufacturerBrowserExecutable: manufacturerApp).CheckAsync();
+Assert(liveManufacturerDrivers.CheckIssueCount == 0,
+    "A live manufacturer check failed: " + string.Join(" | ", liveManufacturerDrivers.Results.Where(r => r.HasCheckIssue).Select(r => r.Driver.DeviceName + ": " + r.Message)));
+Console.WriteLine($"Manufacturer coverage: {liveManufacturerDrivers.CheckedSourceCount} live checks, {liveManufacturerDrivers.CheckIssueCount} check problems.");
+await MsiAudioPackageRegression.RunAsync(liveManufacturerDrivers, Assert);
 // connected_device_is_not_listed_again_as_disconnected: after the I219 update the adapter's
 // own driver key appeared as a second, "not connected" row with the new version.
 var connectedDriverRows = liveManufacturerDrivers.Results.Where(static result => result.Driver.IsPresent)
@@ -1524,10 +1542,10 @@ var liveIntelEthernet = liveManufacturerDrivers.Results.FirstOrDefault(static re
 if (HasDriverRegistration("VEN_8086&DEV_15BC"))
 {
     Assert(liveIntelEthernet is not null &&
-           liveIntelEthernet.Status is ManufacturerDriverStatus.Current or ManufacturerDriverStatus.Available &&
+           liveIntelEthernet.Status is ManufacturerDriverStatus.Current or ManufacturerDriverStatus.Available && liveIntelEthernet.IsLiveChecked &&
            liveIntelEthernet.SourceName.Contains("I219", StringComparison.OrdinalIgnoreCase) &&
            liveIntelEthernet.SourceUri?.Host.Contains("intel.com", StringComparison.OrdinalIgnoreCase) == true,
-        "The Intel I219-V driver was not checked against Intel's exact supported Ethernet release.");
+        "The Intel I219-V driver did not use the current producer-verified exact INF archive.");
 }
 var liveDellMonitor = liveManufacturerDrivers.Results.FirstOrDefault(static result =>
     result.Driver.HardwareId?.Contains("DELA1E4", StringComparison.OrdinalIgnoreCase) == true);
@@ -1580,14 +1598,14 @@ Assert(liveManufacturerDrivers.Results.Where(IsComparedIntelPackage).All(static 
         // Only RST installs directly (the owner accepted Intel's EULA), and only Intel's hashed, signed installer.
         (result.ExecutableUpdate is null || result.Driver.Identity.EndsWith(":intel:rst", StringComparison.OrdinalIgnoreCase) &&
             result.ExecutableUpdate.ExecutionPlan is { Sha256.Length: 64, ExpectedSigner: "Intel Corporation", RequireAuthenticode: true }) &&
-        result.SourceUri?.Host.Contains("intel.com", StringComparison.OrdinalIgnoreCase) == true),
+        result.SourceUri?.Host is "www.intel.com" or "www.intel.cn"),
     "An Intel chipset row was offered for direct installation, an RST installer lacked Intel's hash and signer, or a row lacked Intel's package version.");
 static bool IsComparedIntelPackage(ManufacturerDriverResult result) =>
     result.Driver.Identity.EndsWith(":intel:chipset", StringComparison.OrdinalIgnoreCase) ||
     result.Driver.Identity.EndsWith(":intel:rst", StringComparison.OrdinalIgnoreCase);
 Assert(intelSourceOnlyRows.All(static result =>
         result.Status == ManufacturerDriverStatus.OfficialSourceOnly &&
-        result.SourceUri?.Host.Contains("intel.com", StringComparison.OrdinalIgnoreCase) == true &&
+        result.SourceUri?.Host is ("www.intel.com" or "www.intel.cn") &&
         (result.AvailableVersion is not null || result.Message.Contains("No update is claimed", StringComparison.OrdinalIgnoreCase))),
     "An Intel component without exact INF applicability was labelled managed/outdated or lacked an official Intel source.");
 var intelChipsetGroup = intelSourceOnlyRows.FirstOrDefault(static result =>

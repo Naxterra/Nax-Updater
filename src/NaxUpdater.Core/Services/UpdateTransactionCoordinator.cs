@@ -492,7 +492,10 @@ public sealed class UpdateTransactionCoordinator
          expected.CorrelationKey.Equals(observed.CorrelationKey, StringComparison.Ordinal)) &&
         !string.IsNullOrWhiteSpace(expected.AvailableVersion) &&
         !string.IsNullOrWhiteSpace(observed.InstalledVersion) &&
-        (expected.ExecutionPlan?.Kind == UpdateExecutionKind.StorePackage
+        (expected.ProviderId == DriverUpdateIdentity.MsiAudioProviderId
+            ? observed.ProviderId == expected.ProviderId && observed.Status == UpdateStatus.Current &&
+              VersionOrder.Compare(observed.InstalledVersion, expected.AvailableVersion) == 0
+            : expected.ExecutionPlan?.Kind == UpdateExecutionKind.StorePackage
             ? VersionOrder.Compare(observed.InstalledVersion, expected.AvailableVersion) == 0
             : VersionOrder.Compare(observed.InstalledVersion, expected.AvailableVersion) >= 0);
 
@@ -579,6 +582,10 @@ public static class UpdatePlanValidator
         {
             return "The process-close plan is not bound to a verified executable path.";
         }
+        if (plan.ExtractInstallerDirectory &&
+            (plan.Kind != UpdateExecutionKind.DownloadedZipExe || plan.SignatureOnly ||
+             string.IsNullOrWhiteSpace(plan.Sha256) && string.IsNullOrWhiteSpace(plan.Sha512)))
+            return "Installer companion files require a ZIP EXE protected by a published release hash.";
         return plan.Kind switch
         {
             UpdateExecutionKind.NativeStoreQueue when plan.StoreQueueTarget is not { } target ||

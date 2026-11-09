@@ -20,7 +20,7 @@ internal static class IntelPackageRegression
 
     private static async Task intel_chipset_package_is_compared_with_the_installed_utility(Action<bool, string> assert)
     {
-        using var http = new HttpClient(new Page("Chipset INF utility version 10.1.20658.8883 for Windows"));
+        using var http = new HttpClient(new Page(DriverSourceRegression.IntelPage("19347", "10.1.20658.8883")));
         var service = new ManufacturerDriverService(http);
         var current = await service.CheckIntelChipsetPackageAsync(Chipset, CancellationToken.None, "10.1.20658.8883");
         assert(current is { Status: ManufacturerDriverStatus.Current, Driver.InstalledVersion: "10.1.20658.8883" },
@@ -36,7 +36,8 @@ internal static class IntelPackageRegression
     {
         using var http = new HttpClient(new Page(null));
         var result = await new ManufacturerDriverService(http).CheckIntelChipsetPackageAsync(Chipset, CancellationToken.None, "10.1.20658.8883");
-        assert(result.Status == ManufacturerDriverStatus.Current && result.Message.Contains("last release Nax-Updater verified", StringComparison.Ordinal),
+        assert(result.Status == ManufacturerDriverStatus.OfficialSourceOnly && result.LiveCheckFailed && !result.IsLiveChecked &&
+            result.Message.Contains("last release Nax-Updater verified", StringComparison.Ordinal),
             $"A fallback chipset version was presented as if Intel had just published it: {result.Status} · {result.Message}");
     }
 
@@ -60,7 +61,8 @@ internal static class IntelPackageRegression
         };
         assert(UpdatePlanValidator.Validate(bound, DateTimeOffset.UtcNow) is null, $"The RST plan was rejected: {UpdatePlanValidator.Validate(bound, DateTimeOffset.UtcNow)}");
         var installed = ManufacturerDriverService.CheckIntelRst(Rst with { InstalledVersion = "18.7.6.1010" });
-        assert(installed.Status == ManufacturerDriverStatus.Current, "The installed RST 18.7.6 driver was not current.");
+        assert(installed.Status == ManufacturerDriverStatus.OfficialSourceOnly && installed.CheckEvidence == ManufacturerCheckEvidence.ReferenceRelease && !installed.IsLiveChecked,
+            "An archived RST reference was presented as a fresh latest-version check.");
     }
 
     private static void intel_rst_claims_nothing_for_unknown_controllers_or_versions(Action<bool, string> assert)

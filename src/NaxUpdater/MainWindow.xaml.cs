@@ -1,11 +1,14 @@
 using Microsoft.UI;
 using Microsoft.UI.Xaml;
+using Microsoft.UI.Windowing;
+using NaxUpdater.Services;
 using Windows.Graphics;
 
 namespace NaxUpdater;
 
 public sealed partial class MainWindow : Window
 {
+    private SizeInt32 _restoredSize;
     public MainWindow()
     {
         InitializeComponent();
@@ -16,7 +19,16 @@ public sealed partial class MainWindow : Window
         {
             AppWindow.SetIcon(iconPath);
         }
-        AppWindow.Resize(new SizeInt32(1380, 860));
+        var preferences = ViewSettings.Current;
+        var workArea = DisplayArea.GetFromWindowId(AppWindow.Id, DisplayAreaFallback.Primary).WorkArea;
+        _restoredSize = new SizeInt32(Math.Min(preferences.Width, workArea.Width), Math.Min(preferences.Height, workArea.Height));
+        AppWindow.Resize(_restoredSize);
+        if (preferences.Maximized && AppWindow.Presenter is OverlappedPresenter presenter) presenter.Maximize();
+        AppWindow.Changed += (_, change) =>
+        {
+            if (change.DidSizeChange && AppWindow.Presenter is OverlappedPresenter { State: OverlappedPresenterState.Restored })
+                _restoredSize = AppWindow.Size;
+        };
         WindowRoot.ActualThemeChanged += (_, _) => UpdateCaptionButtons();
         UpdateCaptionButtons();
         RootFrame.Navigate(typeof(MainPage));
@@ -24,8 +36,24 @@ public sealed partial class MainWindow : Window
         // lease and payload locks; wait until the change is finished.
         AppWindow.Closing += (_, args) =>
         {
-            if (RootFrame.Content is MainPage page && page.DeferCloseUntilIdle()) args.Cancel = true;
+            if (RootFrame.Content is MainPage page)
+            {
+                if (page.DeferCloseUntilIdle()) { args.Cancel = true; return; }
+            }
+            SaveViewPreferences();
         };
+    }
+
+    public void SaveViewPreferences()
+    {
+        if (RootFrame.Content is MainPage page) page.SaveLayoutPreferences();
+        ViewSettings.Current = ViewSettings.Current with
+        {
+            Width = _restoredSize.Width,
+            Height = _restoredSize.Height,
+            Maximized = AppWindow.Presenter is OverlappedPresenter { State: OverlappedPresenterState.Maximized }
+        };
+        ViewSettings.Save();
     }
 
     private void UpdateCaptionButtons()

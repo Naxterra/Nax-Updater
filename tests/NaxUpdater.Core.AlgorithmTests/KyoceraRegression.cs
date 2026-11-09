@@ -32,6 +32,14 @@ internal static class KyoceraRegression
         await unchanged_kyocera_files_are_answered_from_the_cache(assert);
         await one_scan_asks_kyocera_once_for_utilities_and_drivers(assert);
         await kyocera_file_with_byte_order_mark_is_read(assert);
+        await catalog_sends_its_own_user_agent(assert);
+    }
+
+    private static async Task catalog_sends_its_own_user_agent(Action<bool, string> assert)
+    {
+        using var http = new HttpClient(new Pages(requireUserAgent: true));
+        var model = await new KyoceraSupportCatalog(http).FindModelAsync("ECOSYS MA2100cwfx", CancellationToken.None);
+        assert(model?.Id == "358", "Kyocera catalog requests relied on a caller-supplied User-Agent and were rejected.");
     }
 
     private static async Task kyocera_file_with_byte_order_mark_is_read(Action<bool, string> assert)
@@ -180,12 +188,14 @@ internal static class KyoceraRegression
         new($"registry:{name}", name, "KYOCERA Document Solutions Inc.", version, version, "fixture", null, "fixture", null, null,
             InstallScope.Machine, ManagementMode.Registry, ConfidenceLevel.High, false, [], null, []);
 
-    private sealed class Pages(bool failFirst = false, bool byteOrderMark = false) : HttpMessageHandler
+    private sealed class Pages(bool failFirst = false, bool byteOrderMark = false, bool requireUserAgent = false) : HttpMessageHandler
     {
         private bool _failed;
 
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken token)
         {
+            if (requireUserAgent && !request.Headers.UserAgent.Any(p => p.Product?.Name == "NaxUpdater"))
+                return Task.FromResult(new HttpResponseMessage(HttpStatusCode.Forbidden));
             if (failFirst && !_failed)
             {
                 _failed = true;

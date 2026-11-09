@@ -11,11 +11,13 @@ public sealed class ApplicationRow : INotifyPropertyChanged
 {
     private ImageSource? _icon;
 
-    public ApplicationRow(InstalledApplication source)
+    public ApplicationRow(InstalledApplication source, TableColumnLayout? layout = null)
     {
         Source = source;
+        Layout = layout ?? new TableColumnLayout("applications", [280, 130, 130, 150]);
     }
 
+    public TableColumnLayout Layout { get; }
     public InstalledApplication Source { get; }
     public ImageSource? Icon
     {
@@ -163,10 +165,11 @@ public sealed class UpdateRow : INotifyPropertyChanged
     private string? _runMessage;
     private bool _actionsLocked;
 
-    public UpdateRow(UpdateCheckResult source, ApplicationRow? application = null)
+    public UpdateRow(UpdateCheckResult source, ApplicationRow? application = null, TableColumnLayout? layout = null)
     {
         Source = source;
         Application = application;
+        Layout = layout ?? new TableColumnLayout("updates", [280, 105, 105, 115, 130]);
     }
 
     public event PropertyChangedEventHandler? PropertyChanged;
@@ -213,6 +216,7 @@ public sealed class UpdateRow : INotifyPropertyChanged
         foreach (var name in names) PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));
     }
 
+    public TableColumnLayout Layout { get; }
     public UpdateCheckResult Source { get; }
     public ApplicationRow? Application { get; }
     public string Name => Source.DisplayName;
@@ -321,6 +325,28 @@ public sealed class UpdateRow : INotifyPropertyChanged
     }) + (card ? "CardBrush" : "Brush");
 }
 
+public sealed class TableColumnLayout(string name, double[] defaults) : INotifyPropertyChanged
+{
+    private double[] _widths = ViewSettings.ColumnWidths(name, defaults).ToArray();
+    public GridLength FirstWidth => new(_widths[0]);
+    public GridLength SecondWidth => new(_widths[1]);
+    public GridLength ThirdWidth => new(_widths[2]);
+    public GridLength FourthWidth => new(_widths[3]);
+    public GridLength FifthWidth => new(_widths.Length > 4 ? _widths[4] : 0);
+    public double TableWidth => _widths.Sum() + 6 * (_widths.Length - 1) + 28;
+    public event PropertyChangedEventHandler? PropertyChanged;
+    public void Synchronize(params double[] widths)
+    {
+        if (widths.Length != _widths.Length || widths.Any(w => !double.IsFinite(w) || w <= 0) ||
+            widths.Zip(_widths).All(pair => Math.Abs(pair.First - pair.Second) < 0.5)) return;
+        _widths = widths;
+        foreach (var property in new[] { nameof(FirstWidth), nameof(SecondWidth), nameof(ThirdWidth),
+                     nameof(FourthWidth), nameof(FifthWidth), nameof(TableWidth) })
+            PropertyChanged?.Invoke(this, new(property));
+    }
+    public void Save() => ViewSettings.SetColumns(name, _widths);
+}
+
 public sealed class DriverColumnLayout : INotifyPropertyChanged
 {
     private GridLength _nameWidth = new(280);
@@ -329,6 +355,15 @@ public sealed class DriverColumnLayout : INotifyPropertyChanged
     private GridLength _sourceWidth = new(200);
     private GridLength _statusWidth = new(230);
     private GridLength _actionWidth = new(215);
+
+    public DriverColumnLayout()
+    {
+        var widths = ViewSettings.ColumnWidths("drivers", [280, 125, 175, 200, 230, 215]);
+        Synchronize(widths[0], widths[1], widths[2], widths[3], widths[4], widths[5]);
+    }
+
+    public void Save() => ViewSettings.SetColumns("drivers",
+        [NameWidth.Value, InstalledWidth.Value, AvailableWidth.Value, SourceWidth.Value, StatusWidth.Value, ActionWidth.Value]);
 
     public GridLength NameWidth { get => _nameWidth; private set => Set(ref _nameWidth, value); }
     public GridLength InstalledWidth { get => _installedWidth; private set => Set(ref _installedWidth, value); }
@@ -360,8 +395,21 @@ public sealed class DriverColumnLayout : INotifyPropertyChanged
     }
 }
 
-public sealed class ManufacturerDriverRow(ManufacturerDriverResult source, DriverColumnLayout layout)
+public sealed class ManufacturerDriverRow(ManufacturerDriverResult source, DriverColumnLayout layout) : INotifyPropertyChanged
 {
+    private bool _actionsLocked;
+    public bool ActionsLocked
+    {
+        get => _actionsLocked;
+        set
+        {
+            if (_actionsLocked == value) return;
+            _actionsLocked = value;
+            PropertyChanged?.Invoke(this, new(nameof(CanAct)));
+        }
+    }
+    public bool CanAct => !ActionsLocked;
+    public event PropertyChangedEventHandler? PropertyChanged;
     public ManufacturerDriverResult Source { get; } = source;
     public DriverColumnLayout Layout { get; } = layout;
     public string Name => Source.Driver.DeviceName;
@@ -387,19 +435,30 @@ public sealed class ManufacturerDriverRow(ManufacturerDriverResult source, Drive
         : Source.Driver.Identity.EndsWith(":intel:management-engine", StringComparison.OrdinalIgnoreCase)
             ? LocalizationService.Format("DriverInstalledComponentSet", Source.Driver.DeviceCount)
             : Source.Driver.InstalledVersion;
-    public string Available => IsRazerSuite
-        ? LocalizationService.Format("DriverFirmwareChecksAvailable", Source.AvailableVersion ?? "0")
+    public string Available => Source.Status == ManufacturerDriverStatus.VendorSoftwareManaged && !IsRazerSuite
+        ? LocalizationService.Format("DriverOwnerPackageVersion", Source.AvailableVersion ?? "—")
+        : IsRazerSuite
+        ? LocalizationService.Format(Source.IsLiveChecked ? "DriverFirmwareChecksAvailable" : "DriverFirmwareReferences", Source.AvailableVersion ?? "0")
         : Source.Status == ManufacturerDriverStatus.NoUpdateRequired && Source.SourceName.StartsWith("WD Elements", StringComparison.OrdinalIgnoreCase)
             ? LocalizationService.Get("DriverWdOptionsAvailable")
+            : Source.CheckEvidence == ManufacturerCheckEvidence.ReferenceRelease && Source.AvailableVersion is { } reference
+                ? LocalizationService.Format("DriverReferenceVersion", reference)
             : Source.AvailableVersion ?? "—";
     public string Provider => LocalizationService.Text(Source.SourceName);
-    public string Status => Source.Status switch
+    public string Status => Source.LiveCheckFailed
+        ? LocalizationService.Get(IsRazerSuite ? "DriverStatusSynapseUnverified" : "DriverStatusLiveCheckFailed")
+        : Source.CheckEvidence == ManufacturerCheckEvidence.ReferenceRelease
+            ? LocalizationService.Get(IsRazerSuite ? "DriverStatusSynapseUnverified"
+                : Source.Status == ManufacturerDriverStatus.Available ? "DriverStatusReferenceUpdate" : "DriverStatusReferenceRelease")
+            : Source.Status switch
     {
         ManufacturerDriverStatus.Available when CanUpdate => LocalizationService.Get("DriverStatusAvailable"),
         ManufacturerDriverStatus.Available => LocalizationService.Get("DriverStatusManufacturerPackage"),
-        ManufacturerDriverStatus.Current => LocalizationService.Get("DriverStatusCurrent"),
-        ManufacturerDriverStatus.VendorSoftwareManaged => LocalizationService.Get("DriverStatusSynapseChecked"),
-        ManufacturerDriverStatus.OfficialSourceOnly when Source.AvailableVersion is not null => LocalizationService.Get("DriverStatusOfficialPackageChecked"),
+        ManufacturerDriverStatus.Current => LocalizationService.Get(Source.IsLiveChecked ? "DriverStatusCurrent" : "DriverStatusReferenceRelease"),
+        ManufacturerDriverStatus.VendorSoftwareManaged => IsRazerSuite
+            ? LocalizationService.Get(Source.IsLiveChecked ? "DriverStatusSynapseChecked" : "DriverStatusSynapseUnverified")
+            : LocalizationService.Format("DriverStatusManagedByPackage", Provider),
+        ManufacturerDriverStatus.OfficialSourceOnly when Source.AvailableVersion is not null => LocalizationService.Get(Source.IsLiveChecked ? "DriverStatusOfficialPackageChecked" : "DriverStatusReferenceRelease"),
         ManufacturerDriverStatus.OfficialSourceOnly => LocalizationService.Get("DriverStatusSupportPageOnly"),
         ManufacturerDriverStatus.NoUpdateRequired when Source.SourceName.StartsWith("WD Elements", StringComparison.OrdinalIgnoreCase) => LocalizationService.Get("DriverStatusWdCurrent"),
         ManufacturerDriverStatus.NoUpdateRequired => LocalizationService.Get("DriverStatusNoUpdateRequired"),
@@ -409,21 +468,21 @@ public sealed class ManufacturerDriverRow(ManufacturerDriverResult source, Drive
     public bool CanUpdate => Source.ExecutableUpdate?.IsInstallable == true;
     public bool CanOpenSource => Source.SourceUri is not null &&
         Source.Status is ManufacturerDriverStatus.Available or ManufacturerDriverStatus.Current or ManufacturerDriverStatus.NoUpdateRequired or
-            ManufacturerDriverStatus.VendorSoftwareManaged or ManufacturerDriverStatus.OfficialSourceOnly;
+            ManufacturerDriverStatus.VendorSoftwareManaged or ManufacturerDriverStatus.OfficialSourceOnly or ManufacturerDriverStatus.Error;
     public bool HasAction => CanUpdate || CanOpenSource;
     public Visibility ActionVisibility => HasAction ? Visibility.Visible : Visibility.Collapsed;
     public string ActionText => CanUpdate
         ? LocalizationService.Get("UpdateShort")
         : Source.Status == ManufacturerDriverStatus.Available
             ? LocalizationService.Get("OpenExactDownload")
-            : Source.Status == ManufacturerDriverStatus.VendorSoftwareManaged
+            : Source.Status == ManufacturerDriverStatus.VendorSoftwareManaged && IsRazerSuite
                 ? LocalizationService.Get("OpenRazerChecks")
                 : Source.Status == ManufacturerDriverStatus.NoUpdateRequired && Source.SourceName.StartsWith("WD Elements", StringComparison.OrdinalIgnoreCase)
                     ? LocalizationService.Get("OpenWdSupport")
                     : Source.Status == ManufacturerDriverStatus.OfficialSourceOnly && Source.AvailableVersion is not null
                         ? LocalizationService.Get("OpenOfficialPackage")
                         : LocalizationService.Get("OpenSupportPage");
-    public Brush StatusForeground => PresentationBrushes.Get(Source.Status switch
+    public Brush StatusForeground => PresentationBrushes.Get(Source.HasCheckIssue ? "NaxOrangeBrush" : Source.Status switch
     {
         ManufacturerDriverStatus.Available => "NaxOrangeBrush",
         ManufacturerDriverStatus.Current => "NaxGreenBrush",
@@ -433,7 +492,7 @@ public sealed class ManufacturerDriverRow(ManufacturerDriverResult source, Drive
         ManufacturerDriverStatus.NoVerifiedCatalog => "NaxPurpleBrush",
         _ => "NaxPinkBrush"
     });
-    public Brush StatusBackground => PresentationBrushes.Get(Source.Status switch
+    public Brush StatusBackground => PresentationBrushes.Get(Source.HasCheckIssue ? "NaxOrangeCardBrush" : Source.Status switch
     {
         ManufacturerDriverStatus.Available => "NaxOrangeCardBrush",
         ManufacturerDriverStatus.Current => "NaxGreenCardBrush",

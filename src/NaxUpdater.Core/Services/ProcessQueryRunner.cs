@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Text;
 
 namespace NaxUpdater.Core.Services;
 
@@ -8,7 +9,8 @@ internal sealed class ProcessQueryRunner
         string executable,
         IEnumerable<string> arguments,
         TimeSpan timeout,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        Encoding? outputEncoding = null)
     {
         var startInfo = new ProcessStartInfo(executable)
         {
@@ -17,6 +19,11 @@ internal sealed class ProcessQueryRunner
             RedirectStandardOutput = true,
             RedirectStandardError = true
         };
+        if (outputEncoding is not null)
+        {
+            startInfo.StandardOutputEncoding = outputEncoding;
+            startInfo.StandardErrorEncoding = outputEncoding;
+        }
         foreach (var argument in arguments)
         {
             startInfo.ArgumentList.Add(argument);

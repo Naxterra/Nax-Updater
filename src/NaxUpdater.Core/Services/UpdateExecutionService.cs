@@ -210,6 +210,10 @@ public sealed class UpdateExecutionService
         CancellationToken cancellationToken = default)
     {
         var plan = update.ExecutionPlan ?? throw new InvalidOperationException("The update has no execution plan.");
+        if (plan.ExtractInstallerDirectory &&
+            (plan.Kind != UpdateExecutionKind.DownloadedZipExe || plan.SignatureOnly ||
+             string.IsNullOrWhiteSpace(plan.Sha256) && string.IsNullOrWhiteSpace(plan.Sha512)))
+            throw new InvalidOperationException("Installer companion files require a ZIP EXE protected by a published release hash.");
         if (plan.Kind == UpdateExecutionKind.NativeStoreQueue)
             return new PreparedUpdateExecution(null, null, null, null, null, StoreQueueUpdate:
                 await _nativeStore.PrepareQueueAsync(plan.StoreQueueTarget ?? throw new InvalidOperationException("Missing Store queue target."), cancellationToken));
@@ -325,7 +329,8 @@ public sealed class UpdateExecutionService
                         installer.Path,
                         plan.NestedInstallerRelativePath,
                         extractionDirectory,
-                        plan.Kind == UpdateExecutionKind.DownloadedZipExe ? ".exe" : ".msi");
+                        plan.Kind == UpdateExecutionKind.DownloadedZipExe ? ".exe" : ".msi",
+                        plan.ExtractInstallerDirectory);
                     executableInstallerPath = nestedPayload.Path;
                     contentLocks = nestedPayload.ContentLocks;
                 }
@@ -511,35 +516,7 @@ public sealed class UpdateExecutionService
             }
         }
 
-        var startInfo = plan.Kind switch
-        {
-            UpdateExecutionKind.DownloadedExe or UpdateExecutionKind.DownloadedZipExe => new ProcessStartInfo(prepared.ExecutablePath),
-            UpdateExecutionKind.DownloadedMsi or UpdateExecutionKind.DownloadedZipMsi =>
-                new ProcessStartInfo(Path.Combine(Environment.SystemDirectory, "msiexec.exe")),
-            UpdateExecutionKind.DownloadedZipDriver =>
-                new ProcessStartInfo(Path.Combine(Environment.SystemDirectory, "pnputil.exe")),
-            _ => throw new InvalidOperationException($"Unsupported execution kind {plan.Kind}.")
-        };
-        startInfo.UseShellExecute = true;
-        if (plan.RequiresElevation)
-        {
-            startInfo.Verb = "runas";
-        }
-        if (plan.Kind is UpdateExecutionKind.DownloadedMsi or UpdateExecutionKind.DownloadedZipMsi)
-        {
-            startInfo.ArgumentList.Add("/i");
-            startInfo.ArgumentList.Add(prepared.ExecutablePath);
-        }
-        else if (plan.Kind == UpdateExecutionKind.DownloadedZipDriver)
-        {
-            startInfo.ArgumentList.Add("/add-driver");
-            startInfo.ArgumentList.Add(prepared.ExecutablePath);
-            startInfo.ArgumentList.Add("/install");
-        }
-        foreach (var argument in InstallerArguments(plan))
-        {
-            startInfo.ArgumentList.Add(argument);
-        }
+        var startInfo = CreateInstallerStartInfo(plan, prepared);
 
         try
         {
@@ -551,6 +528,45 @@ public sealed class UpdateExecutionService
             DisposePreparedLocks(prepared.ContentLocks);
             CleanupPreparedDirectory(prepared.CleanupDirectory);
         }
+    }
+
+    internal static ProcessStartInfo CreateInstallerStartInfo(UpdateExecutionPlan plan, PreparedUpdateExecution prepared)
+    {
+        var executablePath = prepared.ExecutablePath ??
+            throw new UpdateExecutionRefusedException("The prepared executable update payload is missing.");
+        var startInfo = plan.Kind switch
+        {
+            UpdateExecutionKind.DownloadedExe or UpdateExecutionKind.DownloadedZipExe => new ProcessStartInfo(executablePath),
+            UpdateExecutionKind.DownloadedMsi or UpdateExecutionKind.DownloadedZipMsi =>
+                new ProcessStartInfo(Path.Combine(Environment.SystemDirectory, "msiexec.exe")),
+            UpdateExecutionKind.DownloadedZipDriver =>
+                new ProcessStartInfo(Path.Combine(Environment.SystemDirectory, "pnputil.exe")),
+            _ => throw new InvalidOperationException($"Unsupported execution kind {plan.Kind}.")
+        };
+        startInfo.UseShellExecute = true;
+        if (plan.ExtractInstallerDirectory)
+            startInfo.WorkingDirectory = prepared.WorkingDirectory ?? Path.GetDirectoryName(executablePath) ?? string.Empty;
+        if (plan.RequiresElevation)
+        {
+            startInfo.Verb = "runas";
+        }
+        if (plan.Kind is UpdateExecutionKind.DownloadedMsi or UpdateExecutionKind.DownloadedZipMsi)
+        {
+            startInfo.ArgumentList.Add("/i");
+            startInfo.ArgumentList.Add(executablePath);
+        }
+        else if (plan.Kind == UpdateExecutionKind.DownloadedZipDriver)
+        {
+            startInfo.ArgumentList.Add("/add-driver");
+            startInfo.ArgumentList.Add(executablePath);
+            startInfo.ArgumentList.Add("/install");
+        }
+        foreach (var argument in InstallerArguments(plan))
+        {
+            startInfo.ArgumentList.Add(argument);
+        }
+
+        return startInfo;
     }
 
     // An MSI update runs elevated only for a copy installed for all users. A package that can
@@ -696,10 +712,12 @@ public sealed class UpdateExecutionService
         string archivePath,
         string relativePath,
         string destinationDirectory,
-        string extension = ".msi")
+        string extension = ".msi",
+        bool extractInstallerDirectory = false)
     {
-        var normalized = relativePath.Replace('\\', '/').TrimStart('/');
-        if (normalized.Length == 0 || normalized.Split('/').Any(static part => part is "" or "." or ".."))
+        var normalized = relativePath.Replace('\\', '/');
+        if (normalized.Length == 0 || normalized.Split('/').Any(static part => part is "" or "." or ".." ||
+                part.IndexOfAny(Path.GetInvalidFileNameChars()) >= 0))
         {
             throw new InvalidDataException("The nested installer path is unsafe.");
         }
@@ -711,9 +729,57 @@ public sealed class UpdateExecutionService
         {
             throw new InvalidDataException("The exact nested installer was not found in the verified archive.");
         }
-        var destinationPath = Path.Combine(destinationDirectory, Path.GetFileName(matches[0].Name));
-        var contentLock = ExtractEntryLocked(matches[0], destinationPath);
-        return new PreparedNestedPayload(destinationPath, [contentLock]);
+        if (!extractInstallerDirectory)
+        {
+            var destinationPath = Path.Combine(destinationDirectory, Path.GetFileName(matches[0].Name));
+            var contentLock = ExtractEntryLocked(matches[0], destinationPath);
+            return new PreparedNestedPayload(destinationPath, [contentLock]);
+        }
+
+        // Keep only the selected installer's directory. Validate the entire selection
+        // before writing anything, including Windows aliases, ADS and ZIP symlinks.
+        var separator = normalized.LastIndexOf('/');
+        if (separator <= 0) throw new InvalidDataException("The nested installer path is unsafe.");
+        var prefix = normalized[..(separator + 1)];
+        var files = new List<(ZipArchiveEntry Entry, string Destination)>();
+        var directories = new List<string>();
+        var names = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var root = Path.GetFullPath(destinationDirectory) + Path.DirectorySeparatorChar;
+        foreach (var entry in archive.Entries)
+        {
+            var name = entry.FullName.Replace('\\', '/');
+            if (!name.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)) continue;
+            var relative = name[prefix.Length..];
+            if (relative.Length == 0) continue;
+            var parts = relative.TrimEnd('/').Split('/');
+            if (parts.Any(part => part is "" or "." or ".." || part.EndsWith('.') || part.EndsWith(' ') ||
+                    part.IndexOfAny(Path.GetInvalidFileNameChars()) >= 0 ||
+                    System.Text.RegularExpressions.Regex.IsMatch(part, @"^(CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])(\.|$)",
+                        System.Text.RegularExpressions.RegexOptions.IgnoreCase)) ||
+                ((entry.ExternalAttributes >> 16) & 0xF000) == 0xA000)
+                throw new InvalidDataException("The nested installer path is unsafe.");
+            var destination = Path.GetFullPath(Path.Combine(destinationDirectory, Path.Combine(parts)));
+            if (!destination.StartsWith(root, StringComparison.OrdinalIgnoreCase) || !names.Add(destination))
+                throw new InvalidDataException("The nested installer path is unsafe.");
+            if (name.EndsWith('/')) directories.Add(destination);
+            else files.Add((entry, destination));
+        }
+        var locks = new List<PreparedContentLock>();
+        try
+        {
+            foreach (var directory in directories) Directory.CreateDirectory(directory);
+            foreach (var file in files)
+            {
+                Directory.CreateDirectory(Path.GetDirectoryName(file.Destination)!);
+                locks.Add(ExtractEntryLocked(file.Entry, file.Destination));
+            }
+            return new PreparedNestedPayload(Path.Combine(destinationDirectory, normalized[(separator + 1)..]), locks);
+        }
+        catch
+        {
+            DisposePreparedLocks(locks);
+            throw;
+        }
     }
 
     internal PreparedDriverPayload ExtractAndVerifyDriverPackage(

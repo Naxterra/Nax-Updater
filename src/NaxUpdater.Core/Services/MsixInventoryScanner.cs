@@ -8,7 +8,8 @@ namespace NaxUpdater.Core.Services;
 
 internal sealed class MsixInventoryScanner
 {
-    public IReadOnlyList<ApplicationCandidate> Scan(ICollection<InventoryIssue> issues)
+    public IReadOnlyList<ApplicationCandidate> Scan(ICollection<InventoryIssue> issues, CancellationToken cancellationToken = default,
+        string? packageFamily = null)
     {
         var results = new List<ApplicationCandidate>();
         try
@@ -16,15 +17,18 @@ internal sealed class MsixInventoryScanner
             var packageManager = new PackageManager();
             foreach (var package in packageManager.FindPackagesForUser(string.Empty))
             {
+                cancellationToken.ThrowIfCancellationRequested();
                 try
                 {
+                    if (packageFamily is not null && !package.Id.FamilyName.Equals(packageFamily, StringComparison.OrdinalIgnoreCase))
+                        continue;
                     if (package.IsFramework || package.IsResourcePackage)
                     {
                         continue;
                     }
 
                     var installedPath = ReadInstalledPath(package);
-                    var displayName = ReadDisplayName(package, installedPath);
+                    var displayName = ReadDisplayName(package, installedPath, cancellationToken);
                     var publisher = ReadPublisher(package);
                     var version = FormatVersion(package.Id.Version);
                     var installedOn = ReadInstalledDate(package);
@@ -140,12 +144,14 @@ internal sealed class MsixInventoryScanner
                     }
                     results.Add(candidate);
                 }
+                catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
                 catch (Exception exception)
                 {
                     issues.Add(new InventoryIssue("MSIX packages", exception.Message, exception.GetType().Name));
                 }
             }
         }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
         catch (Exception exception)
         {
             issues.Add(new InventoryIssue("MSIX packages", exception.Message, exception.GetType().Name));
@@ -153,11 +159,11 @@ internal sealed class MsixInventoryScanner
         return results;
     }
 
-    private static string ReadDisplayName(Package package, string? installedPath)
+    private static string ReadDisplayName(Package package, string? installedPath, CancellationToken cancellationToken)
     {
         try
         {
-            foreach (var entry in package.GetAppListEntriesAsync().AsTask().GetAwaiter().GetResult())
+            foreach (var entry in package.GetAppListEntriesAsync().AsTask(cancellationToken).GetAwaiter().GetResult())
             {
                 var displayName = entry.DisplayInfo.DisplayName;
                 if (IsFriendlyDisplayName(displayName))
@@ -166,6 +172,7 @@ internal sealed class MsixInventoryScanner
                 }
             }
         }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
         catch
         {
             // Internal packages can intentionally omit app-list entries.

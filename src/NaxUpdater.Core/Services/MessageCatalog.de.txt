@@ -1177,3 +1177,145 @@ en: Intel's RST installer is protected by Intel's published SHA-256 and Authenti
 de: Intels RST-Installer ist durch Intels veröffentlichten SHA-256 und den Authenticode-Herausgeber geschützt. Windows braucht einen Neustart, um den neuen Speichertreiber zu laden.
 en: Intel RST driver installer
 de: Intels RST-Treiberinstaller
+
+en: The download URL uses an untrusted scheme or host '{0}'.
+de: Die Download-URL verwendet ein nicht vertrauenswürdiges Protokoll oder den Host '{0}'.
+en: The download has too many redirects or a redirect has no location.
+de: Der Download enthält zu viele Weiterleitungen oder eine Weiterleitung hat kein Ziel.
+
+en: Microsoft Store checked installed apps in one fresh read-only batch and reported no updates.
+de: Microsoft Store hat die installierten Apps gemeinsam neu geprüft und keine Updates gemeldet.
+same: Checking for updates…
+same: Checking for updates...
+same: No updates found.
+en: This is a retained Intel Management Engine package reference, not a fresh check of the latest release. Its package version cannot be compared with individual component INFs. MSI/OEM packages may retain motherboard customizations.
+de: Dies ist eine frühere Intel-Management-Engine-Paketreferenz, keine aktuelle Prüfung der neuesten Version. Die Paketversion ist nicht mit einzelnen Komponenten-INFs vergleichbar. MSI-/OEM-Pakete können Mainboard-Anpassungen enthalten.
+en: Intel's current chipset release could not be verified. This is the last release Nax-Updater verified there; it does not establish that the installed version is current.
+de: Die aktuelle Intel-Chipsatzversion konnte nicht verifiziert werden. Dies ist die zuletzt dort verifizierte Referenzversion; daraus folgt nicht, dass die installierte Version aktuell ist.
+en: The retained Intel RST package {0} contains driver {1}. The installed driver is {2}; the latest manufacturer release was not checked.
+de: Das frühere Intel-RST-Referenzpaket {0} enthält Treiber {1}. Installiert ist Treiber {2}; die neueste Herstellerversion wurde nicht geprüft.
+en: Intel's referenced package {0} contains e1d.inf {1}; installed is {2}. This archived release does not establish the latest available Intel package.
+de: Das Intel-Referenzpaket {0} enthält e1d.inf {1}; installiert ist {2}. Aus dieser archivierten Version folgt nicht, welches Intel-Paket derzeit das neueste ist.
+en: Dell M46J9 is a retained monitor-driver reference. The latest Dell catalog was not checked, so the installed version is not marked current. Monitor firmware is a separate workflow.
+de: Dell M46J9 ist eine frühere Monitortreiber-Referenz. Der aktuelle Dell-Katalog wurde nicht geprüft; deshalb wird die installierte Version nicht als aktuell eingestuft. Monitor-Firmware wird getrennt behandelt.
+en: Intel's Chipset INF Utility {0} is newer than the installed {1}.
+de: Intels Chipset INF Utility {0} ist neuer als die installierte Version {1}.
+en: Intel's Chipset INF Utility {0} is installed ({1}).
+de: Intels Chipset INF Utility {0} ist installiert ({1}).
+en: No verified firmware reference is mapped to these devices; the latest firmware status is unknown.
+de: Diesen Geräten ist keine verifizierte Firmware-Referenz zugeordnet; der aktuelle Firmwarestand ist unbekannt.
+
+en: Driver check results include live manufacturer checks, retained release references and support guidance. Package and INF versions are not interchangeable.
+de: Treiberprüfergebnisse umfassen aktuelle Herstellerprüfungen, gespeicherte Versionsreferenzen und Supporthinweise. Paket- und INF-Versionen sind nicht austauschbar.
+
+same: MAG Z490 TOMAHAWK
+same: MAG Z490 TOMAHAWK (MS-7C80)
+same: Microsoft Gaming Services
+same: NVIDIA HD Audio
+same: Realtek HD Universal Driver
+same: SES driver will auto install
+same: Windows 10 and higher
+en: Dell's live AW3423DW catalog lists the verified M46J9 monitor INF release 1.1.0.0. Firmware and monitor-management utilities are separate packages.
+de: Dells aktueller AW3423DW-Katalog führt die verifizierte Monitor-INF-Version M46J9 mit Version 1.1.0.0 auf. Firmware und Monitorverwaltungsprogramme sind getrennte Pakete.
+en: Dell's live model-specific catalog was checked. Monitor firmware and HID interface driver versions are different; no false comparison or automatic firmware installation is made.
+de: Dells aktueller Katalog für dieses Modell wurde geprüft. Monitor-Firmware und HID-Schnittstellentreiber haben unterschiedliche Versionsschemata; sie werden nicht falsch verglichen und Firmware wird nicht automatisch installiert.
+en: Intel package {0} was verified against Intel's published archive hash; the exact I219 INF and Microsoft WHCP catalog are revalidated before pnputil installation.
+de: Intel-Paket {0} wurde anhand von Intels veröffentlichtem Archiv-Hash geprüft; die genaue I219-INF und der Microsoft-WHCP-Katalog werden vor der pnputil-Installation erneut geprüft.
+en: Intel's Ethernet archive did not match its published hash.
+de: Intels Ethernet-Archiv stimmt nicht mit dem veröffentlichten Hash überein.
+en: Intel's Windows 11 INF did not confirm the exact installed Ethernet hardware.
+de: Intels Windows-11-INF bestätigt die genaue installierte Ethernet-Hardware nicht.
+en: Intel's current Ethernet archive or published SHA-256/SHA-512 was not verified.
+de: Intels aktuelles Ethernet-Archiv oder dessen veröffentlichter SHA-256-/SHA-512-Wert konnte nicht verifiziert werden.
+en: Intel's current RST package hash did not match the verified installer.
+de: Der Hash von Intels aktuellem RST-Paket stimmt nicht mit dem verifizierten Installationsprogramm überein.
+en: Intel's current release could not be verified from its official download pages.
+de: Intels aktuelle Version konnte über die offiziellen Downloadseiten nicht verifiziert werden.
+en: Intel's driver metadata archive exceeded its size limit.
+de: Intels Archiv mit Treibermetadaten überschreitet die Größenbegrenzung.
+en: Intel's exact Windows 11 I219 INF was absent or ambiguous.
+de: Intels genaue I219-INF für Windows 11 fehlt oder ist nicht eindeutig.
+en: Intel's live Ethernet catalog lists package {0} containing e1d.inf {1}; installed is {2}.
+de: Intels aktueller Ethernet-Katalog führt Paket {0} mit e1d.inf {1} auf; installiert ist {2}.
+en: Intel's live Management Engine catalog lists package {0}. Individual component INF versions cannot be compared with this package version; motherboard-specific applicability remains with the OEM.
+de: Intels aktueller Management-Engine-Katalog führt Paket {0} auf. Einzelne Komponenten-INF-Versionen sind damit nicht vergleichbar; die Eignung für das Mainboard bestimmt weiterhin der Gerätehersteller.
+en: Intel's live RST catalog lists package {0} with driver 18.7.6.1010 for this controller; installed is {1}.
+de: Intels aktueller RST-Katalog führt Paket {0} mit Treiber 18.7.6.1010 für diesen Controller auf; installiert ist {1}.
+en: Intel's live RST catalog lists package {0}. Its exact storage-controller INF applicability has not been verified, so no installation or current-version claim is made.
+de: Intels aktueller RST-Katalog führt Paket {0} auf. Die Eignung der genauen Speichercontroller-INF wurde nicht verifiziert; deshalb wird keine Installation angeboten und die installierte Version nicht als aktuell eingestuft.
+en: Intel's response did not identify the requested download and its release version.
+de: Intels Antwort enthält weder den eindeutig angeforderten Download noch dessen Versionsangabe.
+en: MSI motherboard support
+de: MSI-Mainboard-Support
+en: MSI's catalog contained no verified Windows 11 driver records.
+de: MSIs Katalog enthält keine verifizierten Windows-11-Treibereinträge.
+en: MSI's catalog did not identify the exact motherboard.
+de: MSIs Katalog identifiziert das genaue Mainboard nicht.
+en: MSI's driver catalog did not succeed.
+de: MSIs Treiberkatalog meldet keinen erfolgreichen Abruf.
+en: MSI's exact audio package was missing from the motherboard catalog.
+de: MSIs genaues Audiopaket fehlt im Mainboard-Katalog.
+en: MSI's live catalog lists Realtek audio driver {0}; installed is {1}.
+de: MSIs aktueller Katalog führt Realtek-Audiotreiber {0} auf; installiert ist {1}.
+en: MSI's live catalog offers Realtek audio package {0} for this exact motherboard. The Microsoft inbox audio driver is installed; its version scheme is different. The OEM package is available from MSI, with no automatic driver replacement.
+de: MSIs aktueller Katalog bietet Realtek-Audiopaket {0} für dieses genaue Mainboard an. Installiert ist der mit Windows gelieferte Microsoft-Audiotreiber mit anderem Versionsschema. Das Herstellerpaket ist bei MSI verfügbar; der Treiber wird nicht automatisch ersetzt.
+en: Microsoft's catalog did not identify the Gaming Services package family and architecture.
+de: Microsofts Katalog identifiziert die Gaming-Services-Paketfamilie und Architektur nicht.
+en: Microsoft's live catalog lists Gaming Services package {0}. The installed owner package contains Xvdd INF {1}; the loaded driver is {2}. Store eligibility and servicing are controlled by Microsoft; the package version is not a driver version.
+de: Microsofts aktueller Katalog führt Gaming-Services-Paket {0} auf. Das installierte zugehörige Paket enthält Xvdd-INF {1}; geladen ist Treiber {2}. Microsoft steuert Store-Verfügbarkeit und Wartung; die Paketversion ist keine Treiberversion.
+en: NVIDIA's live Game Ready package {0} includes HD Audio driver {1}; installed is {2}. Audio is serviced by NVIDIA's graphics package, not a separate installer.
+de: NVIDIAs aktuelles Game-Ready-Paket {0} enthält HD-Audiotreiber {1}; installiert ist {2}. Die Audiokomponente wird durch NVIDIAs Grafikpaket gewartet und hat kein separates Installationsprogramm.
+en: NVIDIA's release notes did not identify the selected package's HD Audio module.
+de: NVIDIAs Versionshinweise identifizieren das HD-Audio-Modul des gewählten Pakets nicht.
+en: NVIDIA's release notes exceeded the page limit.
+de: NVIDIAs Versionshinweise überschreiten die Seitenbegrenzung.
+en: NVIDIA's selected driver did not identify its official release notes.
+de: NVIDIAs gewählter Treiber nennt keine verifizierbaren offiziellen Versionshinweise.
+en: No applicable live NVIDIA display package was available for its bundled audio check.
+de: Für die Prüfung der gebündelten Audiokomponente war kein geeignetes aktuelles NVIDIA-Grafikpaket verfügbar.
+en: The Gaming Services INF did not identify the exact Xvdd hardware.
+de: Die Gaming-Services-INF identifiziert die genaue Xvdd-Hardware nicht.
+en: The Xbox Service synthetic-controller owner payload was not found.
+de: Das zugehörige Paket für den synthetischen Controller von Xbox Service wurde nicht gefunden.
+en: The driver metadata response exceeded its size limit.
+de: Die Antwort mit Treibermetadaten überschreitet die Größenbegrenzung.
+en: The exact motherboard identity was not confirmed. No model-specific driver comparison is made.
+de: Die genaue Mainboard-Identität wurde nicht bestätigt. Es wird kein modellspezifischer Treibervergleich durchgeführt.
+en: The exact motherboard's live Windows 11 driver catalog was checked. It does not list a separate MSI Software Component Interface package; no current-version claim is made.
+de: Der aktuelle Windows-11-Treiberkatalog des genauen Mainboards wurde geprüft. Er führt kein separates MSI-Software-Component-Interface-Paket auf; die installierte Version wird nicht als aktuell eingestuft.
+en: The installed Xbox Service {0} owns the bundled synthetic-controller INF {1}; the loaded driver is {2}. No public independent driver catalog is available, so no latest-version claim is made.
+de: Der installierte Xbox Service {0} enthält die gebündelte INF {1} für den synthetischen Controller; geladen ist Treiber {2}. Es ist kein öffentlicher unabhängiger Treiberkatalog verfügbar; deshalb wird keine Aussage zur neuesten Version getroffen.
+en: The manufacturer browser did not return a verified catalog response.
+de: Der Hersteller-Browser lieferte keine verifizierte Katalogantwort.
+en: The manufacturer browser query did not complete successfully.
+de: Die Herstellerabfrage über den Browser wurde nicht erfolgreich abgeschlossen.
+en: The manufacturer browser query is unavailable.
+de: Die Herstellerabfrage über den Browser ist nicht verfügbar.
+en: The manufacturer response did not contain the requested catalog.
+de: Die Herstellerantwort enthält den angeforderten Katalog nicht.
+en: The owner package's exact Xvdd INF was not found.
+de: Die genaue Xvdd-INF des zugehörigen Pakets wurde nicht gefunden.
+en: The registered Microsoft Gaming Services owner package was not found.
+de: Das registrierte zugehörige Microsoft-Gaming-Services-Paket wurde nicht gefunden.
+en: VMware's catalog did not identify an x64 Windows Workstation release.
+de: VMwares Katalog nennt keine x64-Windows-Version von Workstation.
+en: VMware's catalog exceeded its size limit.
+de: VMwares Katalog überschreitet die Größenbegrenzung.
+en: VMware's feed did not identify its Windows Workstation catalog.
+de: VMwares Feed identifiziert den Windows-Workstation-Katalog nicht.
+en: VMware's live Workstation catalog lists {0}; installed Workstation is {1}. These virtual drivers are serviced with Workstation; their INF versions are not compared with the application version.
+de: VMwares aktueller Workstation-Katalog führt {0} auf; installiert ist Workstation {1}. Diese virtuellen Treiber werden mit Workstation gewartet; ihre INF-Versionen werden nicht mit der Anwendungsversion verglichen.
+en: WD's current support page did not confirm inbox servicing and the legacy SES restriction.
+de: WDs aktuelle Supportseite bestätigt die Wartung durch Windows und die Einschränkung für ältere SES-Treiber nicht.
+en: Xbox Service's bundled INF did not identify the synthetic controller.
+de: Die gebündelte INF von Xbox Service identifiziert den synthetischen Controller nicht.
+same: =Realtek Semiconductor Corp.
+same: Realtek Semiconductor Corp.
+en: Installer companion files require a ZIP EXE protected by a published release hash.
+de: Installationsbegleitdateien erfordern eine ZIP-EXE mit veröffentlichtem Release-Hash.
+en: MSI Realtek multi-language audio installer
+de: Mehrsprachiges MSI-Realtek-Audioinstallationsprogramm
+en: MSI's live catalog offers Realtek audio package {0} for this exact motherboard. The Microsoft inbox audio driver is installed; its version scheme is different.
+de: MSIs aktueller Katalog bietet das Realtek-Audiopaket {0} für genau dieses Mainboard an. Der Windows-Audiotreiber von Microsoft ist installiert; sein Versionsschema ist anders.
+en: The complete MSI audio package is protected by MSI's published SHA-256 and Realtek's exact Authenticode publisher. Its supplied silent response file disables automatic restart. Windows must report the Realtek driver on the same audio device before installation is confirmed.
+de: Das vollständige MSI-Audiopaket wird durch MSIs veröffentlichten SHA-256 und Realteks genauen Authenticode-Herausgeber geprüft. Die mitgelieferte Antwortdatei für die unbeaufsichtigte Installation deaktiviert den automatischen Neustart. Windows muss den Realtek-Treiber auf demselben Audiogerät melden, bevor die Installation bestätigt wird.

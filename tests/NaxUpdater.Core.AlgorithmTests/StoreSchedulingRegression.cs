@@ -20,6 +20,9 @@ internal static class StoreSchedulingRegression
         assert(reads==1 && entries.All(e=>e?.State==AppInstallState.ReadyToDownload),"Concurrent Store checks did not share one queue snapshot.");
         await client.GetQueueItemAsync("Fixture_family",CancellationToken.None);
         assert(reads==2,"Execution preparation reused a cached queue membership snapshot.");
+        var freshService = new NativeStoreUpdateService(client, (_, _) => throw new InvalidOperationException());
+        assert((await freshService.ReadFreshQueueAsync("Fixture_family", CancellationToken.None))?.State == AppInstallState.ReadyToDownload && reads == 3,
+            "The post-batch queue check reused the pre-batch membership snapshot.");
         using var gate=new ManualResetEventSlim();
         var blockedReads=0;
         var blocked=new NativeStoreUpdateClient(()=>{Interlocked.Increment(ref blockedReads);gate.Wait();return [];},TimeSpan.FromMilliseconds(40));
@@ -42,7 +45,7 @@ internal static class StoreSchedulingRegression
         catch(TimeoutException){assert(true,"Native search still fails fast during its cooldown.");}
         using var canceled=new CancellationTokenSource(); canceled.Cancel();
         try{await client.ReadQueueAsync("Fixture_family",canceled.Token);assert(false,"Canceled queue read continued.");}
-        catch(OperationCanceledException){assert(reads==2,"Cancellation started another queue request.");}
+        catch(OperationCanceledException){assert(reads==3,"Cancellation started another queue request.");}
         var architectureApp=apps[0] with {DisplayName="Microsoft Windows Desktop Runtime - 9.0.19 (x64)",PrimaryInstallPath=Environment.ProcessPath};
         assert(InstalledApplicationMetadata.Architecture(architectureApp)=="x64","Runtime architecture ignored the installed product's explicit architecture.");
     }

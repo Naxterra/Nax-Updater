@@ -32,6 +32,7 @@ public interface INativeStoreUpdateService
 {
     Task<PreparedStoreQueueUpdate> PrepareQueueAsync(StoreQueueTarget target, CancellationToken token) => throw new NotSupportedException();
     Task<NativeStoreQueueEntry?> ReadQueueAsync(string family, CancellationToken token) => Task.FromResult<NativeStoreQueueEntry?>(null);
+    Task<NativeStoreQueueEntry?> ReadFreshQueueAsync(string family, CancellationToken token) => ReadQueueAsync(family, token);
     Task<NativeStoreOffer> CheckIdentityAsync(StoreProductIdentity identity, CancellationToken token);
     Task<NativeStoreOffer> CheckAsync(PublishedStorePackage package, CancellationToken token);
     Task<PreparedNativeStoreUpdate> PrepareAsync(PublishedStorePackage package, CancellationToken token);
@@ -175,6 +176,18 @@ public sealed class NativeStoreUpdateService : INativeStoreUpdateService
         if (entry is not null && !entry.PackageFamilyName.Equals(family, StringComparison.OrdinalIgnoreCase))
             throw new InvalidOperationException("The Store queue returned a different package family.");
         return entry is { State: AppInstallState.Completed or AppInstallState.Canceled } ? null : entry;
+    }
+
+    public async Task<NativeStoreQueueEntry?> ReadFreshQueueAsync(string family, CancellationToken token)
+    {
+        token.ThrowIfCancellationRequested();
+        var item = await _client.GetQueueItemAsync(family, token);
+        if (item is null) return null;
+        if (!item.PackageFamilyName.Equals(family, StringComparison.OrdinalIgnoreCase))
+            throw new InvalidOperationException("The Store queue returned a different package family.");
+        var state = item.Status();
+        return state.State is AppInstallState.Completed or AppInstallState.Canceled ? null
+            : new(item.ProductId, item.PackageFamilyName, state.State, state.ErrorCode, item.MayAffectOtherItems);
     }
 
     public async Task<NativeStoreOffer> CheckIdentityAsync(StoreProductIdentity package, CancellationToken token)

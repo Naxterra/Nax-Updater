@@ -5,9 +5,15 @@ namespace NaxUpdater.Core.Services;
 public static class UpdateRecoveryVerifier
 {
     public static bool HasReachedTarget(UpdateOperationRecord operation, string? observedVersion, UpdateCheckResult? assessment = null,
-        Func<IReadOnlyDictionary<string, ChocolateyPackageDetails>>? chocolateyRecords = null)
+        Func<IReadOnlyDictionary<string, ChocolateyPackageDetails>>? chocolateyRecords = null,
+        InstalledHardwareDriver? observedDriver = null)
     {
         if (string.IsNullOrWhiteSpace(observedVersion)) return false;
+        if (operation.ProviderId == DriverUpdateIdentity.MsiAudioProviderId)
+            return observedDriver is not null && observedDriver.InstalledVersion == observedVersion &&
+                DriverUpdateIdentity.Find([observedDriver], operation.ApplicationIdentity, operation.CorrelationKey,
+                    operation.DisplayName, operation.ProviderId) is not null &&
+                DriverUpdateIdentity.HasReachedTarget(observedDriver, operation.TargetVersion, operation.ProviderId);
         if (!string.IsNullOrWhiteSpace(operation.TargetVersion))
         {
             if (VersionOrder.Compare(observedVersion, operation.TargetVersion) < 0) return false;

@@ -11,6 +11,8 @@ public enum ManufacturerDriverStatus
     Error
 }
 
+public enum ManufacturerCheckEvidence { None, LiveCatalog, ReferenceRelease, SupportGuidance }
+
 public sealed record InstalledHardwareDriver(
     string Identity,
     string DeviceName,
@@ -32,12 +34,22 @@ public sealed record ManufacturerDriverResult(
     string SourceName,
     Uri? SourceUri,
     string Message,
-    UpdateCheckResult? ExecutableUpdate);
+    UpdateCheckResult? ExecutableUpdate,
+    ManufacturerCheckEvidence CheckEvidence = ManufacturerCheckEvidence.None,
+    bool LiveCheckFailed = false)
+{
+    public bool IsLiveChecked => CheckEvidence == ManufacturerCheckEvidence.LiveCatalog && !HasCheckIssue;
+    public bool HasCheckIssue => LiveCheckFailed || Status == ManufacturerDriverStatus.Error;
+}
 
 public sealed record ManufacturerDriverSnapshot(
     DateTimeOffset CheckedAt,
     IReadOnlyList<ManufacturerDriverResult> Results,
-    IReadOnlyList<string> Issues);
+    IReadOnlyList<string> Issues)
+{
+    public int CheckedSourceCount => Results.Count(r => r.IsLiveChecked);
+    public int CheckIssueCount => Issues.Count + Results.Count(r => r.HasCheckIssue);
+}
 
 public sealed record InstalledDriverSnapshot(
     IReadOnlyList<InstalledHardwareDriver> Drivers,

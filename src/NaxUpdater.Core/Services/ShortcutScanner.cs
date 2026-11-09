@@ -6,7 +6,7 @@ namespace NaxUpdater.Core.Services;
 
 internal sealed class ShortcutScanner
 {
-    public IReadOnlyList<ShortcutInfo> Scan(ICollection<InventoryIssue> issues)
+    public IReadOnlyList<ShortcutInfo> Scan(ICollection<InventoryIssue> issues, CancellationToken cancellationToken = default)
     {
         var shellType = Type.GetTypeFromProgID("WScript.Shell");
         if (shellType is null)
@@ -27,6 +27,7 @@ internal sealed class ShortcutScanner
 
             foreach (var root in ShortcutRoots())
             {
+                cancellationToken.ThrowIfCancellationRequested();
                 IEnumerable<string> files;
                 try
                 {
@@ -45,6 +46,7 @@ internal sealed class ShortcutScanner
 
                 foreach (var file in files)
                 {
+                    cancellationToken.ThrowIfCancellationRequested();
                     object? shortcut = null;
                     try
                     {

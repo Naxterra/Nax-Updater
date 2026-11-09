@@ -12,12 +12,15 @@ public sealed class MsixStoreUpdateProvider : IUpdateProvider
     private readonly HttpClient _httpClient;
     private readonly INativeStoreUpdateService? _nativeStore;
     private readonly StoreSearchCache? _searchCache;
+    private readonly StoreUpdateBatchQuery? _batchQuery;
 
     public MsixStoreUpdateProvider(
         HttpClient? httpClient = null,
         IStorePackageDeploymentService? store = null,
-        INativeStoreUpdateService? nativeStore = null)
-        : this(httpClient, store, nativeStore, store is null && nativeStore is null ? StoreSearchCache.Default : null)
+        INativeStoreUpdateService? nativeStore = null,
+        bool useBatchCheck = false)
+        : this(httpClient, store, nativeStore, store is null && nativeStore is null ? StoreSearchCache.Default : null,
+            useBatchCheck && store is null && nativeStore is null ? new StoreUpdateBatchQuery() : null)
     {
     }
 
@@ -25,12 +28,14 @@ public sealed class MsixStoreUpdateProvider : IUpdateProvider
         HttpClient? httpClient,
         IStorePackageDeploymentService? store,
         INativeStoreUpdateService? nativeStore,
-        StoreSearchCache? searchCache)
+        StoreSearchCache? searchCache,
+        StoreUpdateBatchQuery? batchQuery = null)
     {
         _httpClient = httpClient ?? SharedHttpClient;
         _store = store ?? new StorePackageDeploymentService(_httpClient);
         _nativeStore = nativeStore ?? (store is null ? new NativeStoreUpdateService(_httpClient) : null);
         _searchCache = searchCache;
+        _batchQuery = batchQuery;
     }
 
     public string Id => "msix-store";
@@ -42,6 +47,8 @@ public sealed class MsixStoreUpdateProvider : IUpdateProvider
 
     public bool CanHandle(InstalledApplication application) => application.ManagementMode == ManagementMode.Msix;
     public bool OwnsResultProviderId(string resultProviderId) => resultProviderId.Equals(Id, StringComparison.Ordinal);
+
+    internal MsixStoreUpdateProvider ForNewScan() => new(_httpClient, _store, _nativeStore, _searchCache, _batchQuery?.ForNewScan());
 
     public async Task<UpdateCheckResult> CheckAsync(InstalledApplication application, CancellationToken cancellationToken)
     {
@@ -118,7 +125,21 @@ public sealed class MsixStoreUpdateProvider : IUpdateProvider
                 var catalogVersion = product.LatestPublishedPackage?.Version;
                 var cacheKey = string.IsNullOrWhiteSpace(application.NormalizedVersion) ? null
                     : StoreSearchCache.Key(packageFamily, application.NormalizedVersion, catalogVersion);
-                if (cacheKey is not null && _searchCache?.FindNoUpdate(cacheKey) is { } searchedAt)
+                var batch = _batchQuery is null ? StoreBatchCheck.Unavailable : await _batchQuery.CheckAsync(cancellationToken);
+                if (batch == StoreBatchCheck.NoUpdates)
+                {
+                    // The queue was checked before this query. Refresh it again in
+                    // case Windows queued this app while the shared query ran.
+                    if (await _nativeStore.ReadFreshQueueAsync(packageFamily, cancellationToken) is { } queuedAfterBatch)
+                        return QueueResult(application, queuedAfterBatch);
+                    if (cacheKey is not null) _searchCache?.RecordNoUpdate(cacheKey);
+                    return Result(application, null, UpdateStatus.Current, null, product.Identity.ProductId,
+                        "Microsoft Store checked installed apps in one fresh read-only batch and reported no updates.")
+                        with { AvailabilityReason = UpdateAvailabilityReason.NoApplicableStoreUpdate };
+                }
+                // A fresh batch that reports offers or cannot be understood must
+                // not be hidden by an earlier cached negative for this family.
+                if (batch == StoreBatchCheck.Unavailable && cacheKey is not null && _searchCache?.FindNoUpdate(cacheKey) is { } searchedAt)
                     return Result(application, null, UpdateStatus.Current, null, product.Identity.ProductId,
                         $"The native Microsoft Store check at {searchedAt.ToLocalTime():g} found no applicable update; the installed version and the Store catalog are unchanged since.");
                 var offers = new List<(StoreProductIdentity Identity, NativeStoreOffer Offer)>();

@@ -57,7 +57,7 @@
   <data name="CheckDriversTop"><value>Check manufacturer drivers</value></data>
   <data name="DriverFilterPlaceholder"><value>Filter device, vendor, installed or available version, source, or status</value></data>
   <data name="DriverGroupsSummary"><value>Device groups</value></data>
-  <data name="OfficialPackagesSummary"><value>Official packages checked</value></data>
+  <data name="OfficialPackagesSummary"><value>Live manufacturer checks</value></data>
   <data name="InstallableDriverUpdatesSummary"><value>Installable updates</value></data>
   <data name="DriverIssuesSummary"><value>Check issues</value></data>
   <data name="ManufacturerDriversHeader.Text"><value>Manufacturer drivers</value></data>
@@ -72,7 +72,7 @@
   <data name="DriverStatusSynapseChecked"><value>Synapse handles drivers · firmware catalog checked</value></data>
   <data name="DriverStatusOfficialPackageChecked"><value>Official package checked · no false version comparison</value></data>
   <data name="DriverStatusSupportPageOnly"><value>Official support page · no comparable package</value></data>
-  <data name="DriverStatusWdCurrent"><value>Windows storage driver current · optional WD tools</value></data>
+  <data name="DriverStatusWdCurrent"><value>Windows storage driver · optional WD tools</value></data>
   <data name="DriverStatusNoUpdateRequired"><value>No vendor update required</value></data>
   <data name="DriverStatusNoCatalog"><value>No verified catalog</value></data>
   <data name="DriverStatusError"><value>Check failed</value></data>
@@ -91,14 +91,14 @@
   <data name="DriverFirmwareChecksAvailable"><value>{0} firmware checks</value></data>
   <data name="DriverWdOptionsAvailable"><value>SES auto-install + optional tools</value></data>
   <data name="DriverNotConnected"><value>Not currently connected</value></data>
-  <data name="DriverCountFormat"><value>{0} installable updates · {1} official packages checked · {2} device groups</value></data>
-  <data name="FilteredDriverCountFormat"><value>{0} installable updates · {1} official packages checked · {2} shown / {3} groups</value></data>
+  <data name="DriverCountFormat"><value>{0} installable updates · {1} live manufacturer checks · {2} device groups</value></data>
+  <data name="FilteredDriverCountFormat"><value>{0} installable updates · {1} live manufacturer checks · {2} shown / {3} groups</value></data>
   <data name="CheckingManufacturerDrivers"><value>Checking official manufacturer driver sources…</value></data>
   <data name="DriversCurrent"><value>Manufacturer drivers are current</value></data>
-  <data name="DriversCheckedNoUpdates"><value>No confirmed driver updates · {0} official package(s) checked</value></data>
+  <data name="DriversCheckedNoUpdates"><value>No confirmed driver updates · {0} manufacturer source(s) checked live</value></data>
   <data name="DriverUpdatesAvailable"><value>{0} direct driver update(s) · {1} newer manufacturer package(s)</value></data>
   <data name="ManufacturerDriverSafety"><value>Windows Update is not used. Direct updates require the manufacturer's HTTPS source, published release hash, and trusted Authenticode publisher.</value></data>
-  <data name="DriverScanIssues"><value>{0} driver inventory source(s) reported a problem.</value></data>
+  <data name="DriverScanIssues"><value>{0} driver source or inventory check(s) could not be verified.</value></data>
   <data name="DriverCheckFailed"><value>Manufacturer driver check failed</value></data>
   <data name="PreparingDriverUpdate"><value>Preparing manufacturer driver update for {0}…</value></data>
   <data name="DriverUpdatedTitle"><value>{0} driver update completed</value></data>
@@ -200,4 +200,19 @@
   <data name="UpdateCompletedRestartRecommended" xml:space="preserve"><value>The update is installed and verified. The installer asked for a Windows restart so that files in use are replaced.</value></data>
   <data name="MassUpdateRestartRecommended" xml:space="preserve"><value>At least one installer asked for a Windows restart. Restart Windows when convenient.</value></data>
   <data name="OpenPageFailedTitle" xml:space="preserve"><value>The page could not be opened</value></data>
+  <data name="CancelScan" xml:space="preserve"><value>Cancel scan</value></data>
+  <data name="ScanCanceled" xml:space="preserve"><value>Scan canceled. Completed checks remain available.</value></data>
+  <data name="InventoryIssuesTitle" xml:space="preserve"><value>Some inventory evidence could not be read</value></data>
+  <data name="UninstallUnverifiedTitle" xml:space="preserve"><value>Removal could not be verified: {0}</value></data>
+  <data name="UninstallUnverified" xml:space="preserve"><value>The uninstaller finished, but the inventory could not confirm removal. Run another scan before assuming the application was removed.</value></data>
+  <data name="RetryFailedChecksButton.Content" xml:space="preserve"><value>Retry failed / unfinished checks</value></data>
+  <data name="FinishChecksBeforeUpdating"><value>Finish the remaining checks before updating.</value></data>
+  <data name="DriverReferenceVersion"><value>Reference: {0}</value></data>
+  <data name="DriverFirmwareReferences"><value>{0} firmware references</value></data>
+  <data name="DriverStatusLiveCheckFailed"><value>Live check failed · reference only</value></data>
+  <data name="DriverStatusReferenceRelease"><value>Reference release · latest not checked</value></data>
+  <data name="DriverStatusReferenceUpdate"><value>Newer reference package · latest not checked</value></data>
+  <data name="DriverStatusSynapseUnverified"><value>Synapse handles drivers · firmware not verified live</value></data>
+  <data name="DriverOwnerPackageVersion"><value>Package: {0}</value></data>
+  <data name="DriverStatusManagedByPackage"><value>Serviced with {0}</value></data>
 </root>

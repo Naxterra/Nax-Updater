@@ -17,7 +17,7 @@ public sealed partial class MainPage : Page
     private readonly ApplicationInventoryService _inventoryService;
     // Some publisher servers refuse requests without a User-Agent (403), so the shared
     // client always sends one; requests that set their own keep it.
-    private readonly HttpClient _httpClient = new() { Timeout = TimeSpan.FromSeconds(30), DefaultRequestHeaders = { { "User-Agent", "NaxUpdater/0.17.64" } } };
+    private readonly HttpClient _httpClient = new() { Timeout = TimeSpan.FromSeconds(30), DefaultRequestHeaders = { { "User-Agent", "NaxUpdater/0.17.71" } } };
     private readonly UpdateExecutionService _updateExecutionService = new();
     private readonly ApplicationRemovalService _applicationRemovalService = new();
     private readonly ApplicationIconService _applicationIconService = new();
@@ -29,6 +29,8 @@ public sealed partial class MainPage : Page
     private static readonly TimeSpan ScanDriverReuse = TimeSpan.FromMinutes(5);
     private readonly FileUpdateTransactionLeaseProvider _updateTransactionLease;
     public DriverColumnLayout DriverLayout { get; } = new();
+    public TableColumnLayout ApplicationLayout { get; } = new("applications", [280, 130, 130, 150]);
+    public TableColumnLayout UpdateColumns { get; } = new("updates", [280, 105, 105, 115, 130]);
     private IReadOnlyList<ApplicationRow> _allApplications = [];
     private IReadOnlyList<UpdateRow> _allUpdates = [];
     private IReadOnlyList<ManufacturerDriverRow> _allDrivers = [];
@@ -51,7 +53,9 @@ public sealed partial class MainPage : Page
     public bool IsChangingSystem => _mutationActive || _massUpdateBusy;
     // Outcomes of updates started since the last manual scan, by application identity.
     private readonly Dictionary<string, (UpdateRunState State, string? Message)> _runOutcomes = new(StringComparer.Ordinal);
-    private CancellationTokenSource? _providerCheckCancellation;
+    private readonly ScanController _scans = new();
+    private UpdateCheckSnapshot? _lastCheckSnapshot;
+    private bool _checksComplete;
     private ApplicationSortColumn _sortColumn = ApplicationSortColumn.Name;
     private bool _sortDescending;
     private ResultSortColumn _updateSortColumn = ResultSortColumn.Status;
@@ -132,12 +136,14 @@ public sealed partial class MainPage : Page
             var waitingForRestart = interruptedOperation.Stage == UpdateTransactionStage.PendingReboot &&
                                     bootedAt <= interruptedOperation.UpdatedAt;
             string? observedVersion;
+            InstalledHardwareDriver? observedHardwareDriver = null;
             if (interruptedOperation.ProviderId.StartsWith("manufacturer-driver:", StringComparison.Ordinal))
             {
                 var driverSnapshot = await _manufacturerDriverService.ReadInstalledAsync();
                 var installedDriver = DriverUpdateIdentity.Find(driverSnapshot.Drivers,
                     interruptedOperation.ApplicationIdentity, interruptedOperation.CorrelationKey,
                     interruptedOperation.DisplayName, interruptedOperation.ProviderId);
+                observedHardwareDriver = installedDriver;
                 observedVersion = installedDriver is null ? null : DriverUpdateIdentity.InstalledReleaseVersion(installedDriver);
             }
             else
@@ -159,7 +165,7 @@ public sealed partial class MainPage : Page
             }
             var recoveredAssessment = _allUpdates.Select(row => row.Source).FirstOrDefault(update =>
                 update.ApplicationIdentity.Equals(interruptedOperation.ApplicationIdentity, StringComparison.OrdinalIgnoreCase));
-            var reachedTarget = UpdateRecoveryVerifier.HasReachedTarget(interruptedOperation, observedVersion, recoveredAssessment);
+            var reachedTarget = UpdateRecoveryVerifier.HasReachedTarget(interruptedOperation, observedVersion, recoveredAssessment, observedDriver: observedHardwareDriver);
             // A restart request only blocks further changes while the target is not yet
             // installed; an update that already reached it is recorded as completed below.
             // A driver stays blocking until Windows restarts, because its new version is
@@ -207,9 +213,9 @@ public sealed partial class MainPage : Page
 
     private async void ScanButton_Click(object sender, RoutedEventArgs e)
     {
-        if (_providerCheckCancellation is not null)
+        if (_scans.IsActive)
         {
-            await _providerCheckCancellation.CancelAsync();
+            await _scans.CancelAsync();
             return;
         }
         if (_updateBusy || _massUpdateBusy) return;
@@ -222,7 +228,36 @@ public sealed partial class MainPage : Page
         await ScanAndCheckAsync();
     }
 
-    private async Task ScanAndCheckAsync()
+    private Task ScanAndCheckAsync() => RunScanAsync(ScanAndCheckCoreAsync);
+
+    // One owner covers the whole read, including inventory and background drivers.
+    // Nested stages use the same token and cannot independently unlock the UI.
+    private async Task RunScanAsync(Func<CancellationToken, Task> scan)
+    {
+        using var run = _scans.TryBegin();
+        if (run is null) return;
+        var wasBusy = _updateBusy;
+        SetUpdateBusy(true, null);
+        ScanButton.IsEnabled = true;
+        ScanButtonLabel.Text = LocalizationService.Get("CancelScan");
+        try { await scan(run.Token); }
+        catch (OperationCanceledException) when (run.Token.IsCancellationRequested)
+        {
+            _scanSources = null;
+            StatusText.Text = LocalizationService.Get("ScanCanceled") +
+                (_lastCheckSnapshot is not null && !_checksComplete ? " " + LocalizationService.Get("FinishChecksBeforeUpdating") : "");
+        }
+        finally
+        {
+            run.Dispose();
+            ScanButtonLabel.Text = LocalizationService.Get(DriversWorkspace.Visibility == Visibility.Visible
+                ? "CheckDriversTop" : "ApplicationScanText");
+            SetUpdateBusy(wasBusy, null);
+            RefreshRetryButton();
+        }
+    }
+
+    private async Task ScanAndCheckCoreAsync(CancellationToken token)
     {
         ConfigureApplicationHeader();
         InventoryWorkspace.Visibility = Visibility.Visible;
@@ -232,45 +267,48 @@ public sealed partial class MainPage : Page
         ShowSystemComponentsCheckBox.IsEnabled = true;
         _updates.Clear();
         _allUpdates = [];
+        _lastCheckSnapshot = null;
+        _checksComplete = false;
         _availableUpdateCount = 0;
         _snapshot = null;
         UpdateBar.IsOpen = false;
         ShowUpdatesButton.IsEnabled = false;
         ShowUpdatesButton.Content = LocalizationService.Get("UpdatesLabel");
-        // The driver check needs no application inventory, so it runs while the inventory is read.
-        var sources = new SharedScanSources(_httpClient, _sourceCacheRoot);
+        var sources = new SharedScanSources(_httpClient, _sourceCacheRoot, token);
         _ = sources.DriversAsync();
-        await ScanAsync();
+        await ScanInventoryCoreAsync(token);
         if (_snapshot is not null)
-        {
-            await CheckUpdatesAsync(showWorkspace: false, sources);
-        }
+            await CheckUpdatesCoreAsync(false, sources, token);
     }
 
-    private async Task ScanAsync()
+    private Task ScanAsync() => RunScanAsync(ScanInventoryCoreAsync);
+
+    private async Task ScanInventoryCoreAsync(CancellationToken token)
     {
-        ScanButton.IsEnabled = false;
-        ScanProgress.IsActive = true;
-        ScanProgress.Visibility = Visibility.Visible;
         StatusText.Text = LocalizationService.Get("ScanReading");
         IssueBar.IsOpen = false;
+        _snapshot = null;
         var timer = Stopwatch.StartNew();
-
         try
         {
-            _snapshot = await _inventoryService.ScanAsync();
-            _allApplications = _snapshot.Applications.Select(static application => new ApplicationRow(application)).ToArray();
+            var snapshot = await _inventoryService.ScanAsync(token);
+            token.ThrowIfCancellationRequested();
+            _snapshot = snapshot;
+            _allApplications = snapshot.Applications.Select(application => new ApplicationRow(application, ApplicationLayout)).ToArray();
             ApplyFilter();
             _ = LoadApplicationIconsAsync(_allApplications);
-            UpdateSummary(_snapshot);
-            UpdatePolicies(_snapshot);
-            if (_snapshot.Issues.Count > 0)
+            UpdateSummary(snapshot);
+            UpdatePolicies(snapshot);
+            if (snapshot.Issues.Count > 0)
             {
-                IssueBar.Message = LocalizationService.Format("IssueCountMessage", _snapshot.Issues.Count);
+                IssueBar.Title = LocalizationService.Get("InventoryIssuesTitle");
+                IssueBar.Severity = InfoBarSeverity.Warning;
+                IssueBar.Message = LocalizationService.Format("IssueCountMessage", snapshot.Issues.Count);
                 IssueBar.IsOpen = true;
             }
-            StatusText.Text = LocalizationService.Format("ScannedStatus", _snapshot.Applications.Count, timer.Elapsed.TotalSeconds, _snapshot.Issues.Count);
+            StatusText.Text = LocalizationService.Format("ScannedStatus", snapshot.Applications.Count, timer.Elapsed.TotalSeconds, snapshot.Issues.Count);
         }
+        catch (OperationCanceledException) when (token.IsCancellationRequested) { throw; }
         catch (Exception exception)
         {
             IssueBar.Title = LocalizationService.Get("InventoryScanFailed");
@@ -278,12 +316,6 @@ public sealed partial class MainPage : Page
             IssueBar.Severity = InfoBarSeverity.Error;
             IssueBar.IsOpen = true;
             StatusText.Text = LocalizationService.Get("ScanDidNotComplete");
-        }
-        finally
-        {
-            ScanButton.IsEnabled = true;
-            ScanProgress.IsActive = false;
-            ScanProgress.Visibility = Visibility.Collapsed;
         }
     }
 
@@ -505,9 +537,7 @@ public sealed partial class MainPage : Page
             _drivers.Add(row);
         }
         var direct = _allDrivers.Count(static row => row.CanUpdate);
-        var manufacturerPackages = _allDrivers.Count(static row =>
-            (row.Source.Status == ManufacturerDriverStatus.Available && !row.CanUpdate) ||
-            (row.Source.Status == ManufacturerDriverStatus.OfficialSourceOnly && row.Source.AvailableVersion is not null));
+        var manufacturerPackages = _allDrivers.Count(static row => row.Source.IsLiveChecked);
         DriverCountText.Text = string.IsNullOrWhiteSpace(filter) && statusFilter == "all"
             ? LocalizationService.Format("DriverCountFormat", direct, manufacturerPackages, _allDrivers.Count)
             : LocalizationService.Format("FilteredDriverCountFormat", direct, manufacturerPackages, _drivers.Count, _allDrivers.Count);
@@ -533,7 +563,7 @@ public sealed partial class MainPage : Page
         "managed" => row.Source.Status == ManufacturerDriverStatus.VendorSoftwareManaged,
         "source" => row.Source.Status == ManufacturerDriverStatus.OfficialSourceOnly,
         "unverified" => row.Source.Status == ManufacturerDriverStatus.NoVerifiedCatalog,
-        "errors" => row.Source.Status == ManufacturerDriverStatus.Error,
+        "errors" => row.Source.HasCheckIssue,
         _ => true
     };
 
@@ -685,17 +715,16 @@ public sealed partial class MainPage : Page
             }
 
             await ScanAndCheckAsync();
-            var stillPresent = _snapshot?.Applications.Any(application =>
-                application.Identity == row.Source.Identity ||
-                (application.DisplayName.Equals(row.Name, StringComparison.OrdinalIgnoreCase) &&
-                 string.Equals(application.PrimaryInstallPath, row.Source.PrimaryInstallPath, StringComparison.OrdinalIgnoreCase))) == true;
-            UpdateBar.Title = LocalizationService.Format("UninstallCompleteTitle", row.Name);
-            UpdateBar.Message = result.RestartRequired
-                ? LocalizationService.Get("UninstallRestart")
-                : stillPresent
-                    ? LocalizationService.Get("UninstallStillPresent")
-                    : LocalizationService.Get("UninstallComplete");
-            UpdateBar.Severity = stillPresent ? InfoBarSeverity.Warning : InfoBarSeverity.Success;
+            var stillPresent = RemovalVerification.IsStillPresent(row.Source, _snapshot);
+            UpdateBar.Title = LocalizationService.Format(stillPresent is null ? "UninstallUnverifiedTitle" : "UninstallCompleteTitle", row.Name);
+            UpdateBar.Message = stillPresent is null
+                ? LocalizationService.Get("UninstallUnverified")
+                : result.RestartRequired
+                    ? LocalizationService.Get("UninstallRestart")
+                    : stillPresent == true
+                        ? LocalizationService.Get("UninstallStillPresent")
+                        : LocalizationService.Get("UninstallComplete");
+            UpdateBar.Severity = stillPresent != false || result.RestartRequired ? InfoBarSeverity.Warning : InfoBarSeverity.Success;
             UpdateBar.IsOpen = true;
         }
         catch (Exception exception)
@@ -715,7 +744,7 @@ public sealed partial class MainPage : Page
 
     private void RefreshUninstallButton() =>
         UninstallButton.IsEnabled = !_updateBusy && !_massUpdateBusy && !_restartPending &&
-                                    ApplicationsList.SelectedItem is ApplicationRow { Source.RemovalPlan: not null };
+                                    _snapshot is not null && ApplicationsList.SelectedItem is ApplicationRow { Source.RemovalPlan: not null };
 
     private bool OperationBlocked()
     {
@@ -788,115 +817,115 @@ public sealed partial class MainPage : Page
         UnmatchedPolicySection.Visibility = policies.Length == 0 ? Visibility.Collapsed : Visibility.Visible;
     }
 
-    private async Task CheckUpdatesAsync(bool showWorkspace, SharedScanSources? sources = null)
+    private Task CheckUpdatesAsync(bool showWorkspace, SharedScanSources? sources = null) =>
+        RunScanAsync(token => CheckUpdatesCoreAsync(showWorkspace, sources, token));
+
+    private async void RetryFailedChecksButton_Click(object sender, RoutedEventArgs e)
     {
-        // Every check gets sources of its own, so a check after an update never shows the drivers
-        // as they were before it.
-        sources ??= new SharedScanSources(_httpClient, _sourceCacheRoot);
+        if (_updateBusy || _massUpdateBusy || _snapshot is null) return;
+        await RunScanAsync(token => CheckUpdatesCoreAsync(true, null, token, retryFailed: true));
+    }
+
+    private void RefreshRetryButton()
+    {
+        var eligible = _snapshot?.Applications.Count(a => !a.IsSystemComponent) ?? 0;
+        var incomplete = _allUpdates.Any(r => r.Source.Status == UpdateStatus.Error) ||
+                         eligible > 0 && _lastCheckSnapshot is not null && !_checksComplete;
+        RetryFailedChecksButton.Visibility = incomplete ? Visibility.Visible : Visibility.Collapsed;
+        RetryFailedChecksButton.IsEnabled = !_updateBusy && !_massUpdateBusy && _snapshot is not null;
+    }
+
+    private void PublishUpdateResults(UpdateCheckSnapshot snapshot)
+    {
+        _lastCheckSnapshot = snapshot;
+        var applications = _allApplications.ToDictionary(r => r.Source.Identity, StringComparer.Ordinal);
+        _allUpdates = snapshot.Results.Select(update =>
+        {
+            var row = new UpdateRow(update, applications.GetValueOrDefault(update.ApplicationIdentity), UpdateColumns);
+            if (_runOutcomes.TryGetValue(update.ApplicationIdentity, out var outcome) &&
+                !(outcome.State == UpdateRunState.Succeeded && update.IsInstallable))
+            {
+                row.RunState = outcome.State;
+                row.RunMessage = outcome.Message;
+            }
+            return row;
+        }).ToArray();
+        _availableUpdateCount = snapshot.InstallableUpdateCount;
+        ApplyUpdateFilter();
+        RefreshMassUpdateButton();
+        ShowUpdatesButton.Content = LocalizationService.Format("UpdatesNavigationCoverage",
+            snapshot.InstallableUpdateCount + snapshot.KnownReleaseCount,
+            snapshot.CheckedVersionCount, _snapshot?.Applications.Count(a => !a.IsSystemComponent) ?? snapshot.Results.Count);
+        ShowUpdatesButton.IsEnabled = _allUpdates.Count > 0;
+        RefreshRetryButton();
+    }
+
+    private async Task CheckUpdatesCoreAsync(bool showWorkspace, SharedScanSources? sources, CancellationToken token,
+        bool retryFailed = false)
+    {
+        sources ??= new SharedScanSources(_httpClient, _sourceCacheRoot, token);
         _ = sources.DriversAsync();
         _scanSources = sources;
         var checkTimer = Stopwatch.StartNew();
-        if (_snapshot is null)
-        {
-            await ScanAsync();
-        }
-        if (_snapshot is null)
-        {
-            return;
-        }
-
-        using var cancellation = new CancellationTokenSource();
-        _providerCheckCancellation = cancellation;
-        SetUpdateBusy(true, LocalizationService.Get("CheckingProviders"));
-        ScanButton.IsEnabled = true;
-        ScanButtonLabel.Text = LocalizationService.Get("CancelProviderCheck");
+        if (_snapshot is null) await ScanInventoryCoreAsync(token);
+        if (_snapshot is null) return;
+        var inventory = _snapshot;
+        var previous = retryFailed ? _lastCheckSnapshot : null;
+        var partial = (previous?.Results ?? []).ToDictionary(r => r.ApplicationIdentity, StringComparer.Ordinal);
+        _checksComplete = false;
+        PublishUpdateResults(new(DateTimeOffset.UtcNow, partial.Values.ToArray(),
+            partial.Values.Count(r => r.Status == UpdateStatus.Unsupported)));
+        var acceptingProgress = true;
         UpdateBar.IsOpen = false;
         try
         {
             var catalogPath = Path.Combine(AppContext.BaseDirectory, "Configuration", "update-providers.json");
-            var catalog = await UpdateProviderCatalogLoader.LoadAsync(catalogPath);
+            var catalog = await UpdateProviderCatalogLoader.LoadAsync(catalogPath, token);
             var service = new UpdateCheckService(_httpClient, catalog, sharedSources: sources);
             var progress = new Progress<UpdateCheckProgress>(state =>
             {
-                if (!ReferenceEquals(_providerCheckCancellation, cancellation)) return;
+                if (!acceptingProgress || token.IsCancellationRequested) return;
                 StatusText.Text = state.Phase == "sources"
                     ? LocalizationService.Get("RefreshingProviderCatalogs")
                     : LocalizationService.Format("ProviderCheckProgress", state.Completed, state.Total, state.ApplicationName ?? "");
+                if (state.Result is { } result)
+                {
+                    partial[result.ApplicationIdentity] = result;
+                    PublishUpdateResults(new(DateTimeOffset.UtcNow, partial.Values.ToArray(),
+                        partial.Values.Count(r => r.Status == UpdateStatus.Unsupported)));
+                }
             });
-            var result = await service.CheckAsync(_snapshot, cancellation.Token, progress);
+            var result = previous is null
+                ? await service.CheckAsync(inventory, token, progress)
+                : await service.RetryFailedAsync(inventory, previous, token, progress);
+            acceptingProgress = false;
+            token.ThrowIfCancellationRequested();
             ReconcileCompletedOperation(result);
             await SaveScanDiagnosticsAsync(result, checkTimer.Elapsed);
-
-            var applicationsByIdentity = _allApplications.ToDictionary(static row => row.Source.Identity, StringComparer.Ordinal);
-            _allUpdates = result.Results.Select(update =>
-            {
-                var row = new UpdateRow(update, applicationsByIdentity.GetValueOrDefault(update.ApplicationIdentity));
-                // A completed update that still has an offer shows the offer, not "updated".
-                if (_runOutcomes.TryGetValue(update.ApplicationIdentity, out var outcome) &&
-                    !(outcome.State == UpdateRunState.Succeeded && update.IsInstallable))
-                {
-                    row.RunState = outcome.State;
-                    row.RunMessage = outcome.Message;
-                }
-                return row;
-            }).ToArray();
-            var available = result.InstallableUpdateCount;
-            var knownReleases = result.KnownReleaseCount;
-            _availableUpdateCount = available;
-            var errors = result.Results.Count(static update => update.Status == UpdateStatus.Error);
-            ApplyUpdateFilter();
-            RefreshMassUpdateButton();
-            ShowUpdatesButton.Content = LocalizationService.Format(
-                "UpdatesNavigationCoverage",
-                available + knownReleases,
-                result.CheckedVersionCount,
-                result.Results.Count);
-            ShowUpdatesButton.IsEnabled = _allUpdates.Count > 0;
-            if (showWorkspace)
-            {
-                ShowUpdatesWorkspace();
-            }
-            StatusText.Text = LocalizationService.Format(
-                "UpdateCheckedStatusDetailed",
-                result.CheckedVersionCount,
-                available,
-                result.ManagedExternallyCount,
-                result.UnsupportedApplicationCount,
-                result.FailedCheckCount,
-                knownReleases);
-
-            UpdateBar.Title = available > 0
-                ? LocalizationService.Format("UpdatesAvailableTitle", available)
-                : result.StoreQueueCount > 0
-                    ? LocalizationService.Format("StoreQueueTitle", result.StoreQueueCount)
-                : knownReleases > 0
-                    ? LocalizationService.Format("ReleasesKnownTitle", knownReleases)
-                    : LocalizationService.Get(result.AllCurrent ? "ApplicationsCurrent" :
-                        errors > 0 ? "ChecksIncomplete" : "NoUpdatesAmongChecked");
+            _checksComplete = true;
+            PublishUpdateResults(result);
+            if (showWorkspace) ShowUpdatesWorkspace();
+            var errors = result.FailedCheckCount;
+            StatusText.Text = LocalizationService.Format("UpdateCheckedStatusDetailed", result.CheckedVersionCount,
+                result.InstallableUpdateCount, result.ManagedExternallyCount, result.UnsupportedApplicationCount,
+                errors, result.KnownReleaseCount);
+            UpdateBar.Title = result.InstallableUpdateCount > 0
+                ? LocalizationService.Format("UpdatesAvailableTitle", result.InstallableUpdateCount)
+                : result.StoreQueueCount > 0 ? LocalizationService.Format("StoreQueueTitle", result.StoreQueueCount)
+                : result.KnownReleaseCount > 0 ? LocalizationService.Format("ReleasesKnownTitle", result.KnownReleaseCount)
+                : LocalizationService.Get(result.AllCurrent ? "ApplicationsCurrent" : errors > 0 ? "ChecksIncomplete" : "NoUpdatesAmongChecked");
             UpdateBar.Message = StatusText.Text;
             StatusText.Text += $" · {checkTimer.Elapsed.TotalSeconds:N1} s";
-            UpdateBar.Severity = errors > 0 ? InfoBarSeverity.Warning : available > 0 ? InfoBarSeverity.Success : InfoBarSeverity.Informational;
+            UpdateBar.Severity = errors > 0 ? InfoBarSeverity.Warning : result.InstallableUpdateCount > 0 ? InfoBarSeverity.Success : InfoBarSeverity.Informational;
             UpdateBar.IsOpen = true;
         }
-        catch (OperationCanceledException) when (cancellation.IsCancellationRequested)
-        {
-            StatusText.Text = LocalizationService.Get("ProviderCheckCanceled");
-            UpdateBar.IsOpen = false;
-        }
+        catch (OperationCanceledException) when (token.IsCancellationRequested) { throw; }
         catch (Exception exception)
         {
-            UpdateBar.Title = LocalizationService.Get("UpdateCheckFailed");
-            UpdateBar.Message = LocalizationService.Text(exception.Message);
-            UpdateBar.Severity = InfoBarSeverity.Error;
-            UpdateBar.IsOpen = true;
+            ShowUnexpectedFailure(LocalizationService.Get("UpdateCheckFailed"), exception);
             StatusText.Text = LocalizationService.Get("UpdateCheckDidNotComplete");
         }
-        finally
-        {
-            _providerCheckCancellation = null;
-            ScanButtonLabel.Text = LocalizationService.Get("ApplicationScanText");
-            SetUpdateBusy(false, null);
-        }
+        finally { acceptingProgress = false; }
     }
 
     private static async Task SaveScanDiagnosticsAsync(UpdateCheckSnapshot snapshot, TimeSpan elapsed)
@@ -969,9 +998,12 @@ public sealed partial class MainPage : Page
 
     // Opening the driver view shows the latest scan's driver check while it is fresh; "check
     // drivers" and the check after a driver install always run a new one.
-    private async Task CheckManufacturerDriversAsync(bool reuseScan = false)
+    private Task CheckManufacturerDriversAsync(bool reuseScan = false) =>
+        RunScanAsync(token => CheckManufacturerDriversCoreAsync(reuseScan, token));
+
+    private async Task CheckManufacturerDriversCoreAsync(bool reuseScan, CancellationToken token)
     {
-        SetUpdateBusy(true, LocalizationService.Get("CheckingManufacturerDrivers"));
+        StatusText.Text = LocalizationService.Get("CheckingManufacturerDrivers");
         UpdateBar.IsOpen = false;
         try
         {
@@ -979,13 +1011,14 @@ public sealed partial class MainPage : Page
             if (reuseScan && _scanSources is { DriversStartedAt: { } started } sources && DateTimeOffset.UtcNow - started < ScanDriverReuse)
             {
                 // A failed shared check is not shown; the driver view runs its own instead.
-                try { reused = await sources.DriversAsync(); }
+                try { reused = await sources.DriversAsync().WaitAsync(token); }
                 catch (Exception exception) when (exception is not OperationCanceledException) { reused = null; }
             }
             // A fresh check replaces the scan's result for good, so switching views cannot bring
             // the older result back.
             if (reused is null) _scanSources = null;
-            var rawSnapshot = reused ?? await _manufacturerDriverService.CheckAsync();
+            var rawSnapshot = reused ?? await _manufacturerDriverService.CheckAsync(token);
+            token.ThrowIfCancellationRequested();
             var generationId = Guid.NewGuid();
             var snapshot = rawSnapshot with
             {
@@ -998,23 +1031,23 @@ public sealed partial class MainPage : Page
             var direct = snapshot.Results.Count(static result => result.ExecutableUpdate?.IsInstallable == true);
             var manufacturerDownloads = snapshot.Results.Count(static result =>
                 result.Status == ManufacturerDriverStatus.Available && result.ExecutableUpdate is null);
-            var checkedPackages = snapshot.Results.Count(static result =>
-                result.Status == ManufacturerDriverStatus.OfficialSourceOnly && result.AvailableVersion is not null);
+            var checkedPackages = snapshot.CheckedSourceCount;
             var available = direct + manufacturerDownloads;
             UpdateDriverSummary(snapshot, checkedPackages, direct);
             UpdateBar.Title = available == 0
                 ? LocalizationService.Format("DriversCheckedNoUpdates", checkedPackages)
                 : LocalizationService.Format("DriverUpdatesAvailable", direct, manufacturerDownloads);
-            UpdateBar.Message = snapshot.Issues.Count == 0
+            UpdateBar.Message = snapshot.CheckIssueCount == 0
                 ? LocalizationService.Get("ManufacturerDriverSafety")
-                : LocalizationService.Format("DriverScanIssues", snapshot.Issues.Count);
-            UpdateBar.Severity = snapshot.Issues.Count > 0
+                : LocalizationService.Format("DriverScanIssues", snapshot.CheckIssueCount);
+            UpdateBar.Severity = snapshot.CheckIssueCount > 0
                 ? InfoBarSeverity.Warning
                 : available > 0 ? InfoBarSeverity.Success : InfoBarSeverity.Informational;
             UpdateBar.IsOpen = true;
             // The status line said "checking" until now; it shows the result instead.
             StatusText.Text = UpdateBar.Title;
         }
+        catch (OperationCanceledException) when (token.IsCancellationRequested) { throw; }
         catch (Exception exception)
         {
             StatusText.Text = LocalizationService.Get("DriverCheckFailed");
@@ -1023,15 +1056,11 @@ public sealed partial class MainPage : Page
             UpdateBar.Severity = InfoBarSeverity.Error;
             UpdateBar.IsOpen = true;
         }
-        finally
-        {
-            SetUpdateBusy(false, null);
-        }
     }
 
     private void ConfigureApplicationHeader()
     {
-        ScanButtonLabel.Text = LocalizationService.Get(_providerCheckCancellation is null ? "ApplicationScanText" : "CancelProviderCheck");
+        ScanButtonLabel.Text = LocalizationService.Get(!_scans.IsActive ? "ApplicationScanText" : "CancelScan");
         FilterBox.PlaceholderText = LocalizationService.Get("ApplicationFilterPlaceholder");
         ShowSystemComponentsCheckBox.Visibility = Visibility.Visible;
         DriversButton.Visibility = Visibility.Visible;
@@ -1047,7 +1076,7 @@ public sealed partial class MainPage : Page
 
     private void ConfigureDriverHeader()
     {
-        ScanButtonLabel.Text = LocalizationService.Get("CheckDriversTop");
+        ScanButtonLabel.Text = LocalizationService.Get(!_scans.IsActive ? "CheckDriversTop" : "CancelScan");
         FilterBox.PlaceholderText = LocalizationService.Get("DriverFilterPlaceholder");
         ShowSystemComponentsCheckBox.Visibility = Visibility.Collapsed;
         DriversButton.Visibility = Visibility.Collapsed;
@@ -1066,10 +1095,25 @@ public sealed partial class MainPage : Page
         DetectedCountText.Text = snapshot.Results.Count.ToString("N0");
         VersionCountText.Text = checkedPackages.ToString("N0");
         PathCountText.Text = installableUpdates.ToString("N0");
-        GuardCountText.Text = snapshot.Issues.Count.ToString("N0");
+        GuardCountText.Text = snapshot.CheckIssueCount.ToString("N0");
     }
 
-    private void DriverHeaderGrid_SizeChanged(object sender, SizeChangedEventArgs e)
+    public void SaveLayoutPreferences()
+    {
+        ApplicationLayout.Save();
+        UpdateColumns.Save();
+        DriverLayout.Save();
+    }
+
+    private void ApplicationHeaderGrid_LayoutUpdated(object? sender, object e) =>
+        ApplicationLayout.Synchronize(ApplicationNameColumn.ActualWidth, ApplicationVersionColumn.ActualWidth,
+            ApplicationProviderColumn.ActualWidth, ApplicationDateColumn.ActualWidth);
+
+    private void UpdateHeaderGrid_LayoutUpdated(object? sender, object e) =>
+        UpdateColumns.Synchronize(UpdateNameColumn.ActualWidth, UpdateInstalledColumn.ActualWidth,
+            UpdateAvailableColumn.ActualWidth, UpdateStatusColumn.ActualWidth, UpdateActionColumn.ActualWidth);
+
+    private void DriverHeaderGrid_LayoutUpdated(object? sender, object e)
     {
         if (DriversWorkspace.Visibility != Visibility.Visible ||
             DriverNameColumn.ActualWidth <= 0 || DriverInstalledColumn.ActualWidth <= 0 ||
@@ -1153,7 +1197,7 @@ public sealed partial class MainPage : Page
             });
             var backend = new DefaultUpdateTransactionBackend(
                 _updateExecutionService,
-                new UpdatePackageDownloader(_httpClient, new NativeAuthenticodeVerifier()),
+                new UpdatePackageDownloader(new NativeAuthenticodeVerifier()),
                 RevalidateDriverUpdateAsync);
             var transaction = await new UpdateTransactionCoordinator(
                 backend,
@@ -1187,12 +1231,23 @@ public sealed partial class MainPage : Page
         }
         finally
         {
-            DriverProgress.Visibility = Visibility.Collapsed;
-            DriverProgress.IsIndeterminate = false;
-            SetUpdateBusy(false, null);
-            EndMutation();
+            var outcomeTitle = UpdateBar.Title;
+            var outcomeMessage = UpdateBar.Message;
+            var outcomeSeverity = UpdateBar.Severity;
+            try { await CheckManufacturerDriversAsync(); }
+            finally
+            {
+                UpdateBar.Title = outcomeTitle;
+                UpdateBar.Message = outcomeMessage;
+                UpdateBar.Severity = outcomeSeverity;
+                UpdateBar.IsOpen = true;
+                StatusText.Text = outcomeTitle;
+                DriverProgress.Visibility = Visibility.Collapsed;
+                DriverProgress.IsIndeterminate = false;
+                SetUpdateBusy(false, null);
+                EndMutation();
+            }
         }
-        await CheckManufacturerDriversAsync();
     }
 
     private static ManufacturerDriverResult BindDriverExecutionPlan(
@@ -1208,7 +1263,7 @@ public sealed partial class MainPage : Page
         {
             ProviderAuthority = UpdateProviderAuthority.ProducerRelease,
             ProviderSelectionReason = "Exact manufacturer package, hardware identity, release hash, and driver payload",
-            CandidateProviderIds = [result.ExecutableUpdate.ProviderId],
+            CandidateProviderIds = new[] { result.ExecutableUpdate.ProviderId },
             Applicability = UpdateApplicability.Applicable,
             CorrelationKey = $"driver:{result.Driver.Identity}",
             ExecutionPlan = plan with
@@ -1241,8 +1296,8 @@ public sealed partial class MainPage : Page
         var observed = DriverUpdateIdentity.Find(installed.Drivers, previous.ApplicationIdentity,
             previous.CorrelationKey, previous.DisplayName, previous.ProviderId);
         if (observed is not null &&
-            VersionOrder.Compare(DriverUpdateIdentity.InstalledReleaseVersion(observed), previous.AvailableVersion) >= 0)
-            return ObservedDriverState(previous, observed, "The installed driver target was verified directly from Windows.");
+            DriverUpdateIdentity.HasReachedTarget(observed, previous.AvailableVersion, previous.ProviderId))
+            return DriverUpdateIdentity.ObservedState(previous, observed, "The installed driver target was verified directly from Windows.");
         var snapshot = await _manufacturerDriverService.CheckAsync(cancellationToken);
         var generationId = Guid.NewGuid();
         var matched = DriverUpdateIdentity.Find(snapshot.Results.Select(static result => result.Driver),
@@ -1257,30 +1312,8 @@ public sealed partial class MainPage : Page
         {
             return bound.ExecutableUpdate;
         }
-        return ObservedDriverState(previous, result.Driver, result.Message);
+        return DriverUpdateIdentity.ObservedState(previous, result.Driver, result.Message);
     }
-
-    private static UpdateCheckResult ObservedDriverState(UpdateCheckResult previous, InstalledHardwareDriver driver, string message) =>
-        new(
-            driver.Identity,
-            driver.DeviceName,
-            DriverUpdateIdentity.InstalledReleaseVersion(driver),
-            null,
-            UpdateStatus.Current,
-            previous.ProviderId,
-            previous.ProviderDisplayName,
-            previous.Language,
-            previous.LanguageSource,
-            previous.Architecture,
-            previous.Channel,
-            previous.ReleaseNotesUrl,
-            message,
-            null,
-            UpdateProviderAuthority.ProducerRelease,
-            "Manufacturer driver state was re-read after apply",
-            [previous.ProviderId],
-            UpdateApplicability.NotRequired,
-            previous.CorrelationKey ?? $"driver:{driver.Identity}");
 
     // The details panel follows the selected row while an update changes its state.
     private UpdateRow? _detailsRow;
@@ -1321,7 +1354,7 @@ public sealed partial class MainPage : Page
 
     private async void UpdateRowButton_Click(object sender, RoutedEventArgs e)
     {
-        if (_updateBusy || _massUpdateBusy || _restartPending || sender is not Button { DataContext: UpdateRow row } ||
+        if (!_checksComplete || _updateBusy || _massUpdateBusy || _restartPending || sender is not Button { DataContext: UpdateRow row } ||
             !row.CanInstall || row.Source.ExecutionPlan is null)
         {
             return;
@@ -1332,7 +1365,7 @@ public sealed partial class MainPage : Page
 
     private async void UpdateAllButton_Click(object sender, RoutedEventArgs e)
     {
-        if (_updateBusy || _massUpdateBusy || _restartPending)
+        if (!_checksComplete || _updateBusy || _massUpdateBusy || _restartPending)
         {
             return;
         }
@@ -1381,7 +1414,7 @@ public sealed partial class MainPage : Page
                 _runOutcomes[row.Source.ApplicationIdentity] = (UpdateRunState.Skipped, null);
             }
             await ScanAsync();
-            await CheckUpdatesAsync(showWorkspace: true);
+            if (_snapshot is not null) await CheckUpdatesAsync(showWorkspace: true);
             UpdateBar.Title = LocalizationService.Get("MassUpdateCompleteTitle");
             UpdateBar.Message = LocalizationService.Format("MassUpdateCompleteMessage", completed, failed) +
                 (_restartRecommended ? Environment.NewLine + LocalizationService.Get("MassUpdateRestartRecommended") : string.Empty);
@@ -1448,7 +1481,7 @@ public sealed partial class MainPage : Page
             });
             var backend = new DefaultUpdateTransactionBackend(
                 _updateExecutionService,
-                new UpdatePackageDownloader(_httpClient, new NativeAuthenticodeVerifier()),
+                new UpdatePackageDownloader(new NativeAuthenticodeVerifier()),
                 RevalidateUpdateAsync);
             var transaction = await new UpdateTransactionCoordinator(
                 backend,
@@ -1545,7 +1578,10 @@ public sealed partial class MainPage : Page
         UpdateCheckResult previous,
         CancellationToken cancellationToken)
     {
-        var inventory = await _inventoryService.ScanAsync(cancellationToken);
+        var inventory = previous.ExecutionPlan?.Kind is UpdateExecutionKind.StorePackage or UpdateExecutionKind.NativeStorePackage or UpdateExecutionKind.NativeStoreQueue &&
+            previous.ApplicationIdentity.StartsWith("msix:", StringComparison.OrdinalIgnoreCase)
+            ? await _inventoryService.ScanStorePackageAsync(previous.ApplicationIdentity[5..], cancellationToken)
+            : await _inventoryService.ScanAsync(cancellationToken);
         var application = UpdateCorrelation.FindMatch(
             inventory.Applications, previous.ApplicationIdentity, previous.CorrelationKey);
         if (application is null)
@@ -1556,10 +1592,10 @@ public sealed partial class MainPage : Page
         var catalog = await UpdateProviderCatalogLoader.LoadAsync(catalogPath, cancellationToken);
         var isolatedInventory = new InventorySnapshot(
             inventory.ScannedAt,
-            [application],
+            new[] { application },
             [],
             inventory.Issues);
-        var result = await new UpdateCheckService(_httpClient, catalog)
+        var result = await new UpdateCheckService(_httpClient, catalog, useStoreBatchCheck: false)
             .CheckAsync(isolatedInventory, cancellationToken);
         return result.Results.SingleOrDefault();
     }
@@ -1571,9 +1607,10 @@ public sealed partial class MainPage : Page
         DriversButton.IsEnabled = !busy;
         // The lists stay enabled so they can be scrolled and inspected while an
         // update runs; row actions are locked instead (RefreshMassUpdateButton).
-        ShowUpdatesButton.IsEnabled = (!busy || IsChangingSystem) && _allUpdates.Count > 0;
+        ShowUpdatesButton.IsEnabled = _allUpdates.Count > 0;
         RefreshMassUpdateButton();
         RefreshUninstallButton();
+        RefreshRetryButton();
         ScanProgress.IsActive = busy;
         ScanProgress.Visibility = busy ? Visibility.Visible : Visibility.Collapsed;
         if (!string.IsNullOrWhiteSpace(message))
@@ -1595,9 +1632,10 @@ public sealed partial class MainPage : Page
         UpdateAllButton.Content = storeActions > 0
             ? LocalizationService.Format("UpdateAllCountWithStore", verifiedUpdates, storeActions)
             : LocalizationService.Format("UpdateAllCount", verifiedUpdates);
-        UpdateAllButton.IsEnabled = !_updateBusy && !_massUpdateBusy && !_restartPending && verifiedUpdates + storeActions > 0;
-        var locked = _updateBusy || _massUpdateBusy || _restartPending;
+        UpdateAllButton.IsEnabled = _checksComplete && !_updateBusy && !_massUpdateBusy && !_restartPending && verifiedUpdates + storeActions > 0;
+        var locked = !_checksComplete || _updateBusy || _massUpdateBusy || _restartPending;
         foreach (var row in _allUpdates) row.ActionsLocked = locked;
+        foreach (var row in _allDrivers) row.ActionsLocked = _updateBusy || _massUpdateBusy || _restartPending;
     }
 
     private async void LanguageButton_Click(object sender, RoutedEventArgs e)
@@ -1702,7 +1740,7 @@ public sealed partial class MainPage : Page
                     UpdateBar.IsOpen = true;
                     return;
                 }
-                if (_providerCheckCancellation is not null) await _providerCheckCancellation.CancelAsync();
+                if (_scans.IsActive) await _scans.CancelAsync();
                 App.RestartWithLanguage(selectedLanguage);
             }
         }

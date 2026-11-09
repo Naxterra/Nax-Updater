@@ -5,15 +5,72 @@ using System.Security.Cryptography;
 
 namespace NaxUpdater.Core.Services;
 
-public sealed class UpdatePackageDownloader(
-    HttpClient httpClient,
-    IAuthenticodeVerifier authenticodeVerifier,
-    long segmentedDownloadThresholdBytes = 64L * 1024 * 1024,
-    TimeSpan? stallTimeout = null)
+public sealed class UpdatePackageDownloader
 {
+    // Metadata clients may follow redirects. Payload requests must inspect each hop
+    // before sending it, so production downloads always use this separate transport.
+    private static readonly HttpClient DownloadClient = CreateDownloadClient();
+
+    internal static HttpClient CreateDownloadClient(SocketsHttpHandler? handler = null)
+    {
+        handler ??= new SocketsHttpHandler();
+        handler.AllowAutoRedirect = false;
+        return new HttpClient(handler) { Timeout = TimeSpan.FromSeconds(30) };
+    }
+    private readonly HttpClient httpClient;
+    private readonly IAuthenticodeVerifier authenticodeVerifier;
+    private readonly long segmentedDownloadThresholdBytes;
+    private readonly TimeSpan _stallTimeout;
+
+    public UpdatePackageDownloader(IAuthenticodeVerifier authenticodeVerifier)
+        : this(DownloadClient, authenticodeVerifier) { }
+
+    // Injection is limited to the fixture assemblies. An arbitrary auto-redirecting
+    // HttpClient cannot enforce the production download policy.
+    internal UpdatePackageDownloader(HttpClient httpClient, IAuthenticodeVerifier authenticodeVerifier,
+        long segmentedDownloadThresholdBytes = 64L * 1024 * 1024, TimeSpan? stallTimeout = null)
+    {
+        this.httpClient = httpClient;
+        this.authenticodeVerifier = authenticodeVerifier;
+        this.segmentedDownloadThresholdBytes = segmentedDownloadThresholdBytes;
+        _stallTimeout = stallTimeout ?? TimeSpan.FromSeconds(60);
+    }
+
+    private async Task<HttpResponseMessage> SendDownloadAsync(Uri uri, UpdateExecutionPlan plan,
+        CancellationToken token, RangeHeaderValue? range = null)
+    {
+        for (var redirects = 0; ; redirects++)
+        {
+            ValidateDownloadUri(uri, plan);
+            using var request = Identified(new HttpRequestMessage(HttpMethod.Get, uri));
+            request.Headers.Range = range;
+            var response = await httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, token);
+            try
+            {
+                ValidateDownloadUri(response.RequestMessage?.RequestUri ?? uri, plan);
+                if (response.StatusCode is not (HttpStatusCode.MovedPermanently or HttpStatusCode.Redirect or
+                    HttpStatusCode.SeeOther or HttpStatusCode.TemporaryRedirect or HttpStatusCode.PermanentRedirect))
+                    return response;
+                if (redirects >= 10 || response.Headers.Location is not { } location)
+                    throw new InvalidOperationException("The download has too many redirects or a redirect has no location.");
+                uri = location.IsAbsoluteUri ? location : new Uri(uri, location);
+            }
+            catch { response.Dispose(); throw; }
+            response.Dispose();
+        }
+    }
+
+    private static void ValidateDownloadUri(Uri uri, UpdateExecutionPlan plan)
+    {
+        var mirrorsAllowed = plan.AllowHashVerifiedRedirects && !plan.SignatureOnly &&
+                             (!string.IsNullOrWhiteSpace(plan.Sha256) || !string.IsNullOrWhiteSpace(plan.Sha512));
+        if (uri.Scheme != Uri.UriSchemeHttps ||
+            (!mirrorsAllowed && !IsAllowedHost(uri.Host, plan.AllowedDownloadHosts)))
+            throw new InvalidOperationException($"The download URL uses an untrusted scheme or host '{uri.Host}'.");
+    }
+
     // HttpClient.Timeout ends when the response headers arrive, so a server that stops sending
     // the body would hold the update, and with it the window, open until the user cancels.
-    private readonly TimeSpan _stallTimeout = stallTimeout ?? TimeSpan.FromSeconds(60);
 
     private async ValueTask<int> ReadNetworkAsync(Stream input, Memory<byte> buffer, CancellationToken cancellationToken)
     {
@@ -70,7 +127,7 @@ public sealed class UpdatePackageDownloader(
     internal static async Task<Uri> ResolveGitHubAssetAsync(Uri assetUri, CancellationToken cancellationToken,
         Func<CancellationToken, Task<string?>>? tokenReader = null, HttpClient? resolver = null)
     {
-        if (!assetUri.Host.Equals("api.github.com", StringComparison.OrdinalIgnoreCase) ||
+        if (assetUri.Scheme != Uri.UriSchemeHttps || !assetUri.Host.Equals("api.github.com", StringComparison.OrdinalIgnoreCase) ||
             !System.Text.RegularExpressions.Regex.IsMatch(assetUri.AbsolutePath, @"^/repos/[^/]+/[^/]+/releases/assets/\d+$"))
             throw new InvalidOperationException("The private release asset URL is not a GitHub API asset URL.");
         var token = await (tokenReader ?? GitHubApiClient.ReadTokenUsingCliAsync)(cancellationToken)
@@ -142,8 +199,7 @@ public sealed class UpdatePackageDownloader(
             var sourceUri = plan.AuthenticatedGitHubAsset
                 ? await ResolveGitHubAssetAsync(plan.DownloadUri, cancellationToken)
                 : plan.DownloadUri;
-            using var download = Identified(new HttpRequestMessage(HttpMethod.Get, sourceUri));
-            using var response = await httpClient.SendAsync(download, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
+            using var response = await SendDownloadAsync(sourceUri, plan, cancellationToken);
             response.EnsureSuccessStatusCode();
             var finalUri = response.RequestMessage?.RequestUri ?? sourceUri;
             if (finalUri.Scheme != Uri.UriSchemeHttps ||
@@ -175,8 +231,7 @@ public sealed class UpdatePackageDownloader(
                     // The server advertised byte ranges but did not serve them. Every retry would
                     // fail the same way, so the file is downloaded once in a single response.
                     DeleteSegments(partialPath);
-                    using var whole = Identified(new HttpRequestMessage(HttpMethod.Get, finalUri));
-                    using var wholeResponse = await httpClient.SendAsync(whole, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
+                    using var wholeResponse = await SendDownloadAsync(finalUri, plan, cancellationToken);
                     wholeResponse.EnsureSuccessStatusCode();
                     var wholeUri = wholeResponse.RequestMessage?.RequestUri ?? finalUri;
                     if (wholeUri.Scheme != Uri.UriSchemeHttps ||
@@ -310,9 +365,7 @@ public sealed class UpdatePackageDownloader(
             {
                 var start = index * segmentSize;
                 var end = Math.Min(contentLength - 1, start + segmentSize - 1);
-                using var request = Identified(new HttpRequestMessage(HttpMethod.Get, uri));
-                request.Headers.Range = new RangeHeaderValue(start, end);
-                using var response = await httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
+                using var response = await SendDownloadAsync(uri, plan, cancellationToken, new RangeHeaderValue(start, end));
                 if (response.StatusCode != HttpStatusCode.PartialContent ||
                     response.Content.Headers.ContentRange is not { From: not null, To: not null } range ||
                     range.From.Value != start || range.To.Value != end)
@@ -436,9 +489,9 @@ public sealed class UpdatePackageDownloader(
         {
             return new FileVerification(true, "Unsigned installer; release hash verified", null);
         }
-        // A signature-only archive is not signed itself; the nested installer's exact
+        // A ZIP archive is not signed itself; the nested installer's exact
         // publisher signature is verified after extraction, before it runs.
-        if (plan.SignatureOnly && plan.Kind is UpdateExecutionKind.DownloadedZipMsi or UpdateExecutionKind.DownloadedZipExe)
+        if (plan.Kind is UpdateExecutionKind.DownloadedZipMsi or UpdateExecutionKind.DownloadedZipExe)
         {
             return new FileVerification(true, "Archive; the nested installer's publisher is verified before installation", null);
         }
@@ -521,7 +574,7 @@ public sealed class UpdatePackageDownloader(
     // without a User-Agent with 403 Forbidden, so every download names the updater.
     internal static HttpRequestMessage Identified(HttpRequestMessage request)
     {
-        if (request.Headers.UserAgent.Count == 0) request.Headers.UserAgent.ParseAdd("NaxUpdater/0.17.64");
+        if (request.Headers.UserAgent.Count == 0) request.Headers.UserAgent.ParseAdd("NaxUpdater/0.17.71");
         return request;
     }
 

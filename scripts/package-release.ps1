@@ -2,7 +2,7 @@
 param(
     [Parameter()]
     [ValidatePattern('^\d+\.\d+\.\d+$')]
-    [string]$Version = '0.17.64'
+    [string]$Version = '0.17.71'
 )
 
 $ErrorActionPreference = 'Stop'
@@ -66,6 +66,8 @@ if ($LASTEXITCODE -ne 0) { throw 'Deterministic transaction tests failed.' }
 dotnet run --project (Join-Path $repoRoot 'tests\NaxUpdater.Core.AlgorithmTests\NaxUpdater.Core.AlgorithmTests.csproj') -c Release --no-build
 if ($LASTEXITCODE -ne 0) { throw 'Algorithm regression tests failed.' }
 
+& (Join-Path $repoRoot 'tests\Run-WindowTests.ps1')
+
 dotnet run --project (Join-Path $repoRoot 'tests\NaxUpdater.Core.SmokeTests\NaxUpdater.Core.SmokeTests.csproj') -c Release --no-build
 if ($LASTEXITCODE -ne 0) { throw 'Smoke tests failed.' }
 
@@ -97,8 +99,15 @@ if ($decreased) {
     throw "These files have a lower file version than in $previousTag, so an upgrade would drop them: $($decreased -join '; ')"
 }
 
-dotnet build (Join-Path $repoRoot 'installer\NaxUpdater.Installer.wixproj') -c Release -p:NaxUpdaterVersion=$Version
+dotnet build (Join-Path $repoRoot 'installer\NaxUpdater.Installer.wixproj') -t:Rebuild -c Release -p:NaxUpdaterVersion=$Version
 if ($LASTEXITCODE -ne 0) { throw 'MSI build failed.' }
+
+# WiX's intermediate outputs can survive resetting artifacts/installer and retain
+# an earlier ProductVersion despite a new command-line version property.
+foreach ($culture in @('en-US', 'de-DE')) {
+    & (Join-Path $repoRoot 'scripts\Test-MsiVersion.ps1') -Path (Join-Path $installerDirectory "$culture\NaxUpdater-Setup-x64.msi") -Version $Version
+}
+& (Join-Path $repoRoot 'tests\Packaging.Regression.ps1') -MsiPath (Join-Path $installerDirectory 'en-US\NaxUpdater-Setup-x64.msi') -ExpectedVersion $Version
 
 dotnet build (Join-Path $repoRoot 'installer\NaxUpdater.Bundle.wixproj') -t:Rebuild -c Release -p:NaxUpdaterVersion=$Version
 if ($LASTEXITCODE -ne 0) { throw 'Multilingual setup bundle build failed.' }

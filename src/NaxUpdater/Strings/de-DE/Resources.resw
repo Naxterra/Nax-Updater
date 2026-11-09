@@ -57,7 +57,7 @@
   <data name="CheckDriversTop"><value>Herstellertreiber prüfen</value></data>
   <data name="DriverFilterPlaceholder"><value>Nach Gerät, Hersteller, installierter oder verfügbarer Version, Quelle oder Status filtern</value></data>
   <data name="DriverGroupsSummary"><value>Gerätegruppen</value></data>
-  <data name="OfficialPackagesSummary"><value>Offizielle Pakete geprüft</value></data>
+  <data name="OfficialPackagesSummary"><value>Aktuelle Herstellerprüfungen</value></data>
   <data name="InstallableDriverUpdatesSummary"><value>Installierbare Updates</value></data>
   <data name="DriverIssuesSummary"><value>Prüfprobleme</value></data>
   <data name="ManufacturerDriversHeader.Text"><value>Herstellertreiber</value></data>
@@ -72,7 +72,7 @@
   <data name="DriverStatusSynapseChecked"><value>Treiber über Synapse · Firmwarekatalog geprüft</value></data>
   <data name="DriverStatusOfficialPackageChecked"><value>Offizielles Paket geprüft · kein falscher Versionsvergleich</value></data>
   <data name="DriverStatusSupportPageOnly"><value>Offizielle Supportseite · kein vergleichbares Paket</value></data>
-  <data name="DriverStatusWdCurrent"><value>Windows-Speichertreiber aktuell · optionale WD-Werkzeuge</value></data>
+  <data name="DriverStatusWdCurrent"><value>Windows-Speichertreiber · optionale WD-Werkzeuge</value></data>
   <data name="DriverStatusNoUpdateRequired"><value>Kein Herstellerupdate erforderlich</value></data>
   <data name="DriverStatusNoCatalog"><value>Kein verifizierter Katalog</value></data>
   <data name="DriverStatusError"><value>Prüfung fehlgeschlagen</value></data>
@@ -91,14 +91,14 @@
   <data name="DriverFirmwareChecksAvailable"><value>{0} Firmwareprüfungen</value></data>
   <data name="DriverWdOptionsAvailable"><value>SES-Autoinstallation + optionale Werkzeuge</value></data>
   <data name="DriverNotConnected"><value>Derzeit nicht verbunden</value></data>
-  <data name="DriverCountFormat"><value>{0} installierbare Updates · {1} offizielle Pakete geprüft · {2} Gerätegruppen</value></data>
-  <data name="FilteredDriverCountFormat"><value>{0} installierbare Updates · {1} offizielle Pakete geprüft · {2} angezeigt / {3} Gruppen</value></data>
+  <data name="DriverCountFormat"><value>{0} installierbare Updates · {1} aktuelle Herstellerprüfungen · {2} Gerätegruppen</value></data>
+  <data name="FilteredDriverCountFormat"><value>{0} installierbare Updates · {1} aktuelle Herstellerprüfungen · {2} angezeigt / {3} Gruppen</value></data>
   <data name="CheckingManufacturerDrivers"><value>Offizielle Treiberquellen der Hersteller werden geprüft…</value></data>
   <data name="DriversCurrent"><value>Herstellertreiber sind aktuell</value></data>
-  <data name="DriversCheckedNoUpdates"><value>Keine bestätigten Treiberupdates · {0} offizielle(s) Paket(e) geprüft</value></data>
+  <data name="DriversCheckedNoUpdates"><value>Keine bestätigten Treiberupdates · {0} Herstellerquelle(n) aktuell geprüft</value></data>
   <data name="DriverUpdatesAvailable"><value>{0} direkte(s) Treiberupdate(s) · {1} neuere(s) Herstellerpaket(e)</value></data>
   <data name="ManufacturerDriverSafety"><value>Windows Update wird nicht verwendet. Direkte Updates erfordern die HTTPS-Quelle des Herstellers, den veröffentlichten Release-Hash und einen vertrauenswürdigen Authenticode-Herausgeber.</value></data>
-  <data name="DriverScanIssues"><value>{0} Treibernachweisquelle(n) meldeten ein Problem.</value></data>
+  <data name="DriverScanIssues"><value>{0} Hersteller- oder Inventarprüfung(en) konnten nicht bestätigt werden.</value></data>
   <data name="DriverCheckFailed"><value>Herstellertreiber-Prüfung fehlgeschlagen</value></data>
   <data name="PreparingDriverUpdate"><value>Herstellertreiber-Update für {0} wird vorbereitet…</value></data>
   <data name="DriverUpdatedTitle"><value>Treiber-Update für {0} abgeschlossen</value></data>
@@ -200,4 +200,19 @@
   <data name="UpdateCompletedRestartRecommended" xml:space="preserve"><value>Das Update ist installiert und geprüft. Der Installer hat einen Windows-Neustart angefordert, damit Dateien ersetzt werden, die in Benutzung waren.</value></data>
   <data name="MassUpdateRestartRecommended" xml:space="preserve"><value>Mindestens ein Installer hat einen Windows-Neustart angefordert. Starten Sie Windows bei Gelegenheit neu.</value></data>
   <data name="OpenPageFailedTitle" xml:space="preserve"><value>Die Seite konnte nicht geöffnet werden</value></data>
+  <data name="CancelScan" xml:space="preserve"><value>Scan abbrechen</value></data>
+  <data name="ScanCanceled" xml:space="preserve"><value>Scan abgebrochen. Abgeschlossene Prüfungen bleiben verfügbar.</value></data>
+  <data name="InventoryIssuesTitle" xml:space="preserve"><value>Einige Anwendungsnachweise konnten nicht gelesen werden</value></data>
+  <data name="UninstallUnverifiedTitle" xml:space="preserve"><value>Entfernung konnte nicht bestätigt werden: {0}</value></data>
+  <data name="UninstallUnverified" xml:space="preserve"><value>Das Deinstallationsprogramm wurde beendet, aber die Bestandsprüfung konnte die Entfernung nicht bestätigen. Bitte erneut scannen.</value></data>
+  <data name="RetryFailedChecksButton.Content" xml:space="preserve"><value>Fehlgeschlagene / offene Prüfungen wiederholen</value></data>
+  <data name="FinishChecksBeforeUpdating"><value>Vor dem Aktualisieren die offenen Prüfungen abschließen.</value></data>
+  <data name="DriverReferenceVersion"><value>Referenz: {0}</value></data>
+  <data name="DriverFirmwareReferences"><value>{0} Firmware-Referenzen</value></data>
+  <data name="DriverStatusLiveCheckFailed"><value>Aktuelle Prüfung fehlgeschlagen · nur Referenz</value></data>
+  <data name="DriverStatusReferenceRelease"><value>Referenzpaket · neuester Stand nicht geprüft</value></data>
+  <data name="DriverStatusReferenceUpdate"><value>Neueres Referenzpaket · neuester Stand nicht geprüft</value></data>
+  <data name="DriverStatusSynapseUnverified"><value>Treiber über Synapse · Firmware nicht aktuell geprüft</value></data>
+  <data name="DriverOwnerPackageVersion"><value>Paket: {0}</value></data>
+  <data name="DriverStatusManagedByPackage"><value>Treiber über {0}</value></data>
 </root>

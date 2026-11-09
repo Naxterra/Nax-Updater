@@ -13,7 +13,18 @@ public sealed class ApplicationInventoryService
         _policyPath = policyPath;
     }
 
-    public async Task<InventorySnapshot> ScanAsync(CancellationToken cancellationToken = default)
+    public Task<InventorySnapshot> ScanAsync(CancellationToken cancellationToken = default) => ScanAsync(null, cancellationToken);
+
+    // Store transactions are bound to one exact registered package family. Read
+    // its live version, policy, manifest and process bindings without rescanning
+    // every registry application, shortcut and package for each verification.
+    public Task<InventorySnapshot> ScanStorePackageAsync(string packageFamily, CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(packageFamily);
+        return ScanAsync(packageFamily, cancellationToken);
+    }
+
+    private async Task<InventorySnapshot> ScanAsync(string? packageFamily, CancellationToken cancellationToken)
     {
         IReadOnlyList<ApplicationPolicy> policies;
         var loadIssues = new List<InventoryIssue>();
@@ -28,8 +39,24 @@ public sealed class ApplicationInventoryService
         }
 
         return await Task.Run(
-            () => ScanCoreAsync(policies, loadIssues, cancellationToken),
-            cancellationToken);
+            () => packageFamily is null ? ScanCoreAsync(policies, loadIssues, cancellationToken)
+                : Task.FromResult(ScanStorePackageCore(packageFamily, policies, loadIssues, cancellationToken)),
+            cancellationToken).WaitAsync(cancellationToken);
+    }
+
+    private static InventorySnapshot ScanStorePackageCore(string family, IReadOnlyList<ApplicationPolicy> policies,
+        IReadOnlyList<InventoryIssue> loadIssues, CancellationToken token)
+    {
+        var issues = new List<InventoryIssue>(loadIssues);
+        var matchedPolicies = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var applications = new List<InstalledApplication>();
+        foreach (var candidate in new MsixInventoryScanner().Scan(issues, token, family))
+        {
+            token.ThrowIfCancellationRequested();
+            ApplyPolicy(candidate, policies, matchedPolicies);
+            applications.Add(ExternalManagementClassifier.Classify(ExecutableMetadataEnricher.Finalize(candidate)));
+        }
+        return new(DateTimeOffset.Now, MergeExactDuplicates(applications), [], issues);
     }
 
     private static async Task<InventorySnapshot> ScanCoreAsync(
@@ -38,16 +65,17 @@ public sealed class ApplicationInventoryService
         CancellationToken cancellationToken)
     {
         var issues = new List<InventoryIssue>(loadIssues);
-        var candidates = new RegistryInventoryScanner().Scan(issues).ToList();
+        var candidates = new RegistryInventoryScanner().Scan(issues, cancellationToken).ToList();
         cancellationToken.ThrowIfCancellationRequested();
 
-        var shortcuts = new ShortcutScanner().Scan(issues);
+        var shortcuts = new ShortcutScanner().Scan(issues, cancellationToken);
         foreach (var candidate in candidates)
         {
+            cancellationToken.ThrowIfCancellationRequested();
             ShortcutScanner.ApplyMatches(candidate, shortcuts);
         }
 
-        candidates.AddRange(new MsixInventoryScanner().Scan(issues));
+        candidates.AddRange(new MsixInventoryScanner().Scan(issues, cancellationToken));
         MsixIntegrationCorrelator.AttachToWin32Applications(candidates);
         var matchedPolicyIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var zeroInstall = new ZeroInstallEnricher(new ProcessQueryRunner());

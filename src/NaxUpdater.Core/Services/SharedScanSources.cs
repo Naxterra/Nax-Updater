@@ -6,7 +6,8 @@ namespace NaxUpdater.Core.Services;
 // and the driver view. The drivers were checked once for the four driver rows of the update list
 // and again for the driver view, and Kyocera was asked by both; now the driver check starts
 // together with the application inventory and both views use its result.
-public sealed class SharedScanSources(HttpClient httpClient, string? cacheDirectory = null)
+public sealed class SharedScanSources(HttpClient httpClient, string? cacheDirectory = null,
+    CancellationToken scanCancellation = default)
 {
     private readonly Lock _gate = new();
     private Task<ManufacturerDriverSnapshot>? _drivers;
@@ -22,7 +23,9 @@ public sealed class SharedScanSources(HttpClient httpClient, string? cacheDirect
             if (_drivers is null)
             {
                 DriversStartedAt = DateTimeOffset.UtcNow;
-                _drivers = Task.Run(() => new ManufacturerDriverService(httpClient, Kyocera).CheckAsync());
+                _drivers = Task.Run(() => new ManufacturerDriverService(httpClient, Kyocera).CheckAsync(scanCancellation), scanCancellation);
+                _ = _drivers.ContinueWith(t => { _ = t.Exception; }, CancellationToken.None,
+                    TaskContinuationOptions.OnlyOnFaulted | TaskContinuationOptions.ExecuteSynchronously, TaskScheduler.Default);
             }
             return _drivers;
         }

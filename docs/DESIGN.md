@@ -1,6 +1,6 @@
 # Nax-Updater design
 
-Current as of 0.17.64. Updated with every release; the reasons behind each rule are in [DECISIONS.md](DECISIONS.md).
+Current as of 0.17.71. Updated with every release; the reasons behind each rule are in [DECISIONS.md](DECISIONS.md).
 
 ## Goal
 
@@ -35,6 +35,18 @@ Hard requirements:
 5. **Execution** (`UpdateTransactionCoordinator`): revalidate, download and verify, close bound processes, install, then re-check the installed version. A journal and a lease make interrupted updates recoverable. The journal, like the Store search cache and the Kyocera cache, is written to a temporary file of its own, forced to disk and only then moved over the old file.
 
 ## While updates run
+
+Inventory, provider and driver checks share one scan owner and cancellation token. The scan button cancels any read stage; navigation cannot start a second scan while the first is running. Completed application assessments appear incrementally and remain visible after cancellation. Update actions wait for a complete check so that companion and superseded-registration reconciliation still applies. **Retry failed / unfinished checks** keeps successful assessments from the same inventory and checks only applications that failed or have no result; those applications still use normal provider arbitration.
+
+Retry also refreshes expired or invalid execution plans and statuses inferred from companion applications or newer registrations. Independent successful checks and valid plans keep their original evidence and expiry. Reconciliation runs once after merging retained and fresh results, so every installed sibling participates in the decision.
+
+Store families share a fresh read-only batch query for installed-app updates. Only a complete successful no-update response replaces native per-SKU searches, after rereading queue state. Offers, failures and unknown responses use exact individual checks and bypass cached negatives. Transaction revalidation uses individual checks.
+
+Transaction revalidation of a Store package reads only that exact registered family, including its current policy and process bindings. It does not rescan unrelated registry applications or refresh conventional catalogs. WinGet MSI/WiX execution preserves an existing all-users installation through ALLUSERS=1 in both CLI and COM routes; the scope filter alone is insufficient for dual-purpose MSIs.
+
+Driver transaction messages (including restart requirements and journal warnings) survive the closing rescan. Removal reports confirmed absence only after a successful inventory without read issues; a canceled, failed or incomplete read reports that removal could not be verified.
+
+Application and update columns have synchronized draggable dividers and horizontal scrolling. Their widths, driver column widths, restored window dimensions and maximized state are saved in the local view preferences. Invalid preferences fall back to defaults, and restored dimensions are bounded by the current monitor's work area.
 
 The update list stays reachable from the application view while a change runs, and the details panel follows the selected row's live state and failure reason. One gate covers every change to the machine: updates, Update All, driver installs and removals. While it is held no other change can start (removal is checked before its dialogs and again after confirmation, and holds the same transaction lease as updates). A language change is saved and the restart waits for the gate; closing the window is deferred the same way, and the window closes on its own afterwards.
 
@@ -80,6 +92,8 @@ Every recipe is added only after a real download was verified against its hash a
 - the publisher's SHA-256 or SHA-512;
 - the expected Authenticode publisher.
 
+Payload downloads use a dedicated transport with automatic redirects disabled. Each normal, fallback and ranged request checks the next URL before sending it, follows at most ten redirects, and rejects HTTP downgrades. Signature-only recipes cannot opt out of host validation.
+
 A same-version repair (Chocolatey reinstalling a version that was installed outside it, so its record catches up) is proven only by a successful execution and matching Chocolatey records, never by the unchanged application version. A Chocolatey wrapper route names both the package it runs (`nodejs 9.0.0`) and the payload the application belongs to (`nodejs.install 2.0.0`); both records are checked afterwards.
 
 Exceptions, each modelled explicitly in the plan:
@@ -95,6 +109,14 @@ After a verified successful update, its cached installer is deleted with its emp
 Electron applications use electron-updater, which keeps a random UUID in `%APPDATA%\<app>\.updaterId` and offers a release with `stagingPercentage: N` only when the UUID's last four bytes, read big-endian and divided by `0xFFFFFFFF`, are below `N / 100`. `ElectronStagedRollout` reads the same file (folder named after the executable's product name or its install folder) and applies the same rule, in both the official-site provider and the installed-metadata provider. Without an ID the release waits until the rollout is complete. Until this PC is included the app is shown as "Aktuell"; the details name the held version (`AnnouncedVersion`) and the percentage at which this PC is included (`RolloutThresholdPercent`).
 
 ## Drivers
+
+Intel download checks validate the exact download record and release metadata, with an official regional-page fallback for blocked English pages. If neither HTTP source is usable, the existing browser transport reads only the four exact supported main-site download pages, with the same record validation and deadline. TLS and DNS policy remain enforced. Ethernet checks the exact Windows 11 I219 INF inside Intel's current archive, verifies its published SHA-256/SHA-512 and retains the archive by hash; every scan rereads release metadata. It never infers a device version from an umbrella package number.
+
+MSI, Dell and Razer use a bounded hidden WebView query when an HTTP request does not yield a valid catalog. Only their exact supported public catalog addresses are allowed. The query has an isolated profile, disables cached responses, denies downloads and permissions, does not take the normal app's single-instance lock, and exits after returning UTF-8 content. Core parsing verifies the model, OS and actual catalog records. Queries are shared only within a scan and their process tree is stopped on cancellation or deadline.
+
+MSI audio requires the exact motherboard and hardware subsystem. Its reviewed Realtek 6.0.10007.1 archive can be installed individually in the Drivers view when the live catalog still publishes its exact SHA-256. The complete installer directory is extracted with safe paths, locked against replacement and bound to the approved execution fingerprint; the nested EXE must carry Realtek's exact trusted signature. MSI's supplied silent response file disables automatic restart. Changed archives remain source-only until their installer recipe is reviewed. Verification and interrupted-operation recovery require the same present audio device, Realtek provider and exact target version; the Microsoft inbox driver's 10.x version cannot prove Realtek's 6.x target. Dell INF, HID and firmware versions stay separate. Razer firmware versions come from the current catalog. NVIDIA HD Audio uses the current graphics release's published PDF module table. VMware and Xvdd show their servicing package's live catalog version explicitly as a package, retaining exact driver versions separately. Xbox Service's synthetic controller is checked against its local bundled INF; no independent latest-version claim is made. WD guidance is reread to confirm that legacy SES drivers are inappropriate on modern Windows.
+
+The driver summary counts successful live manufacturer checks. A retained release reference or support link does not establish that a driver is current. Results carry their evidence separately from update availability, so a verified older applicable package can remain available without being counted as a fresh latest-release check. Failed catalog reads, including fallbacks to reference data, appear in the problem count and filter. HTTP success alone does not establish catalog content: mapped Razer firmware names and versions must also be present.
 
 Drivers have their own view (Treiber) and are never part of "Alle aktualisieren". The update list shows a driver row only as information ("Treiberupdate verfügbar · im Treiber-Bereich", with the driver version when it uses the package's version scheme). Manufacturer sources are queried directly, each request capped at 10 s. A scan checks the drivers once, starting together with the application inventory; the driver rows of the update list and the driver view use that result, and opening the driver view within five minutes of the scan shows it at once. "Herstellertreiber prüfen", the check after a driver install and any change to the system run a new check. Kyocera is asked once per scan, and its files are kept with their ETag, so an unchanged file comes back as 304 without its body. A connected device's driver (version, INF, provider, date) is read from its own driver key; Win32_PnPSignedDriver is not queried, because it reported replaced drivers for over a minute and took 1.7 s per read.
 

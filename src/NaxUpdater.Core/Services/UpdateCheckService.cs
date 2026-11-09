@@ -26,7 +26,7 @@ public sealed class UpdateCheckService
     }
 
     public UpdateCheckService(HttpClient httpClient, UpdateProviderCatalog catalog, FirefoxMetadataDetector? firefoxMetadataDetector = null,
-        SharedScanSources? sharedSources = null)
+        SharedScanSources? sharedSources = null, bool useStoreBatchCheck = true)
     {
         var providers = new List<IUpdateProvider>
         {
@@ -48,7 +48,7 @@ public sealed class UpdateCheckService
         };
         providers.AddRange(catalog.GitHub.Select(recipe => new GitHubReleaseUpdateProvider(httpClient, recipe)));
         providers.AddRange(catalog.Official.Select(recipe => new OfficialSiteUpdateProvider(httpClient, recipe)));
-        providers.Add(new MsixStoreUpdateProvider(httpClient));
+        providers.Add(new MsixStoreUpdateProvider(httpClient, useBatchCheck: useStoreBatchCheck));
         // Registration order is not authoritative. Explicit descriptors below arbitrate
         // installed protocols, producer sources, Store, and fallback catalogs.
         providers.Add(new WingetFallbackUpdateProvider());
@@ -62,18 +62,64 @@ public sealed class UpdateCheckService
         InventorySnapshot inventory,
         CancellationToken cancellationToken = default,
         IProgress<UpdateCheckProgress>? progress = null) =>
-        Task.Run(() => CheckCoreAsync(inventory, cancellationToken, progress), cancellationToken)
+        CheckAsync(inventory, cancellationToken, progress, reconcileResults: true);
+
+    private Task<UpdateCheckSnapshot> CheckAsync(InventorySnapshot inventory,
+        CancellationToken cancellationToken, IProgress<UpdateCheckProgress>? progress, bool reconcileResults) =>
+        Task.Run(() => CheckCoreAsync(inventory, cancellationToken, progress, reconcileResults), cancellationToken)
             .WaitAsync(cancellationToken);
 
+    // Reuse successful assessments from the same inventory; retry failed or
+    // unfinished applications through normal provider arbitration.
+    public async Task<UpdateCheckSnapshot> RetryFailedAsync(InventorySnapshot inventory,
+        UpdateCheckSnapshot previous, CancellationToken cancellationToken = default,
+        IProgress<UpdateCheckProgress>? progress = null)
+    {
+        var now = DateTimeOffset.UtcNow;
+        var applications = inventory.Applications.Where(a => !a.IsSystemComponent)
+            .ToDictionary(a => a.Identity, StringComparer.Ordinal);
+        var retained = previous.Results.Where(r => r.Status != UpdateStatus.Error &&
+            // These statuses were inferred from other rows. Recheck their original
+            // sources before reconciling against the replacement results.
+            r.ProviderId is not ("mozilla-maintenance" or "superseded-registration") &&
+            applications.TryGetValue(r.ApplicationIdentity, out var app) &&
+            app.NormalizedVersion == r.InstalledVersion &&
+            // Retrying another row must not leave an expired update button behind,
+            // nor extend a plan's lifetime without asking its source again.
+            (r.ExecutionPlan is null || UpdatePlanValidator.Validate(r, now) is null)).ToArray();
+        var retainedIds = retained.Select(r => r.ApplicationIdentity).ToHashSet(StringComparer.Ordinal);
+        var pending = inventory with { Applications = inventory.Applications.Where(a => !retainedIds.Contains(a.Identity)).ToArray() };
+        // The subset alone cannot establish companion or superseded-registration
+        // status. Reconcile once below against both retained and fresh evidence.
+        var retried = await CheckAsync(pending, cancellationToken, progress, reconcileResults: false);
+        var combined = retained.Concat(retried.Results).ToArray();
+        ReconcileCompanionChecks(combined);
+        ReconcileSupersededRegistrations(combined);
+        return retried with
+        {
+            Results = combined.OrderBy(r => r.Status == UpdateStatus.Available ? 0 : r.Status == UpdateStatus.Error ? 1 : 2)
+                .ThenBy(r => r.DisplayName, StringComparer.CurrentCultureIgnoreCase).ToArray(),
+            UnsupportedApplicationCount = combined.Count(r => r.Status == UpdateStatus.Unsupported)
+        };
+    }
+
     private async Task<UpdateCheckSnapshot> CheckCoreAsync(
-        InventorySnapshot inventory, CancellationToken token, IProgress<UpdateCheckProgress>? progress)
+        InventorySnapshot inventory, CancellationToken token, IProgress<UpdateCheckProgress>? progress, bool reconcileResults)
     {
         var applications = inventory.Applications.Where(static app => !app.IsSystemComponent).ToArray();
+        // A batch result belongs to this scan even when a caller reuses the
+        // checker. Keep the provider set local, including concurrent scan calls.
+        var providers = _providers.Select(p => p is MsixStoreUpdateProvider store ? store.ForNewScan() : p).ToArray();
         var generation = Guid.NewGuid();
         var refreshFailures = new Dictionary<string, string>(StringComparer.Ordinal);
-        foreach (var provider in _providers)
+        foreach (var provider in providers)
         {
             if (provider is not IUpdateProviderSourceRefresher refresher) continue;
+            // Single-package Store revalidation must not refresh WinGet (and
+            // potentially restart its COM server) several times per deployment.
+            // Avoid CanHandle here: WinGet resolves its index lazily after refresh.
+            if (!applications.Any(app => SupportsManagementMode(provider, app.ManagementMode) && !IsBlocked(app, provider.Id)))
+                continue;
             progress?.Report(new(0, applications.Length, "sources", provider.Id));
             using var refreshCancellation = CancellationTokenSource.CreateLinkedTokenSource(token);
             var refresh = Task.Run(() => refresher.RefreshSourceAsync(refreshCancellation.Token), refreshCancellation.Token);
@@ -105,17 +151,18 @@ public sealed class UpdateCheckService
             catch { if (store) _storeCheckSlots.Release(); throw; }
             using var checkCancellation = CancellationTokenSource.CreateLinkedTokenSource(token);
             Task<UpdateCheckResult>? task = null;
+            UpdateCheckResult? result = null;
             try
             {
                 task = Task.Run(() => AssessApplicationAsync(application, generation, checkedAt, refreshFailures,
-                    checkCancellation.Token), checkCancellation.Token);
-                return await task.WaitAsync(_providerTimeout, token);
+                    checkCancellation.Token, providers), checkCancellation.Token);
+                return result = await task.WaitAsync(_providerTimeout, token);
             }
             catch (TimeoutException)
             {
                 checkCancellation.Cancel();
                 if (task is not null) ObserveFailure(task);
-                return FailedCheck(application, $"The update check timed out after {_providerTimeout.TotalSeconds:0} seconds. Other applications were still checked.");
+                return result = FailedCheck(application, $"The update check timed out after {_providerTimeout.TotalSeconds:0} seconds. Other applications were still checked.");
             }
             catch (OperationCanceledException) when (token.IsCancellationRequested)
             {
@@ -125,13 +172,13 @@ public sealed class UpdateCheckService
             }
             catch (Exception exception)
             {
-                return FailedCheck(application, exception.Message);
+                return result = FailedCheck(application, exception.Message);
             }
             finally
             {
                 _checkSlots.Release();
                 if (store) _storeCheckSlots.Release();
-                progress?.Report(new(Interlocked.Increment(ref completed), applications.Length, "checks", application.DisplayName));
+                progress?.Report(new(Interlocked.Increment(ref completed), applications.Length, "checks", application.DisplayName, result));
             }
         }
 
@@ -150,8 +197,11 @@ public sealed class UpdateCheckService
             var retried = await Task.WhenAll(storeRetries.Select(i => CheckOneAsync(applications[i])));
             for (var k = 0; k < storeRetries.Length; k++) results[storeRetries[k]] = retried[k];
         }
-        ReconcileCompanionChecks(results);
-        ReconcileSupersededRegistrations(results);
+        if (reconcileResults)
+        {
+            ReconcileCompanionChecks(results);
+            ReconcileSupersededRegistrations(results);
+        }
         return new UpdateCheckSnapshot(
             checkedAt,
             results.OrderBy(static result => result.Status == UpdateStatus.Available ? 0 : result.Status == UpdateStatus.Error ? 1 : 2)
@@ -162,19 +212,19 @@ public sealed class UpdateCheckService
 
     private async Task<UpdateCheckResult> AssessApplicationAsync(
         InstalledApplication application, Guid generation, DateTimeOffset checkedAt,
-        IReadOnlyDictionary<string, string> refreshFailures, CancellationToken token)
+        IReadOnlyDictionary<string, string> refreshFailures, CancellationToken token, IReadOnlyList<IUpdateProvider> providers)
     {
         token.ThrowIfCancellationRequested();
         var preferredId = PreferredProviderId(application);
         IUpdateProvider? preferred = null;
         if (preferredId is not null)
         {
-            preferred = _providers.FirstOrDefault(provider => provider.Id.Equals(preferredId, StringComparison.OrdinalIgnoreCase));
+            preferred = providers.FirstOrDefault(provider => provider.Id.Equals(preferredId, StringComparison.OrdinalIgnoreCase));
             if (preferred is null || !SupportsManagementMode(preferred, application.ManagementMode) ||
                 IsBlocked(application, preferred.Id) || !preferred.CanHandle(application))
                 return PreferredProviderUnavailableResult(application, preferredId);
         }
-        var candidates = preferred is null ? ResolveHighestAuthorityCandidates(application) : [preferred];
+        var candidates = preferred is null ? ResolveHighestAuthorityCandidates(application, providers) : [preferred];
         var selected = preferred ?? candidates.FirstOrDefault();
         if (selected is null)
             return new(application.Identity, application.DisplayName, application.NormalizedVersion, null, UpdateStatus.Unsupported,
@@ -553,10 +603,10 @@ public sealed class UpdateCheckService
             providerId.Equals("winget-fallback", StringComparison.OrdinalIgnoreCase) &&
             blocked.Equals("WinGet fallback", StringComparison.OrdinalIgnoreCase));
 
-    private IUpdateProvider[] ResolveHighestAuthorityCandidates(InstalledApplication application)
+    private static IUpdateProvider[] ResolveHighestAuthorityCandidates(InstalledApplication application, IReadOnlyList<IUpdateProvider> providers)
     {
         var allCandidates = new List<IUpdateProvider>();
-        foreach (var authorityGroup in _providers
+        foreach (var authorityGroup in providers
                      .Where(provider => SupportsManagementMode(provider, application.ManagementMode) &&
                                         !IsBlocked(application, provider.Id))
                      .GroupBy(static provider => provider.Descriptor.Authority)

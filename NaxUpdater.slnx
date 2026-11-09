@@ -7,5 +7,6 @@
     <Project Path="tests/NaxUpdater.Core.SmokeTests/NaxUpdater.Core.SmokeTests.csproj" />
     <Project Path="tests/NaxUpdater.Core.TransactionTests/NaxUpdater.Core.TransactionTests.csproj" />
     <Project Path="tests/NaxUpdater.Core.AlgorithmTests/NaxUpdater.Core.AlgorithmTests.csproj" />
+    <Project Path="tests/NaxUpdater.Core.WindowTests/NaxUpdater.Core.WindowTests.csproj" />
   </Folder>
 </Solution>

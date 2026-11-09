@@ -11,7 +11,7 @@ namespace NaxUpdater.Core.Services;
 // A scan passes its shared Kyocera catalog, so the update list and the driver view ask Kyocera
 // once; without one, each check uses a catalog of its own.
 public sealed partial class ManufacturerDriverService(HttpClient httpClient, KyoceraSupportCatalog? sharedKyocera = null,
-    string? kyoceraCacheDirectory = null)
+    string? kyoceraCacheDirectory = null, string? manufacturerBrowserExecutable = null)
 {
     private const string DriverClassPath = @"SYSTEM\CurrentControlSet\Control\Class";
     private static readonly Uri NvidiaDriverHomeEn = new("https://www.nvidia.com/en-us/drivers/");
@@ -40,14 +40,21 @@ public sealed partial class ManufacturerDriverService(HttpClient httpClient, Kyo
 
     public async Task<ManufacturerDriverSnapshot> CheckAsync(CancellationToken cancellationToken = default)
     {
+        _browserPages.Clear();
+        _nvidiaChecks.Clear();
+        _nvidiaNotes.Clear();
+        _vmwareCatalog = null;
         // Kyocera's model list is read once per check, never from an earlier failed attempt
         // (a shared catalog drops a failed download itself, so the next row retries).
         _kyocera = sharedKyocera ?? new KyoceraSupportCatalog(httpClient, kyoceraCacheDirectory);
         var issues = new List<string>();
-        var installed = await Task.Run(() => ReadInstalledDrivers(issues), cancellationToken);
+        var installed = await Task.Run(() => ReadInstalledDrivers(issues), cancellationToken).WaitAsync(cancellationToken);
+        cancellationToken.ThrowIfCancellationRequested();
         var razerSynapseVersion = ReadInstalledProgramVersion("Razer Synapse");
+        foreach (var display in installed.Where(IsNvidiaDisplayDriver))
+            _nvidiaChecks[display.Identity] = CheckNvidiaAsync(display, cancellationToken);
         var results = await Task.WhenAll(installed.Select(driver =>
-            CheckDriverAsync(driver, razerSynapseVersion, cancellationToken)));
+            CheckDriverAsync(driver, razerSynapseVersion, cancellationToken))).WaitAsync(cancellationToken);
         return new ManufacturerDriverSnapshot(
             DateTimeOffset.Now,
             results
@@ -74,23 +81,30 @@ public sealed partial class ManufacturerDriverService(HttpClient httpClient, Kyo
         if (driver.Identity.EndsWith(":intel:chipset", StringComparison.OrdinalIgnoreCase))
             return await CheckIntelChipsetPackageAsync(driver, cancellationToken);
         if (driver.Identity.EndsWith(":intel:management-engine", StringComparison.OrdinalIgnoreCase))
-            return OfficialSourceOnly(
-                driver,
-                "Intel Management Engine components",
-                IntelManagementEngine,
-                "2618.9.30.0",
-                "Intel's official generic Management Engine package was checked for this 10th-generation platform. The package contains several component INFs with different versions, so its package version is shown without falsely comparing it to one component INF. MSI/OEM packages may retain motherboard customizations.");
+            return await CheckIntelManagementEngineAsync(driver, cancellationToken);
         if (driver.Identity.EndsWith(":intel:rst", StringComparison.OrdinalIgnoreCase))
-            return CheckIntelRst(driver);
+            return await CheckIntelRstAsync(driver, cancellationToken);
         if (driver.Identity.EndsWith(":razer:suite", StringComparison.OrdinalIgnoreCase))
             return await CheckRazerSuiteAsync(driver, razerSynapseVersion, cancellationToken);
-        if (IsNvidiaDisplayDriver(driver)) return await CheckNvidiaAsync(driver, cancellationToken);
+        if (IsNvidiaDisplayDriver(driver)) return await _nvidiaChecks[driver.Identity];
+        if (driver.Provider.Contains("NVIDIA", StringComparison.OrdinalIgnoreCase) && driver.DeviceClass.Equals("MEDIA", StringComparison.OrdinalIgnoreCase))
+            return await CheckNvidiaAudioAsync(driver, cancellationToken);
+        if (driver.DeviceName.Contains("VMware", StringComparison.OrdinalIgnoreCase) ||
+            driver.HardwareId?.Contains("VMWVMCIHOSTDEV", StringComparison.OrdinalIgnoreCase) == true)
+            return await CheckVmwareDriverAsync(driver, cancellationToken);
+        if (driver.HardwareId?.Equals("XvddRootDevice", StringComparison.OrdinalIgnoreCase) == true)
+            return await CheckXvddAsync(driver, cancellationToken);
+        if (driver.HardwareId?.Equals("SYNTHETICGamepad", StringComparison.OrdinalIgnoreCase) == true)
+            return CheckXboxSyntheticDriver(driver);
         if (IsRealtek8125(driver)) return await CheckRealtekEthernetAsync(driver, cancellationToken);
         if (IsIntelI219(driver)) return await CheckIntelI219Async(driver, cancellationToken);
         if (IsTpLinkTbe400Uh(driver)) return await CheckTpLinkAsync(driver, cancellationToken);
         if (driver.Identity.StartsWith(KyoceraPrinterPrefix, StringComparison.Ordinal)) return await CheckKyoceraPrinterAsync(driver, cancellationToken);
-        if (IsDellAw3423DwDriver(driver)) return CheckDellAw3423Dw(driver);
-        if (IsWesternDigitalExternal(driver)) return NoWdDriverRequired(driver);
+        if (IsDellAw3423DwDriver(driver)) return await CheckDellAw3423DwAsync(driver, cancellationToken);
+        if (driver.HardwareId?.Contains("VEN_10EC&DEV_0B00&SUBSYS_1462EC80", StringComparison.OrdinalIgnoreCase) == true ||
+            driver.HardwareId?.Contains("ACPI\\VEN_MBID&DEV_0003", StringComparison.OrdinalIgnoreCase) == true)
+            return await CheckMsiBoardDriverAsync(driver, cancellationToken);
+        if (IsWesternDigitalExternal(driver)) return await CheckWdSupportAsync(driver, cancellationToken);
         return OfficialSourceOrVendorSoftware(driver, razerSynapseVersion);
     }
 
@@ -104,13 +118,9 @@ public sealed partial class ManufacturerDriverService(HttpClient httpClient, Kyo
         var readFromIntel = false;
         try
         {
-            var page = WebUtility.HtmlDecode(await GetStringAsync(IntelChipsetSoftware, cancellationToken));
-            var versionMatch = IntelChipsetVersionRegex().Match(page);
-            if (versionMatch.Success)
-            {
-                version = versionMatch.Groups["version"].Value;
-                readFromIntel = true;
-            }
+            var release = await ReadIntelReleaseAsync(IntelChipsetSoftware, cancellationToken);
+            version = release.Version;
+            readFromIntel = true;
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -119,29 +129,33 @@ public sealed partial class ManufacturerDriverService(HttpClient httpClient, Kyo
         catch (Exception)
         {
             // Intel's Akamai edge sometimes rejects non-browser HTML requests. The exact
-            // official page remains the source, and the last independently verified release
-            // is retained rather than turning every grouped chipset component into an error.
+            // official page remains the source. Keep the reference visible, but report
+            // the failed live check rather than claiming that the driver is current.
         }
 
         // The utility registers itself as "SetupChipset" with its package version, which is
         // compared with Intel's package; the identification INFs inside carry other versions.
-        // Intel's page refuses scripted requests most of the time; the last release verified
-        // there is compared then, and the message says so, because it could be stale.
+        // A retained release cannot establish whether the installed utility is current.
         var installedPackage = installedChipsetVersion ?? ReadInstalledProgramVersion("SetupChipset");
-        var basis = readFromIntel ? "" : " Intel's page could not be read now, so this is the last release Nax-Updater verified there.";
+        if (!readFromIntel)
+            return OfficialSourceOnly(driver with { InstalledVersion = installedPackage ?? driver.InstalledVersion },
+                "Intel Chipset Device Software", IntelChipsetSoftware, fallbackVersion,
+                "Intel's current chipset release could not be verified. This is the last release Nax-Updater verified there; it does not establish that the installed version is current.")
+                with { LiveCheckFailed = true };
         if (installedPackage is null)
             return OfficialSourceOnly(
                 driver,
                 "Intel Chipset Device Software",
                 IntelChipsetSoftware,
                 version,
-                $"Intel's official Chipset INF Utility {version} was checked for the grouped Intel chipset devices. This utility installs identification INFs; its package version is not a comparable driver version for each device, so no false per-component update is claimed.");
+                $"Intel's official Chipset INF Utility {version} was checked for the grouped Intel chipset devices. This utility installs identification INFs; its package version is not a comparable driver version for each device, so no false per-component update is claimed.")
+                with { CheckEvidence = ManufacturerCheckEvidence.LiveCatalog };
         return VersionOrder.Compare(version, installedPackage) > 0
             ? new ManufacturerDriverResult(driver with { InstalledVersion = installedPackage }, ManufacturerDriverStatus.Available, version,
                 "Intel Chipset Device Software", IntelChipsetSoftware,
-                $"Intel's Chipset INF Utility {version} is newer than the installed {installedPackage}.{basis}", null)
+                $"Intel's Chipset INF Utility {version} is newer than the installed {installedPackage}.", null, ManufacturerCheckEvidence.LiveCatalog)
             : Current(driver with { InstalledVersion = installedPackage }, version, "Intel Chipset Device Software", IntelChipsetSoftware,
-                $"Intel's Chipset INF Utility {version} is installed ({installedPackage}).{basis}");
+                $"Intel's Chipset INF Utility {version} is installed ({installedPackage}).");
     }
 
     // Intel's RST 18.7.6.1010.3 (the last release for 10th and 11th generation platforms,
@@ -163,9 +177,10 @@ public sealed partial class ManufacturerDriverService(HttpClient httpClient, Kyo
         return VersionOrder.Compare(driverVersion, driver.InstalledVersion) > 0
             ? new ManufacturerDriverResult(driver, ManufacturerDriverStatus.Available, package, "Intel Rapid Storage Technology", IntelRapidStorageTenEleven,
                 $"Intel's RST package {package} for 10th and 11th generation platforms supports this SATA controller and contains driver {driverVersion}; the installed driver is {driver.InstalledVersion}.",
-                IntelRstOffer(driver, driverVersion))
+                IntelRstOffer(driver, driverVersion), ManufacturerCheckEvidence.ReferenceRelease)
             : Current(driver, package, "Intel Rapid Storage Technology", IntelRapidStorageTenEleven,
-                $"Intel's RST package {package} contains driver {driverVersion}; the installed storage driver {driver.InstalledVersion} is current.");
+                $"The retained Intel RST package {package} contains driver {driverVersion}. The installed driver is {driver.InstalledVersion}; the latest manufacturer release was not checked.",
+                ManufacturerCheckEvidence.ReferenceRelease);
     }
 
     // Intel's SetupRST.exe with the SHA-256 Intel publishes on the download page and Intel's
@@ -217,10 +232,19 @@ public sealed partial class ManufacturerDriverService(HttpClient httpClient, Kyo
         var liveCatalogConfirmed = false;
         try
         {
-            var catalog = WebUtility.HtmlDecode(await GetStringAsync(RazerFirmwareCatalog, cancellationToken));
-            liveCatalogConfirmed = matchingReleases.All(release =>
-                catalog.Contains(release.CatalogName, StringComparison.OrdinalIgnoreCase) &&
-                catalog.Contains(release.Version, StringComparison.OrdinalIgnoreCase));
+            if (matchingReleases.Length > 0)
+            {
+                var products = matchingReleases.Select(r => r.Product).ToArray();
+                var catalog = await ReadManufacturerSourceAsync(ManufacturerSourceQuery.RazerFirmware,
+                    body => RazerFirmwareVersions(body, products).Count == products.Length, cancellationToken);
+                var current = RazerFirmwareVersions(catalog, products);
+                liveCatalogConfirmed = current.Count == products.Length;
+                if (liveCatalogConfirmed)
+                {
+                    publishedFirmware.Clear();
+                    publishedFirmware.AddRange(current.Select(r => $"{r.Product} {r.Version}"));
+                }
+            }
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -234,12 +258,13 @@ public sealed partial class ManufacturerDriverService(HttpClient httpClient, Kyo
         var installed = string.IsNullOrWhiteSpace(razerSynapseVersion) ? "—" : razerSynapseVersion;
         var available = publishedFirmware.Count.ToString(CultureInfo.InvariantCulture);
         var firmwareMessage = publishedFirmware.Count == 0
-            ? "No separate firmware updater was matched in Razer's current public catalog."
+            ? "No verified firmware reference is mapped to these devices; the latest firmware status is unknown."
             : $"Razer publishes device-specific firmware checks for: {string.Join(", ", publishedFirmware)}. " +
               (liveCatalogConfirmed
                   ? "The live Razer catalog confirmed all matched releases. "
                   : "The last verified Razer catalog mapping is shown because the live support page did not return complete machine-readable content. ") +
               "Each official updater performs the final connected-device firmware applicability check.";
+        liveCatalogConfirmed &= matchingReleases.Length > 0;
         var status = string.IsNullOrWhiteSpace(razerSynapseVersion)
             ? ManufacturerDriverStatus.OfficialSourceOnly
             : ManufacturerDriverStatus.VendorSoftwareManaged;
@@ -250,7 +275,8 @@ public sealed partial class ManufacturerDriverService(HttpClient httpClient, Kyo
             "Razer Synapse + firmware catalog",
             RazerFirmwareCatalog,
             $"Razer driver packages are grouped under Synapse instead of being repeated for every HID interface. Installed Synapse: {installed}. {firmwareMessage}",
-            null);
+            null, liveCatalogConfirmed ? ManufacturerCheckEvidence.LiveCatalog : ManufacturerCheckEvidence.ReferenceRelease,
+            LiveCheckFailed: matchingReleases.Length > 0 && !liveCatalogConfirmed);
     }
 
     internal async Task<ManufacturerDriverResult> CheckNvidiaAsync(
@@ -288,13 +314,16 @@ public sealed partial class ManufacturerDriverService(HttpClient httpClient, Kyo
             }
             var lookup = new Uri("https://gfwsl.geforce.com/services_toolkit/services/com/nvidia/services/AjaxDriverService.php" +
                 $"?func=DriverManualLookup&psid={seriesId}&pfid={productMatch.Groups["id"].Value}&osID=57&languageCode=1033&isWHQL=1&dch=1&upCRD=0&qnf=0&sort1=0&numberOfResults=10");
-            var newest = NewestGameReadyDriver(await GetStringAsync(lookup, cancellationToken));
+            var catalogJson = await GetStringAsync(lookup, cancellationToken);
+            var newest = NewestGameReadyDriver(catalogJson);
             if (newest is null)
             {
                 throw new InvalidDataException("NVIDIA's official search returned no WHQL Game Ready driver.");
             }
 
             var (availableVersion, resultId) = newest.Value;
+            if (NvidiaAudioNotesUri(catalogJson, resultId, availableVersion) is { } notes)
+                _nvidiaNotes[resultId] = notes;
             var installedVersion = NormalizeNvidiaVersion(driver.InstalledVersion);
             var detailsUri = NvidiaDetailsUri(resultId, CultureInfo.CurrentUICulture.Name);
             if (VersionOrder.Compare(availableVersion, installedVersion) <= 0)
@@ -345,7 +374,7 @@ public sealed partial class ManufacturerDriverService(HttpClient httpClient, Kyo
                 "NVIDIA",
                 detailsUri,
                 "A newer official NVIDIA WHQL Game Ready driver is available.",
-                update);
+                update, ManufacturerCheckEvidence.LiveCatalog);
         }
         catch (Exception exception)
         {
@@ -395,7 +424,7 @@ public sealed partial class ManufacturerDriverService(HttpClient httpClient, Kyo
                     "Realtek RTL8125",
                     exactUri,
                     "Realtek's official RTL8125-compatible PCIe catalog has a newer standard Windows NDIS package. Realtek requires its download page and license flow.",
-                    null)
+                    null, ManufacturerCheckEvidence.LiveCatalog)
                 : Current(driver, available, "Realtek RTL8125", exactUri,
                     "Realtek's official RTL8125-compatible PCIe catalog reports no newer standard Windows NDIS package.");
         }
@@ -448,7 +477,7 @@ public sealed partial class ManufacturerDriverService(HttpClient httpClient, Kyo
                 return NoVerifiedCatalog(driver, source, listed.SupportPage, $"Kyocera's support page for the {model} lists no KX driver for Windows.");
             return VersionOrder.Compare(kx.Version, driver.InstalledVersion) > 0
                 ? new ManufacturerDriverResult(driver, ManufacturerDriverStatus.Available, kx.Version, source, listed.SupportPage,
-                    $"Kyocera's support page for the {model} lists KX driver {kx.Version}. Kyocera publishes no hash for the package, so it is not installed directly.", null)
+                    $"Kyocera's support page for the {model} lists KX driver {kx.Version}. Kyocera publishes no hash for the package, so it is not installed directly.", null, ManufacturerCheckEvidence.LiveCatalog)
                 : Current(driver, kx.Version, source, listed.SupportPage,
                     $"Kyocera's support page for the {model} lists KX driver {kx.Version}; the installed KX driver is current.");
         }
@@ -537,7 +566,7 @@ public sealed partial class ManufacturerDriverService(HttpClient httpClient, Kyo
                     "TP-Link Archer TBE400UH",
                     TpLinkTbe400Uh,
                     "The exact TP-Link hardware-ID catalog page reports a newer stable Windows driver.",
-                    TpLinkOffer(driver, html, available, comparableAvailable))
+                    TpLinkOffer(driver, html, available, comparableAvailable), ManufacturerCheckEvidence.LiveCatalog)
                 : Current(driver, comparableAvailable, "TP-Link Archer TBE400UH", TpLinkTbe400Uh,
                     $"The exact TP-Link hardware-ID catalog page publishes package branch {available}; its Windows 11 branch corresponds to installed {driver.InstalledVersion}.");
         }
@@ -553,26 +582,15 @@ public sealed partial class ManufacturerDriverService(HttpClient httpClient, Kyo
     {
         try
         {
-            var readme = await GetStringAsync(IntelEthernetReadme, cancellationToken);
-            var release = IntelEthernetReleaseRegex().Match(readme);
-            if (!release.Success || !readme.Contains("Intel® Ethernet Connection I219", StringComparison.OrdinalIgnoreCase) &&
-                                    !readme.Contains("Intel(R) Ethernet Connection I219", StringComparison.OrdinalIgnoreCase))
-            {
-                throw new InvalidDataException("Intel's official Ethernet release metadata did not confirm I219 support.");
-            }
-            var releaseVersion = release.Groups["version"].Value;
-            var payload = IntelI219Payload(releaseVersion);
-            if (payload is null)
-            {
-                return NoVerifiedCatalog(driver, "Intel Ethernet I219", IntelEthernetReleaseNotes,
-                    $"Intel publishes Ethernet package {releaseVersion}, but its exact Windows 11 I219 INF payload has not been independently mapped yet. No version mismatch is claimed.");
-            }
+            var liveRelease = await ReadIntelReleaseAsync(IntelEthernetWindows11Page, cancellationToken);
+            var releaseVersion = liveRelease.Version;
+            var payload = await ReadIntelEthernetArchiveAsync(liveRelease, driver.HardwareId, cancellationToken);
 
             var displayedAvailable = $"Intel {releaseVersion} · e1d.inf {payload.DriverVersion}";
             if (VersionOrder.Compare(payload.DriverVersion, driver.InstalledVersion) <= 0)
             {
                 return Current(driver, displayedAvailable, "Intel Ethernet I219", IntelEthernetWindows11Page,
-                    $"Intel Windows 11 package {releaseVersion} contains applicable e1d.inf {payload.DriverVersion}; the installed I219 driver is current. The package release number is not compared with the INF driver version.");
+                    $"Intel's live Ethernet catalog lists package {releaseVersion} containing e1d.inf {payload.DriverVersion}; installed is {driver.InstalledVersion}.");
             }
 
             var plan = new UpdateExecutionPlan(
@@ -603,7 +621,7 @@ public sealed partial class ManufacturerDriverService(HttpClient httpClient, Kyo
                 "x64",
                 "stable",
                 IntelEthernetWindows11Page.AbsoluteUri,
-                $"Intel package {releaseVersion} is protected by Intel's published SHA-256; the exact I219 INF and Microsoft WHCP catalog are revalidated before pnputil installation.",
+                $"Intel package {releaseVersion} was verified against Intel's published archive hash; the exact I219 INF and Microsoft WHCP catalog are revalidated before pnputil installation.",
                 plan);
             return new ManufacturerDriverResult(
                 driver,
@@ -612,31 +630,22 @@ public sealed partial class ManufacturerDriverService(HttpClient httpClient, Kyo
                 "Intel Ethernet I219",
                 IntelEthernetWindows11Page,
                 $"A newer applicable Intel Windows 11 e1d INF ({payload.DriverVersion}) is available in package {releaseVersion}.",
-                update);
+                update, ManufacturerCheckEvidence.LiveCatalog);
         }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
         catch (Exception exception)
         {
             return Error(driver, "Intel Ethernet I219", IntelEthernetWindows11Page, exception.Message);
         }
     }
 
-    private static IntelDriverPayload? IntelI219Payload(string releaseVersion) => releaseVersion switch
-    {
-        "31.2.2" => new IntelDriverPayload(
-            "12.19.2.64",
-            new Uri("https://downloadmirror.intel.com/923981/Wired_driver_31.2.2_x64.zip"),
-            "Wired_driver_31.2.2_x64.zip",
-            "2CBFF42AA02519E49F02D8E95A6572C44310E97FE67C42E299F2ABA6EA9344F5",
-            "PRO1000\\Winx64\\W11\\e1d.inf"),
-        _ => null
-    };
-
-    private static ManufacturerDriverResult CheckDellAw3423Dw(InstalledHardwareDriver driver)
+    internal static ManufacturerDriverResult CheckDellAw3423Dw(InstalledHardwareDriver driver)
     {
         if (driver.DeviceClass.Equals("Monitor", StringComparison.OrdinalIgnoreCase))
         {
-            return Current(driver, driver.InstalledVersion, "Dell AW3423DW (M46J9)", DellAw3423DwDriver,
-                "Dell's exact M46J9 AW3423DW monitor INF is the installed 1.1.0.0 generation. Dell's A00-00 label is the package release label, not the INF driver version. Monitor firmware is a separate workflow.");
+            return Current(driver, "1.1.0.0", "Dell AW3423DW (M46J9)", DellAw3423DwDriver,
+                "Dell M46J9 is a retained monitor-driver reference. The latest Dell catalog was not checked, so the installed version is not marked current. Monitor firmware is a separate workflow.",
+                ManufacturerCheckEvidence.ReferenceRelease);
         }
         return new ManufacturerDriverResult(
             driver,
@@ -655,7 +664,7 @@ public sealed partial class ManufacturerDriverService(HttpClient httpClient, Kyo
         "WD Elements support",
         WdExternalDriverSupport,
         "WD Elements uses Microsoft's supported USB-storage/disk driver on Windows 11. WD documents an SES component that installs automatically when required and explicitly labels the downloadable SES package as legacy for Windows 10 and later. The official page also links WD utilities; no unnecessary legacy storage driver is offered as an update.",
-        null);
+        null, ManufacturerCheckEvidence.SupportGuidance);
 
     // Every driver check shares one scan, so one slow manufacturer site must fail
     // only its own driver instead of holding all of them past the scan's
@@ -669,7 +678,7 @@ public sealed partial class ManufacturerDriverService(HttpClient httpClient, Kyo
         try
         {
             using var request = new HttpRequestMessage(HttpMethod.Get, uri);
-            request.Headers.UserAgent.ParseAdd("NaxUpdater/0.17.64");
+            request.Headers.UserAgent.ParseAdd("NaxUpdater/0.17.71");
             using var response = await httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, timeout.Token);
             response.EnsureSuccessStatusCode();
             return await response.Content.ReadAsStringAsync(timeout.Token);
@@ -1059,7 +1068,7 @@ public sealed partial class ManufacturerDriverService(HttpClient httpClient, Kyo
         string source,
         Uri uri,
         string message) =>
-        new(driver, ManufacturerDriverStatus.OfficialSourceOnly, null, source, uri, message, null);
+        new(driver, ManufacturerDriverStatus.OfficialSourceOnly, null, source, uri, message, null, ManufacturerCheckEvidence.SupportGuidance);
 
     private static ManufacturerDriverResult OfficialSourceOnly(
         InstalledHardwareDriver driver,
@@ -1067,7 +1076,7 @@ public sealed partial class ManufacturerDriverService(HttpClient httpClient, Kyo
         Uri uri,
         string availableVersion,
         string message) =>
-        new(driver, ManufacturerDriverStatus.OfficialSourceOnly, availableVersion, source, uri, message, null);
+        new(driver, ManufacturerDriverStatus.OfficialSourceOnly, availableVersion, source, uri, message, null, ManufacturerCheckEvidence.ReferenceRelease);
 
     private static string? ReadInstalledProgramVersion(string displayName)
     {
@@ -1103,8 +1112,10 @@ public sealed partial class ManufacturerDriverService(HttpClient httpClient, Kyo
         return null;
     }
 
-    private static ManufacturerDriverResult Current(InstalledHardwareDriver driver, string? available, string source, Uri uri, string message) =>
-        new(driver, ManufacturerDriverStatus.Current, available, source, uri, message, null);
+    private static ManufacturerDriverResult Current(InstalledHardwareDriver driver, string? available, string source, Uri uri, string message,
+        ManufacturerCheckEvidence evidence = ManufacturerCheckEvidence.LiveCatalog) =>
+        new(driver, evidence == ManufacturerCheckEvidence.LiveCatalog ? ManufacturerDriverStatus.Current : ManufacturerDriverStatus.OfficialSourceOnly,
+            available, source, uri, message, null, evidence);
 
     private static ManufacturerDriverResult NoVerifiedCatalog(InstalledHardwareDriver driver, string source, Uri? uri, string message) =>
         new(driver, ManufacturerDriverStatus.NoVerifiedCatalog, null, source, uri, message, null);

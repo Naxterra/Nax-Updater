@@ -23,9 +23,10 @@ internal sealed class DriverComponentUpdateProvider(HttpClient client, SharedSca
         var snapshot = await scan.WaitAsync(token);
         var matches = snapshot.Results.Where(r => Matches(app.DisplayName, r.Driver)).ToArray();
         var status = matches.Length == 0 ? UpdateStatus.ManagedExternally :
-            matches.Any(r => r.Status == ManufacturerDriverStatus.Error) ? UpdateStatus.Error :
+            matches.Any(r => r.HasCheckIssue) ? UpdateStatus.Error :
             matches.Any(r => r.Status == ManufacturerDriverStatus.Available) ? UpdateStatus.NewerReleaseKnown :
-            matches.All(r => r.Status is ManufacturerDriverStatus.Current or ManufacturerDriverStatus.NoUpdateRequired) ? UpdateStatus.Current : UpdateStatus.ManagedExternally;
+            matches.All(r => r.Status == ManufacturerDriverStatus.Current && r.IsLiveChecked ||
+                             r.Status == ManufacturerDriverStatus.NoUpdateRequired) ? UpdateStatus.Current : UpdateStatus.ManagedExternally;
         // The driver version is shown only when it uses the package's own version
         // scheme (NVIDIA 616.92 -> 617.42); Intel and Realtek package and INF
         // versions are not comparable.
@@ -38,7 +39,7 @@ internal sealed class DriverComponentUpdateProvider(HttpClient client, SharedSca
         return new(app.Identity, app.DisplayName, app.NormalizedVersion, available, status, Id, "Official manufacturer driver checks",
             "application-managed", "Driver package managed by manufacturer", "provider-selected", "stable", matches.FirstOrDefault()?.SourceUri?.AbsoluteUri,
             matches.Length == 0 ? "No installed device could be correlated with this driver package; the package was not marked current."
-                : "The underlying device drivers were checked against manufacturer sources. Package and INF versions are not interchangeable. " +
+                : "Driver check results include live manufacturer checks, retained release references and support guidance. Package and INF versions are not interchangeable. " +
                     string.Join(" | ", matches.Select(r => $"{r.Driver.DeviceName}: {r.Status}. {r.Message}")) +
                     (status == UpdateStatus.NewerReleaseKnown ? " Apply the device update in the Drivers view." : ""), null,
             Applicability: status == UpdateStatus.Current ? UpdateApplicability.NotRequired : UpdateApplicability.Unknown,

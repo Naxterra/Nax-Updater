@@ -482,6 +482,13 @@ try
     TpLinkRegression.Run(Assert);
     await ReleaseReviewRegression.RunAsync(Assert);
     await SecondReviewRegression.RunAsync(Assert);
+    await AppReviewRegression.RunAsync(Assert, fixture);
+    await RetryChecksRegression.RunAsync(Assert);
+    await RefreshSchedulingRegression.RunAsync(Assert);
+    await StoreBatchRegression.RunAsync(Assert, fixture);
+    await DriverCoverageRegression.RunAsync(Assert);
+    await DriverSourceRegression.RunAsync(Assert, fixture);
+    await MsiAudioRegression.RunAsync(Assert);
     MsiScopeRegression.Run(Assert);
     AtomicFileRegression.Run(Assert);
     // WinGet's COM server exits after installing a fresh catalog package; only its

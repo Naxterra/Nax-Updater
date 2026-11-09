@@ -6,6 +6,41 @@ namespace NaxUpdater.Core.Services;
 
 public static class DriverUpdateIdentity
 {
+    public const string MsiAudioProviderId = "manufacturer-driver:msi-realtek-audio";
+    internal const string MsiAudioHardwareId = @"HDAUDIO\FUNC_01&VEN_10EC&DEV_0B00&SUBSYS_1462EC80";
+
+    internal static bool IsMsiAudioDevice(InstalledHardwareDriver driver) => driver.IsPresent &&
+        driver.DeviceClass.Equals("MEDIA", StringComparison.OrdinalIgnoreCase) &&
+        driver.HardwareId?.Split(['\r', '\n', '\0'], StringSplitOptions.RemoveEmptyEntries)
+            .Any(id => id.Equals(MsiAudioHardwareId, StringComparison.OrdinalIgnoreCase) ||
+                       id.StartsWith(MsiAudioHardwareId + "&REV_", StringComparison.OrdinalIgnoreCase)) == true;
+
+    public static bool HasReachedTarget(InstalledHardwareDriver driver, string? targetVersion, string providerId)
+    {
+        if (!driver.IsPresent || string.IsNullOrWhiteSpace(targetVersion)) return false;
+        if (providerId == MsiAudioProviderId)
+            return IsMsiAudioDevice(driver) && driver.Provider.Equals("Realtek Semiconductor Corp.", StringComparison.OrdinalIgnoreCase) &&
+                   VersionOrder.Compare(driver.InstalledVersion, targetVersion) == 0;
+        return VersionOrder.Compare(InstalledReleaseVersion(driver), targetVersion) >= 0;
+    }
+
+    public static UpdateCheckResult ObservedState(UpdateCheckResult previous, InstalledHardwareDriver driver, string message)
+    {
+        var reached = HasReachedTarget(driver, previous.AvailableVersion, previous.ProviderId);
+        return previous with
+        {
+            ApplicationIdentity = driver.Identity,
+            DisplayName = driver.DeviceName,
+            InstalledVersion = InstalledReleaseVersion(driver),
+            AvailableVersion = null,
+            Status = reached ? UpdateStatus.Current : UpdateStatus.Error,
+            ExecutionPlan = null,
+            Applicability = reached ? UpdateApplicability.NotRequired : UpdateApplicability.Unknown,
+            Message = message,
+            CorrelationKey = previous.CorrelationKey ?? $"driver:{driver.Identity}"
+        };
+    }
+
     internal static string ForGroup(string packageKey, IReadOnlyList<InstalledHardwareDriver> members)
     {
         // Named suites already have fixed grouping identities. Default groups must

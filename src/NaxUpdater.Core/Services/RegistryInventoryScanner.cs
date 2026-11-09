@@ -11,16 +11,16 @@ internal sealed partial class RegistryInventoryScanner
     private const string InstallerUpgradeCodesPath = @"SOFTWARE\Microsoft\Windows\CurrentVersion\Installer\UpgradeCodes";
     internal const string InstallerUpgradeFamilyEvidenceLabel = "Windows Installer upgrade family";
 
-    public IReadOnlyList<ApplicationCandidate> Scan(ICollection<InventoryIssue> issues)
+    public IReadOnlyList<ApplicationCandidate> Scan(ICollection<InventoryIssue> issues, CancellationToken cancellationToken = default)
     {
         var results = new List<ApplicationCandidate>();
-        var installerUpgradeFamilies = ReadInstallerUpgradeFamilies(issues);
-        ScanHive(RegistryHive.LocalMachine, RegistryView.Registry64, InstallScope.Machine, installerUpgradeFamilies, results, issues);
-        ScanHive(RegistryHive.LocalMachine, RegistryView.Registry32, InstallScope.Machine, installerUpgradeFamilies, results, issues);
+        var installerUpgradeFamilies = ReadInstallerUpgradeFamilies(issues, cancellationToken);
+        ScanHive(RegistryHive.LocalMachine, RegistryView.Registry64, InstallScope.Machine, installerUpgradeFamilies, results, issues, cancellationToken);
+        ScanHive(RegistryHive.LocalMachine, RegistryView.Registry32, InstallScope.Machine, installerUpgradeFamilies, results, issues, cancellationToken);
         // Windows keeps one HKCU\Software for 32-bit and 64-bit programs (only HKLM is split),
         // so the user hive is read once. Reading it in both views listed every per-user
         // entry twice, and entries without an install path (rustup) were never merged.
-        ScanHive(RegistryHive.CurrentUser, RegistryView.Registry64, InstallScope.CurrentUser, installerUpgradeFamilies, results, issues);
+        ScanHive(RegistryHive.CurrentUser, RegistryView.Registry64, InstallScope.CurrentUser, installerUpgradeFamilies, results, issues, cancellationToken);
         return results;
     }
 
@@ -30,7 +30,7 @@ internal sealed partial class RegistryInventoryScanner
         InstallScope scope,
         IReadOnlyDictionary<string, string> installerUpgradeFamilies,
         ICollection<ApplicationCandidate> results,
-        ICollection<InventoryIssue> issues)
+        ICollection<InventoryIssue> issues, CancellationToken cancellationToken)
     {
         var sourceName = $"{hive} {view}";
         try
@@ -44,6 +44,7 @@ internal sealed partial class RegistryInventoryScanner
 
             foreach (var subKeyName in uninstallKey.GetSubKeyNames())
             {
+                cancellationToken.ThrowIfCancellationRequested();
                 try
                 {
                     using var subKey = uninstallKey.OpenSubKey(subKeyName);
@@ -182,7 +183,7 @@ internal sealed partial class RegistryInventoryScanner
         }
     }
 
-    private static IReadOnlyDictionary<string, string> ReadInstallerUpgradeFamilies(ICollection<InventoryIssue> issues)
+    private static IReadOnlyDictionary<string, string> ReadInstallerUpgradeFamilies(ICollection<InventoryIssue> issues, CancellationToken cancellationToken)
     {
         var results = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         foreach (var view in new[] { RegistryView.Registry64, RegistryView.Registry32 })
@@ -197,6 +198,7 @@ internal sealed partial class RegistryInventoryScanner
                 }
                 foreach (var packedUpgradeCode in upgradeCodes.GetSubKeyNames())
                 {
+                    cancellationToken.ThrowIfCancellationRequested();
                     using var familyKey = upgradeCodes.OpenSubKey(packedUpgradeCode);
                     if (familyKey is null)
                     {
