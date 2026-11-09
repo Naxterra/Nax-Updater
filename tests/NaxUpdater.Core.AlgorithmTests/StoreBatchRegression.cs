@@ -66,6 +66,27 @@ internal static class StoreBatchRegression
             async (_, _, timeout, _) => { await Task.Delay(timeout); return new(-1, "", "The query timed out."); }, TimeSpan.FromMilliseconds(40));
         assert(await endedByRunner.CheckAsync(CancellationToken.None) == StoreBatchCheck.TimedOut,
             "A Store batch that the process runner ended at its time limit was not recognized as timed out.");
+        // late_store_answer_is_still_an_answer: an update table or unknown text that arrives late
+        // needs the per-app checks; only the runner's own end at the limit is a timeout.
+        assert(StoreUpdateBatchQuery.Classify(new(0, "Updates found: fixture", ""), ranOutOfTime: true) == StoreBatchCheck.CheckIndividually &&
+               StoreUpdateBatchQuery.Classify(new(0, Empty, ""), ranOutOfTime: true) == StoreBatchCheck.NoUpdates &&
+               StoreUpdateBatchQuery.Classify(new(-1, "", "The process did not start."), ranOutOfTime: false) == StoreBatchCheck.CheckIndividually &&
+               StoreUpdateBatchQuery.Classify(new(-1, "", "The query timed out."), ranOutOfTime: true) == StoreBatchCheck.TimedOut,
+            "A late answer of the Store was taken for a timeout, so a cached \"no update\" could hide a listed update.");
+        // canceled_scan_ends_the_store_query: the scan's token reaches the helper process.
+        using var scan = new CancellationTokenSource();
+        var helperCanceled = new TaskCompletionSource();
+        var canceledWithScan = new StoreUpdateBatchQuery(() => "trusted-store.exe", async (_, _, _, token) =>
+        {
+            try { await Task.Delay(Timeout.Infinite, token); }
+            catch (OperationCanceledException) { helperCanceled.TrySetResult(); throw; }
+            return new(0, Empty, "");
+        });
+        var running = canceledWithScan.Start(scan.Token);
+        scan.Cancel();
+        await running;
+        assert(await Task.WhenAny(helperCanceled.Task, Task.Delay(5000)) == helperCanceled.Task,
+            "Canceling the scan did not end the Store query that the scan had started.");
         var failure = new StoreUpdateBatchQuery(() => "trusted-store.exe", (_, _, _, _) => throw new IOException("Cannot start."));
         assert(await failure.CheckAsync(CancellationToken.None) == StoreBatchCheck.CheckIndividually,
             "A process-launch failure was treated as a completed no-update check.");
@@ -138,6 +159,13 @@ internal static class StoreBatchRegression
         recent.RecordNoUpdate(StoreSearchCache.Key("Fixture.App_publisher", "1.0.0.0", "2.0.0.0"));
         var answeredEarlier = await new MsixStoreUpdateProvider(http, new NoStoreUpdate(), native, recent, Slow()).CheckAsync(app, CancellationToken.None);
         var neverAnswered = await new MsixStoreUpdateProvider(http, new NoStoreUpdate(), native, null, Slow()).CheckAsync(app, CancellationToken.None);
+        // The in-scan recheck of failed Store families would read the same finished answer again
+        // and only add its 11 s cooldown, so it is skipped for this outcome.
+        var withoutRecheck = System.Diagnostics.Stopwatch.StartNew();
+        var scanned = await new UpdateCheckService([new MsixStoreUpdateProvider(http, new NoStoreUpdate(), native, null, Slow())])
+            .CheckAsync(new(DateTimeOffset.UtcNow, [app], [], []));
+        assert(scanned.Results.Single().Status == UpdateStatus.Error && withoutRecheck.Elapsed < TimeSpan.FromSeconds(6),
+            $"A Store batch that ran out of time still waited for the in-scan recheck: {withoutRecheck.Elapsed.TotalSeconds:N1} s");
         assert(answeredEarlier.Status == UpdateStatus.Current && neverAnswered is { Status: UpdateStatus.Error, IsInstallable: false } && native.Queries.Count == 0,
             $"A Store batch that ran out of time started per-app native queries or was reported current without evidence: {answeredEarlier.Status} · {neverAnswered.Status} · {native.Queries.Count} native queries");
 

@@ -115,6 +115,10 @@ public sealed class UpdateCheckService
         // checker. Keep the provider set local, including concurrent scan calls.
         var startedStoreBatch = _sharedSources?.TakeStoreBatch();
         var providers = _providers.Select(p => p is MsixStoreUpdateProvider store ? store.ForNewScan(startedStoreBatch) : p).ToArray();
+        // On every path, also a retry, the Store's query for all apps starts before the per-app
+        // checks, so its time runs beside an app's own Store lookups and not after them.
+        if (applications.Any(static app => app.ManagementMode == ManagementMode.Msix))
+            foreach (var store in providers.OfType<MsixStoreUpdateProvider>()) store.StartBatch(token);
         var generation = Guid.NewGuid();
         var refreshFailures = new Dictionary<string, string>(StringComparer.Ordinal);
         foreach (var provider in providers)
@@ -193,7 +197,10 @@ public sealed class UpdateCheckService
         // families once after the cooldown instead of reporting a whole batch of
         // failures for a single transient stall.
         var storeRetries = Enumerable.Range(0, applications.Length)
-            .Where(i => applications[i].ManagementMode == ManagementMode.Msix && results[i].Status == UpdateStatus.Error)
+            // Not after the Store's batch query ran out of time: the recheck would read the
+            // same finished answer again and only add the cooldown to the scan.
+            .Where(i => applications[i].ManagementMode == ManagementMode.Msix && results[i].Status == UpdateStatus.Error &&
+                        results[i].AvailabilityReason != UpdateAvailabilityReason.StoreDidNotAnswer)
             .ToArray();
         if (storeRetries.Length > 0)
         {

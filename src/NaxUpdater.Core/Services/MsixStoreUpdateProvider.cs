@@ -48,6 +48,9 @@ public sealed class MsixStoreUpdateProvider : IUpdateProvider
     public bool CanHandle(InstalledApplication application) => application.ManagementMode == ManagementMode.Msix;
     public bool OwnsResultProviderId(string resultProviderId) => resultProviderId.Equals(Id, StringComparison.Ordinal);
 
+    // Starts the Store's query for all apps before the per-app checks reach it.
+    internal void StartBatch(CancellationToken scanToken) => _ = _batchQuery?.Start(scanToken);
+
     // A scan that already started the Store's batch query hands it in; otherwise this scan starts its own.
     internal MsixStoreUpdateProvider ForNewScan(StoreUpdateBatchQuery? started = null) =>
         new(_httpClient, _store, _nativeStore, _searchCache, _batchQuery is null ? null : started ?? _batchQuery.ForNewScan());
@@ -150,7 +153,8 @@ public sealed class MsixStoreUpdateProvider : IUpdateProvider
                 // checked and can be checked again, instead of holding the whole scan.
                 if (batch == StoreBatchCheck.TimedOut)
                     return Result(application, null, UpdateStatus.Error, null, product.Identity.ProductId,
-                        $"Microsoft Store did not answer its update query within {StoreUpdateBatchQuery.QueryTimeout.TotalSeconds:0} seconds, so this app was not checked this time.");
+                        $"Microsoft Store did not answer its update query within {StoreUpdateBatchQuery.QueryTimeout.TotalSeconds:0} seconds, so this app was not checked this time.")
+                        with { AvailabilityReason = UpdateAvailabilityReason.StoreDidNotAnswer };
                 var offers = new List<(StoreProductIdentity Identity, NativeStoreOffer Offer)>();
                 // One native request per admitted Store family. Parallel SKU
                 // fan-out otherwise consumes all broker slots before later

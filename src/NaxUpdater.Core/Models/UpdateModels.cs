@@ -19,7 +19,7 @@ public enum UpdateApplicability
     NotApplicable
 }
 
-public enum UpdateAvailabilityReason { None, AwaitingStorePublication, AwaitingStoreOffer, NoApplicableStoreUpdate, StoreQueued, StoreUpdating, StorePaused, AwaitingReleaseVerification, StagedRollout, DriverUpdateInDriversView }
+public enum UpdateAvailabilityReason { None, AwaitingStorePublication, AwaitingStoreOffer, NoApplicableStoreUpdate, StoreQueued, StoreUpdating, StorePaused, AwaitingReleaseVerification, StagedRollout, DriverUpdateInDriversView, StoreDidNotAnswer }
 public sealed record UpdateCheckProgress(int Completed, int Total, string Phase, string? ApplicationName,
     UpdateCheckResult? Result = null);
 

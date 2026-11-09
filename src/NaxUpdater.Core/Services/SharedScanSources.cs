@@ -29,7 +29,8 @@ public sealed class SharedScanSources(HttpClient httpClient, string? cacheDirect
         {
             if (_storeBatch is not null) return;
             _storeBatch = batch;
-            _ = batch.CheckAsync(CancellationToken.None);
+            // A canceled scan also ends the Store's helper process.
+            _ = batch.Start(scanCancellation);
         }
     }
 

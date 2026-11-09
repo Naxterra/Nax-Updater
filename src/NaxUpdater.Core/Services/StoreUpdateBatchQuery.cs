@@ -9,7 +9,8 @@ internal sealed class StoreUpdateBatchQuery
     // On the owner's PC the query answered in about 5 s on one day and in 15 to 18 s on another.
     // With a limit of 12 s the slow day fell back to one native query per app, which the Store
     // answers one at a time: 14 apps took 83 s. The limit stays below the 30 s that one source
-    // check may take, so the catalog lookup before it still fits.
+    // check may take, and every check starts the query before its per-app Store lookups, so
+    // those run beside it and not before it.
     internal static readonly TimeSpan QueryTimeout = TimeSpan.FromSeconds(25);
     private readonly Func<string?> _resolve;
     private readonly Func<string, IReadOnlyList<string>, TimeSpan, CancellationToken, Task<ProcessQueryResult>> _run;
@@ -38,45 +39,54 @@ internal sealed class StoreUpdateBatchQuery
     public Task<StoreBatchCheck> CheckAsync(CancellationToken token)
     {
         token.ThrowIfCancellationRequested();
-        Task<StoreBatchCheck> check;
-        lock (_gate) check = _check ??= QueryAsync();
         // An application timing out must not cancel the shared query for siblings.
         // The read-only helper has its own bounded lifetime.
-        return check.WaitAsync(token);
+        return Start(CancellationToken.None).WaitAsync(token);
+    }
+
+    // Starts the query once, before the per-app checks need it. Only the scan's own token ends it
+    // early; the token of one application's check never does.
+    internal Task<StoreBatchCheck> Start(CancellationToken scanToken)
+    {
+        lock (_gate) return _check ??= QueryAsync(scanToken);
     }
 
     internal StoreUpdateBatchQuery ForNewScan() => new(_resolve, _run, _timeout);
 
-    private async Task<StoreBatchCheck> QueryAsync()
+    private async Task<StoreBatchCheck> QueryAsync(CancellationToken scanToken)
     {
         Task<ProcessQueryResult>? query = null;
         var started = System.Diagnostics.Stopwatch.GetTimestamp();
-        // A query that ran out of time is its own outcome: the per-app queries go through the
-        // same Store service and would take longer still, so they are not started for it.
-        bool RanOutOfTime() => System.Diagnostics.Stopwatch.GetElapsedTime(started) >= _timeout * 0.9;
         try
         {
             var path = _resolve();
             if (path is null) return StoreBatchCheck.Unavailable;
-            using var deadline = new CancellationTokenSource(_timeout);
+            using var deadline = CancellationTokenSource.CreateLinkedTokenSource(scanToken);
+            deadline.CancelAfter(_timeout);
             // No --apply, filters, shell, PATH lookup or deployment command.
             query = _run(path, ["updates"], _timeout, deadline.Token);
             var result = await query.WaitAsync(deadline.Token);
-            var check = Parse(result);
-            // The process runner ends a query at its limit with an error result.
-            return check == StoreBatchCheck.CheckIndividually && RanOutOfTime() ? StoreBatchCheck.TimedOut : check;
+            return Classify(result, System.Diagnostics.Stopwatch.GetElapsedTime(started) >= _timeout * 0.9);
         }
         catch (Exception exception)
         {
             if (query is not null)
                 _ = query.ContinueWith(t => { _ = t.Exception; }, CancellationToken.None,
                     TaskContinuationOptions.OnlyOnFaulted | TaskContinuationOptions.ExecuteSynchronously, TaskScheduler.Default);
-            // Only the query's own deadline cancels it; no caller's token reaches it.
-            return exception is OperationCanceledException or TimeoutException
+            // The deadline ended the query. A canceled scan has no reader for the outcome.
+            return exception is OperationCanceledException or TimeoutException && !scanToken.IsCancellationRequested
                 ? StoreBatchCheck.TimedOut
                 : StoreBatchCheck.CheckIndividually;
         }
     }
+
+    // A query that ran out of time is its own outcome: the per-app queries go through the same
+    // Store service and would take longer still, so they are not started for it. Only the process
+    // runner's own end at the limit (exit code -1) counts. Whatever the Store itself answered,
+    // however late, is an answer: an update table or unknown text still needs the per-app checks
+    // and must never be covered by an earlier "no update".
+    internal static StoreBatchCheck Classify(ProcessQueryResult result, bool ranOutOfTime) =>
+        result.ExitCode == -1 && ranOutOfTime ? StoreBatchCheck.TimedOut : Parse(result);
 
     internal static StoreBatchCheck Parse(ProcessQueryResult result)
     {
