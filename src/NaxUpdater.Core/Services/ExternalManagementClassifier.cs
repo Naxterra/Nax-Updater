@@ -121,14 +121,15 @@ internal static class ExternalManagementClassifier
     // The word alone also names ordinary programs, which then lost their update from a package
     // catalog: a database driver ("Microsoft ODBC Driver 18 for SQL Server", a JDBC driver) is a
     // library, and "Display Driver Uninstaller", "Driver Booster", "Intel Driver & Support
-    // Assistant" or the "Windows Driver Kit" are tools. A name with one of these words is no
-    // device driver. A name that stays unclear counts as a driver, because a driver must never
-    // become part of "Update all".
+    // Assistant" or the "Windows Driver Kit" are tools. Only these database interfaces and whole
+    // tool names are excepted. Single words such as "Genius", "Easy" or "Kit" are not, because
+    // they also stand in the names of real device drivers ("Genius WebCam Driver"), and a driver
+    // must never become part of "Update all".
     public static bool IsDriverPackageName(string displayName) =>
         System.Text.RegularExpressions.Regex.IsMatch(displayName, @"\bdrivers?\b|treiber\b",
             System.Text.RegularExpressions.RegexOptions.IgnoreCase | System.Text.RegularExpressions.RegexOptions.CultureInvariant) &&
         !System.Text.RegularExpressions.Regex.IsMatch(displayName,
-            @"\b(?:odbc|jdbc|ole\s?db|sql|database|datenbank|mongodb|uninstaller|booster|easy|genius|updater|assistant|kit)\b",
+            @"\b(?:odbc|jdbc|ole\s?db)\b|\bdisplay driver uninstaller\b|\bdriver (?:booster|easy|genius)\b|\bdriver (?:&|and) support assistant\b|\bwindows driver kit\b",
             System.Text.RegularExpressions.RegexOptions.IgnoreCase | System.Text.RegularExpressions.RegexOptions.CultureInvariant);
 
     private static bool IsManufacturerDriverComponent(InstalledApplication application)

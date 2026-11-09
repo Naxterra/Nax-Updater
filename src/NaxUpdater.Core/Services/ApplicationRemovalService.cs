@@ -33,10 +33,8 @@ public sealed class ApplicationRemovalService
         try
         {
             using var process = Process.Start(startInfo) ?? throw new InvalidOperationException("The registered uninstaller did not start.");
-            var ended = await WaitForUninstallerAsync(process, () => RegistryInventoryScanner.IsRegistered(application.Identity), cancellationToken);
-            // The uninstall entry is gone and the started program keeps running: the removal has
-            // happened, and the program has no exit code to report yet.
-            if (!ended) return new RemovalResult(true, null, false, null);
+            await WaitForUninstallerAsync(process, () => RegistryInventoryScanner.IsRegistered(application.Identity), cancellationToken,
+                isUninstaller: path => IsUninstallerProgram(path, plan.Executable));
             var exitCode = process.ExitCode;
             return new RemovalResult(
                 IsSuccessfulExitCode(exitCode),
@@ -58,38 +56,52 @@ public sealed class ApplicationRemovalService
     // real uninstaller was still open. The wait also ends when the application's uninstall entry
     // is gone, so a browser page that an uninstaller opens at its end does not hold it.
     //
-    // Both waits have an end. An uninstaller that the user cancels keeps its entry and can leave
-    // a helper or a browser running; that wait had no limit, so every action stayed locked and
-    // the window could not be closed. A registered command can also start a program that stays
-    // open, such as a game launcher; once the entry is gone it is waited for only briefly. The
-    // result is false when that program was still running then. While the first process runs
-    // and the entry exists, the wait goes on: that is an uninstaller the user has open.
+    // An uninstaller that the user cancels keeps its entry and can leave a helper or a browser
+    // running. That wait had no limit, so every action stayed locked and the window could not be
+    // closed. A left-behind process that is the uninstaller itself is still waited for as long
+    // as it runs, because the user has it open. Any other left-behind process is waited for
+    // this long at most, counted from the moment no uninstaller was running any more. The first
+    // process is always waited for: only its end gives the exit code, and Windows Installer
+    // removes the uninstall entry before it asks for a restart.
     internal static readonly TimeSpan LeftBehindLimit = TimeSpan.FromMinutes(10);
-    internal static readonly TimeSpan RemovedGrace = TimeSpan.FromSeconds(60);
 
-    internal static async Task<bool> WaitForUninstallerAsync(Process process, Func<bool?> stillRegistered, CancellationToken cancellationToken,
-        TimeSpan? leftBehindLimit = null, TimeSpan? removedGrace = null)
+    internal static async Task WaitForUninstallerAsync(Process process, Func<bool?> stillRegistered, CancellationToken cancellationToken,
+        TimeSpan? leftBehindLimit = null, Func<string?, bool>? isUninstaller = null)
     {
+        isUninstaller ??= static path => IsUninstallerProgram(path, null);
         var descendants = new ProcessDescendants(process);
-        long? removedAt = null;
         while (!process.HasExited)
         {
             descendants.Refresh();
             await Task.WhenAny(process.WaitForExitAsync(cancellationToken), Task.Delay(250, cancellationToken));
             cancellationToken.ThrowIfCancellationRequested();
-            if (process.HasExited) break;
-            if (removedAt is null && stillRegistered() == false) removedAt = Stopwatch.GetTimestamp();
-            if (removedAt is { } removed && Stopwatch.GetElapsedTime(removed) >= (removedGrace ?? RemovedGrace)) return false;
         }
         descendants.Refresh();
-        var firstEnded = Stopwatch.GetTimestamp();
-        while (stillRegistered() != false && descendants.AnyDescendantRunning() &&
-               Stopwatch.GetElapsedTime(firstEnded) < (leftBehindLimit ?? LeftBehindLimit))
+        var uninstallerSeen = Stopwatch.GetTimestamp();
+        while (stillRegistered() != false)
         {
+            if (descendants.AnyDescendantRunning(isUninstaller)) uninstallerSeen = Stopwatch.GetTimestamp();
+            else if (!descendants.AnyDescendantRunning() || Stopwatch.GetElapsedTime(uninstallerSeen) >= (leftBehindLimit ?? LeftBehindLimit)) break;
             await Task.Delay(500, cancellationToken);
             descendants.Refresh();
         }
-        return true;
+    }
+
+    // A process that the uninstaller started is the uninstaller itself when it runs from a temp
+    // folder (NSIS and Inno Setup copy themselves there and end their first process), when it is
+    // Windows Installer, or when it has the file name of the registered uninstaller. A helper or
+    // a browser runs from its own program folder. A path that cannot be read is no uninstaller.
+    internal static bool IsUninstallerProgram(string? path, string? registeredUninstaller)
+    {
+        if (string.IsNullOrWhiteSpace(path)) return false;
+        var name = Path.GetFileName(path);
+        if (name.Equals("msiexec.exe", StringComparison.OrdinalIgnoreCase)) return true;
+        if (!string.IsNullOrWhiteSpace(registeredUninstaller) &&
+            name.Equals(Path.GetFileName(registeredUninstaller), StringComparison.OrdinalIgnoreCase)) return true;
+        // An uninstaller that an administrator account started uses that account's temp folder.
+        return path.StartsWith(Path.GetTempPath(), StringComparison.OrdinalIgnoreCase) ||
+               path.StartsWith(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Windows), "Temp") + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase) ||
+               path.Contains(@"\AppData\Local\Temp\", StringComparison.OrdinalIgnoreCase);
     }
 
     private static async Task<RemovalResult> RemoveMsixAsync(RemovalPlan plan, CancellationToken cancellationToken)

@@ -21,7 +21,7 @@ internal static class ReleaseAuditRegression
         await server_answer_without_length_is_read_only_up_to_the_limit(assert);
         // Findings of the second review of the whole project, fixed after the Store timeout release.
         await removal_wait_ends_although_a_left_behind_process_keeps_running(assert);
-        await removal_wait_ends_once_the_entry_is_gone_although_the_started_program_stays_open(assert);
+        await relocated_uninstaller_is_waited_for_beyond_the_limit_for_other_processes(assert);
         prerelease_named_after_other_words_is_older_than_its_release(assert);
         await database_driver_and_driver_tool_are_not_device_drivers(assert);
         cache_folder_name_is_the_one_windows_stores(assert);
@@ -37,32 +37,35 @@ internal static class ReleaseAuditRegression
             UseShellExecute = false, CreateNoWindow = true, RedirectStandardOutput = true
         })!;
         var timer = Stopwatch.StartNew();
-        var ended = await ApplicationRemovalService.WaitForUninstallerAsync(uninstaller, static () => true, CancellationToken.None,
+        await ApplicationRemovalService.WaitForUninstallerAsync(uninstaller, static () => true, CancellationToken.None,
             leftBehindLimit: TimeSpan.FromSeconds(1.5));
-        assert(ended && timer.Elapsed < TimeSpan.FromSeconds(6),
+        assert(timer.Elapsed < TimeSpan.FromSeconds(6),
             $"The removal waited for a left-behind process beyond its limit: {timer.Elapsed.TotalSeconds:N1} s");
     }
 
-    private static async Task removal_wait_ends_once_the_entry_is_gone_although_the_started_program_stays_open(Action<bool, string> assert)
+    private static async Task relocated_uninstaller_is_waited_for_beyond_the_limit_for_other_processes(Action<bool, string> assert)
     {
-        // Like a game launcher: the registered command starts a program that stays open after the removal.
-        using var launcher = Process.Start(new ProcessStartInfo("ping.exe", "-n 30 127.0.0.1")
+        // Like an NSIS uninstaller whose copy the user leaves open: the left-behind process is the
+        // uninstaller itself, so the limit for helpers and browsers does not end the wait.
+        using var stub = Process.Start(new ProcessStartInfo("cmd.exe", "/d /c start \"\" /b ping -n 5 127.0.0.1")
         {
             UseShellExecute = false, CreateNoWindow = true, RedirectStandardOutput = true
         })!;
-        try
-        {
-            var timer = Stopwatch.StartNew();
-            var ended = await ApplicationRemovalService.WaitForUninstallerAsync(launcher, static () => false, CancellationToken.None,
-                removedGrace: TimeSpan.FromSeconds(1));
-            assert(!ended && !launcher.HasExited && timer.Elapsed < TimeSpan.FromSeconds(6),
-                $"The removal kept waiting for a program that stays open although the uninstall entry was gone: {timer.Elapsed.TotalSeconds:N1} s");
-        }
-        finally
-        {
-            try { launcher.Kill(); }
-            catch (InvalidOperationException) { }
-        }
+        var timer = Stopwatch.StartNew();
+        await ApplicationRemovalService.WaitForUninstallerAsync(stub, static () => true, CancellationToken.None,
+            leftBehindLimit: TimeSpan.FromSeconds(1),
+            isUninstaller: static path => path is not null && Path.GetFileName(path).Equals("ping.exe", StringComparison.OrdinalIgnoreCase));
+        assert(timer.Elapsed > TimeSpan.FromSeconds(2.5) && timer.Elapsed < TimeSpan.FromSeconds(30),
+            $"The removal did not wait for the relocated uninstaller until it ended: {timer.Elapsed.TotalSeconds:N1} s");
+        var registered = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "Fixture", "uninstall.exe");
+        assert(ApplicationRemovalService.IsUninstallerProgram(Path.Combine(Path.GetTempPath(), "~nsuA.tmp", "Un_A.exe"), registered) &&
+               ApplicationRemovalService.IsUninstallerProgram(Path.Combine(Environment.SystemDirectory, "msiexec.exe"), registered) &&
+               ApplicationRemovalService.IsUninstallerProgram(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "Fixture", "bin", "Uninstall.exe"), registered) &&
+               !ApplicationRemovalService.IsUninstallerProgram(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "Browser", "browser.exe"), registered) &&
+               !ApplicationRemovalService.IsUninstallerProgram(null, registered),
+            "A copy in the temp folder, Windows Installer or the registered uninstaller was not taken for the uninstaller, or a browser or an unreadable path was.");
+        assert(string.Equals(ProcessDescendants.ImagePath(Environment.ProcessId), Environment.ProcessPath, StringComparison.OrdinalIgnoreCase),
+            "The program path of a running process could not be read.");
     }
 
     private static void prerelease_named_after_other_words_is_older_than_its_release(Action<bool, string> assert)
@@ -87,9 +90,14 @@ internal static class ReleaseAuditRegression
         string[] programs =
         [
             "Microsoft ODBC Driver 18 for SQL Server", "MongoDB ODBC Driver", "PostgreSQL JDBC Driver", "Display Driver Uninstaller", "Driver Booster 12",
-            "Intel® Driver & Support Assistant", "Windows Driver Kit", "Screwdriver Tool"
+            "Driver Easy 6.1", "Driver Genius 24", "Intel® Driver & Support Assistant", "Windows Driver Kit", "Screwdriver Tool"
         ];
-        string[] drivers = ["Realtek Audio Driver", "Intel Graphics Drivers", "NVIDIA Grafiktreiber 621.14", "Samsung USB Driver for Mobile Phones"];
+        // A brand or a common word in a device driver's name must not make it a program.
+        string[] drivers =
+        [
+            "Realtek Audio Driver", "Intel Graphics Drivers", "NVIDIA Grafiktreiber 621.14", "Samsung USB Driver for Mobile Phones",
+            "Genius WebCam Driver", "Lenovo Easy Camera Driver", "USB Serial Driver Kit", "Printer Driver Updater Service"
+        ];
         var blocked = programs.Where(ExternalManagementClassifier.IsDriverPackageName).ToArray();
         var allowed = drivers.Where(static name => !ExternalManagementClassifier.IsDriverPackageName(name)).ToArray();
         assert(blocked.Length == 0 && allowed.Length == 0,

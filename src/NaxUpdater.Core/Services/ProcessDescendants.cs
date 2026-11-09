@@ -39,11 +39,31 @@ internal sealed class ProcessDescendants
         } while (added);
     }
 
-    public bool AnyDescendantRunning()
+    // With "selected", only descendants count whose program path it accepts. The path is null
+    // when Windows does not let this process read it.
+    public bool AnyDescendantRunning(Func<string?, bool>? selected = null)
     {
         var running = Snapshot().Select(static entry => entry.Id).ToHashSet();
         return _tracked.Any(entry => entry.Key != _rootId && running.Contains(entry.Key) &&
-                                     (entry.Value is null || StartTime(entry.Key) is not { } start || start == entry.Value));
+                                     (entry.Value is null || StartTime(entry.Key) is not { } start || start == entry.Value) &&
+                                     (selected is null || selected(ImagePath(entry.Key))));
+    }
+
+    // Unlike Process.MainModule, this also reads the path of a process that runs elevated.
+    internal static string? ImagePath(int processId)
+    {
+        var handle = OpenProcess(QueryLimitedInformation, false, (uint)processId);
+        if (handle == IntPtr.Zero) return null;
+        try
+        {
+            var name = new char[1024];
+            var length = (uint)name.Length;
+            return QueryFullProcessImageName(handle, 0, name, ref length) ? new string(name, 0, (int)length) : null;
+        }
+        finally
+        {
+            CloseHandle(handle);
+        }
     }
 
     private static DateTime? StartTime(int processId)
@@ -88,6 +108,15 @@ internal sealed class ProcessDescendants
         }
         return result;
     }
+
+    private const uint QueryLimitedInformation = 0x1000;
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    private static extern IntPtr OpenProcess(uint access, [MarshalAs(UnmanagedType.Bool)] bool inheritHandle, uint processId);
+
+    [DllImport("kernel32.dll", EntryPoint = "QueryFullProcessImageNameW", CharSet = CharSet.Unicode, SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool QueryFullProcessImageName(IntPtr process, uint flags, [Out] char[] name, ref uint size);
 
     private const uint SnapshotProcesses = 0x00000002;
     private static readonly IntPtr InvalidHandle = new(-1);
