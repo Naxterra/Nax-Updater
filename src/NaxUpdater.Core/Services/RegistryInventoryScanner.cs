@@ -8,6 +8,26 @@ namespace NaxUpdater.Core.Services;
 internal sealed partial class RegistryInventoryScanner
 {
     private const string UninstallPath = @"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall";
+
+    // Whether the uninstall entry behind a "registry:<hive>:<view>:<key>" identity still exists;
+    // null for any other identity or when the registry cannot be read.
+    internal static bool? IsRegistered(string identity)
+    {
+        var parts = identity.Split(':', 4);
+        if (parts.Length != 4 || parts[0] != "registry" ||
+            !Enum.TryParse<RegistryHive>(parts[1], out var hive) || !Enum.TryParse<RegistryView>(parts[2], out var view))
+            return null;
+        try
+        {
+            using var baseKey = RegistryKey.OpenBaseKey(hive, view);
+            using var key = baseKey.OpenSubKey($@"{UninstallPath}\{parts[3]}");
+            return key is not null;
+        }
+        catch (Exception exception) when (exception is UnauthorizedAccessException or IOException or System.Security.SecurityException)
+        {
+            return null;
+        }
+    }
     private const string InstallerUpgradeCodesPath = @"SOFTWARE\Microsoft\Windows\CurrentVersion\Installer\UpgradeCodes";
     internal const string InstallerUpgradeFamilyEvidenceLabel = "Windows Installer upgrade family";
 

@@ -434,6 +434,22 @@ public sealed class UpdateCheckService
                     candidateProviderIds,
                     "The provider attached an execution plan to a status or applicability state that is not installable.");
             }
+            // Driver updates are never part of Update All. Named driver packages belong to the
+            // driver view; any other package whose name says it is a driver must not become an
+            // installable row through WinGet or Chocolatey either, so it is shown as a known
+            // newer release without an installer.
+            if (result is { Status: UpdateStatus.Available, ExecutionPlan: not null } &&
+                provider.Descriptor.Authority == UpdateProviderAuthority.FallbackCatalog &&
+                ExternalManagementClassifier.IsDriverPackageName(application.DisplayName))
+            {
+                result = result with
+                {
+                    Status = UpdateStatus.NewerReleaseKnown,
+                    ExecutionPlan = null,
+                    Applicability = UpdateApplicability.NotApplicable,
+                    Message = $"A package catalog lists version {result.AvailableVersion} of this driver package. Nax-Updater installs drivers only from the Drivers view, so this update is not installed from a package catalog."
+                };
+            }
             var hasApplicablePlan = result.ExecutionPlan is not null &&
                                     !string.IsNullOrWhiteSpace(result.AvailableVersion);
             var normalizedStatus = result.Status == UpdateStatus.Available && !hasApplicablePlan

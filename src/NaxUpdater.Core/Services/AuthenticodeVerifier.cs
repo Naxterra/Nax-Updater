@@ -35,12 +35,9 @@ public sealed class NativeAuthenticodeVerifier : IAuthenticodeVerifier
             {
                 using var certificate = LoadAuthenticodeSigner(filePath);
                 var signer = certificate.GetNameInfo(X509NameType.SimpleName, forIssuer: false);
-                var exact = expectedSigner.StartsWith('=');
-                var expected = exact ? expectedSigner[1..] : expectedSigner;
-                var matches = exact
-                    ? signer.Equals(expected, StringComparison.OrdinalIgnoreCase)
-                    : signer.Contains(expected, StringComparison.OrdinalIgnoreCase) ||
-                      certificate.Subject.Contains(expected, StringComparison.OrdinalIgnoreCase);
+                // A leading "=" was the marker of an exact match and is still accepted.
+                var expected = expectedSigner.StartsWith('=') ? expectedSigner[1..] : expectedSigner;
+                var matches = SignerMatches(SignerNames(certificate), expected);
                 return matches
                     ? new AuthenticodeVerificationResult(true, signer, null)
                     : new AuthenticodeVerificationResult(false, signer, $"Expected signer '{expected}', found '{signer}'.");
@@ -56,6 +53,30 @@ public sealed class NativeAuthenticodeVerifier : IAuthenticodeVerifier
             Marshal.FreeHGlobal(filePointer);
         }
     }
+
+    // The expected signer must be the certificate's whole subject name (CN) or organization (O).
+    // It used to be enough that the text occurred anywhere in the subject, so "Redmond", "C=US"
+    // or a single letter passed for a Microsoft certificate. Only the letter case, repeated
+    // spaces and a final period are ignored.
+    internal static bool SignerMatches(IEnumerable<string> signerNames, string expected)
+    {
+        var wanted = NormalizeSignerName(expected);
+        return wanted.Length > 0 && signerNames.Any(name => NormalizeSignerName(name).Equals(wanted, StringComparison.OrdinalIgnoreCase));
+    }
+
+    private static IEnumerable<string> SignerNames(X509Certificate2 certificate)
+    {
+        yield return certificate.GetNameInfo(X509NameType.SimpleName, forIssuer: false);
+        foreach (var name in certificate.SubjectName.EnumerateRelativeDistinguishedNames())
+        {
+            if (!name.HasMultipleElements && name.GetSingleElementType().Value is "2.5.4.3" or "2.5.4.10" &&
+                name.GetSingleElementValue() is { Length: > 0 } value)
+                yield return value;
+        }
+    }
+
+    private static string NormalizeSignerName(string name) =>
+        string.Join(' ', name.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries)).TrimEnd('.');
 
     public static string? GetTrustedSigner(string filePath)
     {

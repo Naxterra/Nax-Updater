@@ -22,16 +22,38 @@ public static partial class VersionOrder
 
         var coreOrder = CompareParts(leftVersion.Value.Core, rightVersion.Value.Core);
         if (coreOrder != 0) return coreOrder;
-        var leftPre = leftVersion.Value.Prerelease;
-        var rightPre = rightVersion.Value.Prerelease;
-        if (leftPre is null && rightPre is null) return 0;
-        if (leftPre is null) return 1;
-        if (rightPre is null) return -1;
-
-        var stageOrder = Stage(leftPre).CompareTo(Stage(rightPre));
-        if (stageOrder != 0) return stageOrder;
-        return CompareParts(Tokens(leftPre), Tokens(rightPre), prerelease: true);
+        // With the same numbers a prerelease is older than the release, and a patch level
+        // ("7.1a", "3.0 SP1") is newer.
+        var kindOrder = leftVersion.Value.Kind.CompareTo(rightVersion.Value.Kind);
+        if (kindOrder != 0) return kindOrder;
+        var leftSuffix = leftVersion.Value.Suffix;
+        var rightSuffix = rightVersion.Value.Suffix;
+        if (leftSuffix is null || rightSuffix is null) return 0;
+        if (leftVersion.Value.Kind == SuffixKind.Prerelease)
+        {
+            var stageOrder = Stage(leftSuffix).CompareTo(Stage(rightSuffix));
+            if (stageOrder != 0) return stageOrder;
+        }
+        return CompareParts(Tokens(leftSuffix), Tokens(rightSuffix), prerelease: true);
     }
+
+    private enum SuffixKind { Prerelease, Release, PatchLevel }
+
+    // Only these words mark a version as older than the release with the same numbers. Any other
+    // text after the numbers was read as a prerelease too, so an installed "7.1a" or
+    // "2.6.12-I001" counted as older than "7.1" or "2.6.12" and the same release was offered as
+    // an update.
+    private static readonly HashSet<string> PrereleaseWords = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "dev", "nightly", "snapshot", "canary", "insider", "insiders", "alpha", "beta", "pre", "preview", "prerelease", "rc",
+        "ea", "eap", "exp", "experimental", "test", "testing", "unstable", "next", "edge", "milestone"
+    };
+
+    // A word followed by a number that marks a later patch level of the same release.
+    private static readonly HashSet<string> PatchLevelWords = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "sp", "hotfix", "hf", "patch", "fix", "update", "u", "r", "rev", "p"
+    };
 
     private static string Clean(string? value)
     {
@@ -43,22 +65,35 @@ public static partial class VersionOrder
         return Regex.Replace(result, @"\.windows\.", ".", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
     }
 
-    private static (string[] Core, string? Prerelease)? Parse(string value)
+    private static (string[] Core, SuffixKind Kind, string? Suffix)? Parse(string value)
     {
         var match = CoreRegex().Match(value);
         if (!match.Success) return null;
         var core = match.Groups["core"].Value.Split(['.', ','], StringSplitOptions.TrimEntries).ToList();
-        var suffix = match.Groups["suffix"].Value.Trim().TrimStart('-', '.');
+        // Text in parentheses ("(64-bit)", a build number) describes the release, not its order.
+        var suffix = ParenthesesRegex().Replace(match.Groups["suffix"].Value, " ").Trim().TrimStart('-', '.', '_').Trim();
         if (suffix.Length == 0 || suffix.Equals("esr", StringComparison.OrdinalIgnoreCase) ||
             suffix.StartsWith("build", StringComparison.OrdinalIgnoreCase))
-            return (core.ToArray(), null);
+            return (core.ToArray(), SuffixKind.Release, null);
         // Some native updaters publish a fourth numeric build using a dash.
         if (suffix.All(char.IsAsciiDigit))
         {
             core.Add(suffix);
-            return (core.ToArray(), null);
+            return (core.ToArray(), SuffixKind.Release, null);
         }
-        return (core.ToArray(), suffix);
+        var tokens = Tokens(suffix);
+        if (tokens.Length == 0) return (core.ToArray(), SuffixKind.Release, null);
+        var first = tokens[0];
+        var numbered = tokens.Length > 1 && tokens[1].All(char.IsAsciiDigit);
+        // "155.0b5" and "3.13.0a1" are a beta and an alpha; "m1" is a milestone.
+        if (PrereleaseWords.Contains(first) || numbered && first.ToLowerInvariant() is "a" or "b" or "m")
+            return (core.ToArray(), SuffixKind.Prerelease, suffix);
+        // A single letter alone ("1.0.2a", "7.1a") is a patch release, as is "SP1" or "u401".
+        if (tokens.Length == 1 && first.Length == 1 && char.IsAsciiLetter(first[0]) || numbered && PatchLevelWords.Contains(first))
+            return (core.ToArray(), SuffixKind.PatchLevel, suffix);
+        // Any other text ("stable", "-I001", an edition name) says nothing about the order, so
+        // the version counts as the release with these numbers.
+        return (core.ToArray(), SuffixKind.Release, null);
     }
 
     private static int CompareParts(string[] left, string[] right, bool prerelease = false)
@@ -98,7 +133,7 @@ public static partial class VersionOrder
         var token = Tokens(suffix).FirstOrDefault()?.ToLowerInvariant();
         return token switch
         {
-            "dev" or "nightly" => 0,
+            "dev" or "nightly" or "snapshot" or "canary" => 0,
             "a" or "alpha" => 1,
             "b" or "beta" => 2,
             "pre" or "preview" => 3,
@@ -114,7 +149,7 @@ public static partial class VersionOrder
         string digits;
         if (compact.Success) digits = compact.Groups[1].Value;
         else if (dotted.Success)
-            digits = dotted.Groups[1].Value + dotted.Groups[2].Value + dotted.Groups[3].Value;
+            digits = dotted.Groups[1].Value + dotted.Groups[2].Value.PadLeft(2, '0') + dotted.Groups[3].Value.PadLeft(2, '0');
         else { date = default; return false; }
         return DateOnly.TryParseExact("20" + digits, "yyyyMMdd",
             System.Globalization.CultureInfo.InvariantCulture,
@@ -127,6 +162,9 @@ public static partial class VersionOrder
     private static partial Regex TokenRegex();
     [GeneratedRegex(@"^(\d{6})$", RegexOptions.CultureInvariant)]
     private static partial Regex CompactReleaseDateRegex();
-    [GeneratedRegex(@"^(\d{2})\.(\d{2})\.(\d{2})(?:\.0)?$", RegexOptions.CultureInvariant)]
+    // "24.1.2" is the same date as "24.01.02", so both order the same way against "231105".
+    [GeneratedRegex(@"^(\d{2})\.(\d{1,2})\.(\d{1,2})(?:\.0)?$", RegexOptions.CultureInvariant)]
     private static partial Regex DottedReleaseDateRegex();
+    [GeneratedRegex(@"\([^)]*\)", RegexOptions.CultureInvariant)]
+    private static partial Regex ParenthesesRegex();
 }

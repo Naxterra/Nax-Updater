@@ -143,7 +143,7 @@ public sealed partial class KyoceraSupportCatalog(HttpClient httpClient, string?
         try
         {
             using var request = new HttpRequestMessage(HttpMethod.Get, uri);
-            request.Headers.UserAgent.ParseAdd("NaxUpdater/0.17.71");
+            request.Headers.UserAgent.ParseAdd("NaxUpdater/0.17.72");
             if (cached?.Entry.ETag is { } etag) request.Headers.TryAddWithoutValidation("If-None-Match", etag);
             if (cached?.Entry.LastModified is { } lastModified) request.Headers.IfModifiedSince = lastModified;
             using var response = await httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, timeout.Token);

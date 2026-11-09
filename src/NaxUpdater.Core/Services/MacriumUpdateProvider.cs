@@ -34,7 +34,7 @@ public sealed class MacriumUpdateProvider(HttpClient httpClient) : IUpdateProvid
     {
         for (var redirect = 0; redirect < 5; redirect++)
         {
-            var response = await httpClient.GetAsync(endpoint, token);
+            var response = await httpClient.GetAsync(endpoint, HttpCompletionOption.ResponseHeadersRead, token);
             if ((int)response.StatusCode is >= 300 and < 400 && response.Headers.Location is { } location)
             {
                 var target = new Uri(endpoint, location);

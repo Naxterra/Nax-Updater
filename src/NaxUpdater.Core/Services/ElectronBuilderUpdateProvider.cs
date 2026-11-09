@@ -36,7 +36,7 @@ public sealed partial class ElectronBuilderUpdateProvider(HttpClient httpClient,
                 "so the application cannot find updates through it either. No update can be verified until the publisher restores it.",
                 releasePage: configuration.ReleasePage) with { Status = UpdateStatus.Unsupported };
         response.EnsureSuccessStatusCode();
-        var bytes = await response.Content.ReadAsByteArrayAsync(cancellationToken);
+        var bytes = await HttpBodyLimit.ReadBytesAsync(response.Content, cancellationToken);
         var feed = Encoding.UTF8.GetString(bytes);
         var metadata = ParseLatestMetadata(feed);
         if (metadata is null)

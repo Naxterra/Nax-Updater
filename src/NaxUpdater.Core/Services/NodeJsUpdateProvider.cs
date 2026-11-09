@@ -39,10 +39,10 @@ public sealed class NodeJsUpdateProvider(HttpClient httpClient) : IUpdateProvide
         try
         {
             using var request = new HttpRequestMessage(HttpMethod.Get, ReleaseIndexUri);
-            request.Headers.UserAgent.ParseAdd("NaxUpdater/0.17.71");
+            request.Headers.UserAgent.ParseAdd("NaxUpdater/0.17.72");
             using var response = await httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
             response.EnsureSuccessStatusCode();
-            using var document = JsonDocument.Parse(await response.Content.ReadAsStreamAsync(cancellationToken));
+            using var document = JsonDocument.Parse(await HttpBodyLimit.ReadStreamAsync(response.Content, cancellationToken));
             release = ReadLatestCompatibleRelease(document.RootElement, installedMajor, catalogFile);
         }
         catch (Exception exception) when (exception is HttpRequestException or JsonException or TaskCanceledException && !cancellationToken.IsCancellationRequested)
@@ -158,7 +158,7 @@ public sealed class NodeJsUpdateProvider(HttpClient httpClient) : IUpdateProvide
         CancellationToken cancellationToken)
     {
         using var request = new HttpRequestMessage(HttpMethod.Get, $"https://nodejs.org/dist/v{version}/SHASUMS256.txt");
-        request.Headers.UserAgent.ParseAdd("NaxUpdater/0.17.71");
+        request.Headers.UserAgent.ParseAdd("NaxUpdater/0.17.72");
         try
         {
             using var response = await httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
@@ -166,7 +166,7 @@ public sealed class NodeJsUpdateProvider(HttpClient httpClient) : IUpdateProvide
             {
                 return null;
             }
-            return ParseSha256(await response.Content.ReadAsStringAsync(cancellationToken), installerName);
+            return ParseSha256(await HttpBodyLimit.ReadStringAsync(response.Content, cancellationToken), installerName);
         }
         catch (HttpRequestException)
         {

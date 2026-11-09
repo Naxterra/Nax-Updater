@@ -54,7 +54,7 @@ public sealed class FirefoxUpdateProvider(
                 null);
         }
 
-        using var versionsDocument = JsonDocument.Parse(await httpClient.GetStringAsync(VersionsUri, cancellationToken));
+        using var versionsDocument = JsonDocument.Parse(await HttpBodyLimit.GetStringAsync(httpClient, new Uri(VersionsUri), cancellationToken));
         if (!versionsDocument.RootElement.TryGetProperty(versionKey, out var latestValue) ||
             string.IsNullOrWhiteSpace(latestValue.GetString()))
         {
@@ -75,7 +75,7 @@ public sealed class FirefoxUpdateProvider(
 
         var fileName = $"Firefox Setup {latestVersion}.exe";
         var relativePath = $"{platformDirectory}/{profile.EffectiveLanguage}/{fileName}";
-        var checksumText = await httpClient.GetStringAsync($"{ArchiveRoot}/{Uri.EscapeDataString(latestVersion)}/SHA256SUMS", cancellationToken);
+        var checksumText = await HttpBodyLimit.GetStringAsync(httpClient, new Uri($"{ArchiveRoot}/{Uri.EscapeDataString(latestVersion)}/SHA256SUMS"), cancellationToken);
         var sha256 = FindChecksum(checksumText, relativePath);
         if (sha256 is null)
         {

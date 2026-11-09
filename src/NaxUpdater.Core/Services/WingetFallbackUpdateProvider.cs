@@ -418,19 +418,63 @@ public sealed partial class WingetFallbackUpdateProvider(
             if (sources is null) return (null, false); // WinGet's catalog is not installed at all.
             foreach (var source in sources)
             {
-                var snapshot = Path.Combine(Path.GetTempPath(), $"{SnapshotPrefix}{Guid.NewGuid():N}.db");
-                try
-                {
-                    File.Copy(source, snapshot);
-                    // Copy keeps the source timestamp; stale-snapshot cleanup must see the copy's age.
-                    File.SetLastWriteTimeUtc(snapshot, DateTime.UtcNow);
-                    if (IsReadableIndex(snapshot)) return (snapshot, false);
-                }
-                catch (Exception exception) when (exception is IOException or UnauthorizedAccessException) { }
-                TryDelete(snapshot);
+                if (SharedSnapshot(source) is { } snapshot) return (snapshot, false);
             }
         }
         return (null, true);
+    }
+
+    private static readonly Lock SnapshotGate = new();
+    private static (string Source, DateTime WrittenUtc, long Length, string Path)? _sharedSnapshot;
+    private static bool _exitCleanupRegistered;
+
+    // One private copy per process for one state of WinGet's index. Every update check service
+    // made its own 9 MB copy and never removed it, and one update creates several services (it
+    // is revalidated before, during and after the change), so Update All left dozens of copies
+    // in the temp folder. The copy is replaced when WinGet installs a new index, and removed
+    // when the process ends.
+    private static string? SharedSnapshot(string source)
+    {
+        lock (SnapshotGate)
+        {
+            try
+            {
+                var info = new FileInfo(source);
+                if (_sharedSnapshot is { } shared && shared.Source.Equals(source, StringComparison.OrdinalIgnoreCase) &&
+                    shared.WrittenUtc == info.LastWriteTimeUtc && shared.Length == info.Length && File.Exists(shared.Path))
+                {
+                    // Keeps the copy out of the stale-snapshot cleanup of a parallel process.
+                    File.SetLastWriteTimeUtc(shared.Path, DateTime.UtcNow);
+                    return shared.Path;
+                }
+                var snapshot = Path.Combine(Path.GetTempPath(), $"{SnapshotPrefix}{Guid.NewGuid():N}.db");
+                File.Copy(source, snapshot);
+                // Copy keeps the source timestamp; stale-snapshot cleanup must see the copy's age.
+                File.SetLastWriteTimeUtc(snapshot, DateTime.UtcNow);
+                if (!IsReadableIndex(snapshot))
+                {
+                    TryDelete(snapshot);
+                    return null;
+                }
+                // A check that still reads the replaced copy keeps it open; the stale-snapshot
+                // cleanup removes it later.
+                if (_sharedSnapshot is { } replaced) TryDelete(replaced.Path);
+                _sharedSnapshot = (source, info.LastWriteTimeUtc, info.Length, snapshot);
+                if (!_exitCleanupRegistered)
+                {
+                    _exitCleanupRegistered = true;
+                    AppDomain.CurrentDomain.ProcessExit += static (_, _) =>
+                    {
+                        if (_sharedSnapshot is { } last) TryDelete(last.Path);
+                    };
+                }
+                return snapshot;
+            }
+            catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+            {
+                return null;
+            }
+        }
     }
 
     private const string SnapshotPrefix = "naxupdater-winget-index-";
@@ -494,8 +538,9 @@ public sealed partial class WingetFallbackUpdateProvider(
     {
         try
         {
+            var current = _sharedSnapshot?.Path;
             foreach (var file in Directory.EnumerateFiles(Path.GetTempPath(), SnapshotPrefix + "*.db"))
-                if (File.GetLastWriteTimeUtc(file) < DateTime.UtcNow.AddMinutes(-10)) TryDelete(file);
+                if (!file.Equals(current, StringComparison.OrdinalIgnoreCase) && File.GetLastWriteTimeUtc(file) < DateTime.UtcNow.AddMinutes(-10)) TryDelete(file);
         }
         catch (Exception exception) when (exception is IOException or UnauthorizedAccessException) { }
     }

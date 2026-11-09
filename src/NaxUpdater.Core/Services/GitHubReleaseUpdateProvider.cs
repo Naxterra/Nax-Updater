@@ -86,7 +86,7 @@ public sealed class GitHubReleaseUpdateProvider : IUpdateProvider
                     $"GitHub API returned {(int)response.StatusCode} {response.ReasonPhrase}.",
                     cancellationToken);
             }
-            using var document = JsonDocument.Parse(await response.Content.ReadAsStreamAsync(cancellationToken));
+            using var document = JsonDocument.Parse(await HttpBodyLimit.ReadStreamAsync(response.Content, cancellationToken));
 
             var root = document.RootElement;
             if ((root.TryGetProperty("draft", out var draft) && draft.ValueKind == JsonValueKind.True) ||
@@ -133,8 +133,7 @@ public sealed class GitHubReleaseUpdateProvider : IUpdateProvider
                 // An installer is needed only to update. A release that is not newer
                 // than the installation settles it without one (older releases may use
                 // older asset names).
-                var tagVersion = recipe.Repository.Equals("git-for-windows/git", StringComparison.OrdinalIgnoreCase) &&
-                    tag.EndsWith(".windows.1", StringComparison.OrdinalIgnoreCase) ? tag[..^10] : tag;
+                var tagVersion = ReleaseVersionOfTag(tag);
                 if (!string.IsNullOrWhiteSpace(application.NormalizedVersion) && VersionOrder.Compare(tagVersion, application.NormalizedVersion) <= 0)
                     return new UpdateCheckResult(
                         application.Identity, application.DisplayName, application.NormalizedVersion, application.NormalizedVersion,
@@ -147,8 +146,7 @@ public sealed class GitHubReleaseUpdateProvider : IUpdateProvider
             var latestVersion = selectedMatch.Groups["version"].Success
                 ? selectedMatch.Groups["version"].Value
                 : tag;
-            var releaseVersion = recipe.Repository.Equals("git-for-windows/git", StringComparison.OrdinalIgnoreCase) &&
-                tag.EndsWith(".windows.1", StringComparison.OrdinalIgnoreCase) ? tag[..^10] : tag;
+            var releaseVersion = ReleaseVersionOfTag(tag);
             if (VersionOrder.Compare(latestVersion, releaseVersion) != 0)
                 return Error(application, "The release tag and installer version disagree; the installer was not approved.", tag, releasePage);
             var assetName = selectedAsset.Value.GetProperty("name").GetString()!;
@@ -280,7 +278,7 @@ public sealed class GitHubReleaseUpdateProvider : IUpdateProvider
         }
         var response = await GetLatestReleaseCoreAsync(cancellationToken);
         if (recipe.ReleaseTagPrefix is not null || !response.IsSuccessStatusCode) return response;
-        var json = await response.Content.ReadAsStringAsync(cancellationToken);
+        var json = await HttpBodyLimit.ReadStringAsync(response.Content, cancellationToken);
         var requestUri = response.RequestMessage?.RequestUri;
         response.Dispose();
         HttpResponseMessage Json(string content) => new(HttpStatusCode.OK)
@@ -331,7 +329,7 @@ public sealed class GitHubReleaseUpdateProvider : IUpdateProvider
             using var request = new HttpRequestMessage(
                 HttpMethod.Get,
                 $"https://api.github.com/repos/{recipe.Repository}/releases/latest");
-            request.Headers.UserAgent.ParseAdd("NaxUpdater/0.17.71");
+            request.Headers.UserAgent.ParseAdd("NaxUpdater/0.17.72");
             request.Headers.Accept.ParseAdd("application/vnd.github+json");
             try
             {
@@ -369,6 +367,12 @@ public sealed class GitHubReleaseUpdateProvider : IUpdateProvider
     private Task<string?> ReadReleaseThroughGitHubCliAsync(CancellationToken cancellationToken) =>
         GitHubApiClient.ReadUsingCliAsync($"repos/{recipe.Repository}/releases/latest", cancellationToken);
 
+    // Git for Windows tags its first build of a release "<version>.windows.1"; the installer and
+    // the installed program carry the plain version.
+    private string ReleaseVersionOfTag(string tag) =>
+        recipe.Repository.Equals("git-for-windows/git", StringComparison.OrdinalIgnoreCase) &&
+        tag.EndsWith(".windows.1", StringComparison.OrdinalIgnoreCase) ? tag[..^10] : tag;
+
     private async Task<UpdateCheckResult> CheckLatestTagFallbackAsync(
         InstalledApplication application,
         string apiError,
@@ -377,13 +381,15 @@ public sealed class GitHubReleaseUpdateProvider : IUpdateProvider
         using var request = new HttpRequestMessage(
             HttpMethod.Get,
             $"https://github.com/{recipe.Repository}/releases/latest");
-        request.Headers.UserAgent.ParseAdd("NaxUpdater/0.17.71");
+        request.Headers.UserAgent.ParseAdd("NaxUpdater/0.17.72");
         using var response = await httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
         var finalUri = response.RequestMessage?.RequestUri;
         var match = finalUri is null
             ? Match.Empty
             : Regex.Match(finalUri.AbsolutePath, @"/releases/tag/v?(?<version>[^/]+)$", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
-        var latestVersion = match.Success ? Uri.UnescapeDataString(match.Groups["version"].Value) : null;
+        // The same tag rule as on the API path; without it a current Git for Windows 2.47.0 was
+        // reported as older than its own tag "2.47.0.windows.1" whenever the API was unavailable.
+        var latestVersion = match.Success ? ReleaseVersionOfTag(Uri.UnescapeDataString(match.Groups["version"].Value)) : null;
         if (!response.IsSuccessStatusCode || string.IsNullOrWhiteSpace(latestVersion))
         {
             return Error(application, $"{apiError} The latest-release fallback could not resolve a version.");

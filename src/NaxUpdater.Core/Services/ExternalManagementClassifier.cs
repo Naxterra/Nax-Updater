@@ -114,6 +114,13 @@ internal static class ExternalManagementClassifier
         return null;
     }
 
+    // "Realtek Audio Driver", "Intel Graphics Drivers", "Netzwerktreiber": the product name itself
+    // says that the package is a driver. German names are compounds, so "treiber" also counts at
+    // the end of a word.
+    public static bool IsDriverPackageName(string displayName) =>
+        System.Text.RegularExpressions.Regex.IsMatch(displayName, @"\bdrivers?\b|treiber\b",
+            System.Text.RegularExpressions.RegexOptions.IgnoreCase | System.Text.RegularExpressions.RegexOptions.CultureInvariant);
+
     private static bool IsManufacturerDriverComponent(InstalledApplication application)
     {
         var name = application.DisplayName;

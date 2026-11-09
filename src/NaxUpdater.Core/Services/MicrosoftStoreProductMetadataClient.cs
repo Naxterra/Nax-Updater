@@ -68,14 +68,14 @@ internal sealed class MicrosoftStoreProductMetadataClient(HttpClient httpClient)
             deadline.CancelAfter(TimeSpan.FromSeconds(8));
             try
             {
-                using var response = await httpClient.GetAsync(uri, deadline.Token);
+                using var response = await httpClient.GetAsync(uri, HttpCompletionOption.ResponseHeadersRead, deadline.Token);
                 if (attempt == 0 && ((int)response.StatusCode >= 500 || response.StatusCode == System.Net.HttpStatusCode.RequestTimeout))
                     continue;
                 response.EnsureSuccessStatusCode();
                 var final = response.RequestMessage?.RequestUri ?? uri;
                 if (final.Scheme != Uri.UriSchemeHttps || !final.Host.Equals(CatalogBaseUri.Host, StringComparison.OrdinalIgnoreCase))
                     throw new InvalidOperationException("Store metadata redirected outside the official catalog.");
-                return JsonDocument.Parse(await response.Content.ReadAsStringAsync(deadline.Token));
+                return JsonDocument.Parse(await HttpBodyLimit.ReadStringAsync(response.Content, deadline.Token));
             }
             catch (OperationCanceledException) when (!token.IsCancellationRequested && attempt == 0) { }
             catch (HttpRequestException exception) when (attempt == 0 && exception.StatusCode is null) { }
@@ -197,10 +197,10 @@ internal sealed class MicrosoftStoreProductMetadataClient(HttpClient httpClient)
             CatalogBaseUri,
             $"{Uri.EscapeDataString(productId)}?market={Uri.EscapeDataString(market)}&languages={Uri.EscapeDataString(language)}");
         using var request = new HttpRequestMessage(HttpMethod.Get, uri);
-        request.Headers.UserAgent.ParseAdd("NaxUpdater/0.17.71");
+        request.Headers.UserAgent.ParseAdd("NaxUpdater/0.17.72");
         using var response = await httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
         response.EnsureSuccessStatusCode();
-        await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
+        await using var stream = await HttpBodyLimit.ReadStreamAsync(response.Content, cancellationToken);
         using var document = await JsonDocument.ParseAsync(stream, cancellationToken: cancellationToken);
         return ParseLatestPackageVersion(document.RootElement, packageFamilyName, architecture, installedVersion);
     }

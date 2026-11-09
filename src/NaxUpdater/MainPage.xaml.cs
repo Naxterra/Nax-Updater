@@ -17,7 +17,7 @@ public sealed partial class MainPage : Page
     private readonly ApplicationInventoryService _inventoryService;
     // Some publisher servers refuse requests without a User-Agent (403), so the shared
     // client always sends one; requests that set their own keep it.
-    private readonly HttpClient _httpClient = new() { Timeout = TimeSpan.FromSeconds(30), DefaultRequestHeaders = { { "User-Agent", "NaxUpdater/0.17.71" } } };
+    private readonly HttpClient _httpClient = new() { Timeout = TimeSpan.FromSeconds(30), DefaultRequestHeaders = { { "User-Agent", "NaxUpdater/0.17.72" } } };
     private readonly UpdateExecutionService _updateExecutionService = new();
     private readonly ApplicationRemovalService _applicationRemovalService = new();
     private readonly ApplicationIconService _applicationIconService = new();
@@ -761,6 +761,9 @@ public sealed partial class MainPage : Page
         UpdateBar.IsOpen = true;
     }
 
+    public void ShowUnhandledError(Exception exception) =>
+        ShowUnexpectedFailure(LocalizationService.Get("UnexpectedErrorTitle"), exception);
+
     private void ShowOperationRunning()
     {
         UpdateBar.Title = LocalizationService.Get("OperationRunningTitle");
@@ -903,6 +906,12 @@ public sealed partial class MainPage : Page
             ReconcileCompletedOperation(result);
             await SaveScanDiagnosticsAsync(result, checkTimer.Elapsed);
             _checksComplete = true;
+            // With every check answered, cached installers that no offer needs are removed.
+            if (result.FailedCheckCount == 0)
+            {
+                var downloads = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "NaxUpdater", "Downloads");
+                await Task.Run(() => UpdatePayloadCache.Sweep(downloads, result.Results));
+            }
             PublishUpdateResults(result);
             if (showWorkspace) ShowUpdatesWorkspace();
             var errors = result.FailedCheckCount;

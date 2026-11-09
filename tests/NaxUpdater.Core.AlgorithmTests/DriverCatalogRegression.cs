@@ -17,9 +17,10 @@ internal static class DriverCatalogRegression
         var catalog = Directory.Exists(catRoot) ? Directory.EnumerateFiles(catRoot, "*31bf3856ad364e35*.cat").FirstOrDefault() : null;
         assert(catalog is not null, "No Windows catalog file was found to verify.");
         var verifier = new NativeAuthenticodeVerifier();
-        var result = verifier.Verify(catalog!, "Microsoft");
-        assert(result.IsValid && result.Signer?.Contains("Microsoft", StringComparison.OrdinalIgnoreCase) == true,
-            $"The signer of a Windows catalog file was not read: {result.Error}");
+        // The signer is matched by its whole name; "Microsoft" alone is only a part of it.
+        var result = verifier.Verify(catalog!, "Microsoft Windows");
+        assert(result.IsValid && result.Signer == "Microsoft Windows" && !verifier.Verify(catalog!, "Microsoft").IsValid,
+            $"The signer of a Windows catalog file was not read, or a part of its name was accepted: {result.Error}");
         var wrong = verifier.Verify(catalog!, "=Intel Corporation");
         assert(!wrong.IsValid && wrong.Error?.StartsWith("Expected signer", StringComparison.Ordinal) == true,
             "A catalog file was accepted for a signer that did not sign it.");

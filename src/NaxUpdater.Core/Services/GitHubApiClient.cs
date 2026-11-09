@@ -11,10 +11,10 @@ internal static class GitHubApiClient
         try
         {
             using var request = new HttpRequestMessage(HttpMethod.Get, "https://api.github.com/" + endpoint);
-            request.Headers.UserAgent.ParseAdd("NaxUpdater/0.17.71");
+            request.Headers.UserAgent.ParseAdd("NaxUpdater/0.17.72");
             request.Headers.Accept.ParseAdd("application/vnd.github+json");
             using var response = await client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, token);
-            if (response.IsSuccessStatusCode) return await response.Content.ReadAsStringAsync(token);
+            if (response.IsSuccessStatusCode) return await HttpBodyLimit.ReadStringAsync(response.Content, token);
         }
         catch (OperationCanceledException) when (token.IsCancellationRequested) { throw; }
         catch (Exception exception) when (exception is HttpRequestException or TaskCanceledException) { }

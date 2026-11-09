@@ -215,4 +215,5 @@
   <data name="DriverStatusSynapseUnverified"><value>Treiber über Synapse · Firmware nicht aktuell geprüft</value></data>
   <data name="DriverOwnerPackageVersion"><value>Paket: {0}</value></data>
   <data name="DriverStatusManagedByPackage"><value>Treiber über {0}</value></data>
+  <data name="UnexpectedErrorTitle" xml:space="preserve"><value>Ein unerwarteter Fehler ist aufgetreten</value></data>
 </root>

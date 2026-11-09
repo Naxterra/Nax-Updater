@@ -60,6 +60,8 @@ en: A newer applicable Intel Windows 11 e1d INF ({0}) is available in package {1
 de: Im Paket {1} ist eine neuere passende Intel-INF e1d für Windows 11 ({0}) verfügbar.
 en: A newer official NVIDIA WHQL Game Ready driver is available.
 de: Ein neuerer offizieller NVIDIA-WHQL-Game-Ready-Treiber ist verfügbar.
+en: A package catalog lists version {0} of this driver package. Nax-Updater installs drivers only from the Drivers view, so this update is not installed from a package catalog.
+de: Ein Paketkatalog führt Version {0} dieses Treiberpakets. Nax-Updater installiert Treiber nur über die Treiberansicht, daher wird dieses Update nicht aus einem Paketkatalog installiert.
 en: A newer producer release is verified, but automatic installation is blocked until the release has a complete asset digest, download URL, and Authenticode signer policy.
 de: Ein neueres Hersteller-Release ist geprüft, aber die automatische Installation bleibt gesperrt, bis das Release einen vollständigen Asset-Hash, eine Download-URL und eine Authenticode-Signaturregel hat.
 en: A signature-only recipe must name the publisher's exact signer.
@@ -768,6 +770,10 @@ en: Driver key of {0}: {1} does not exist.
 de: Treiberschlüssel von {0}: {1} existiert nicht.
 en: Driver key of {0}: {1}
 de: Treiberschlüssel von {0}: {1}
+en: The server's answer is larger than {0} MB and was not read.
+de: Die Antwort des Servers ist größer als {0} MB und wurde nicht gelesen.
+en: The Chocolatey package ID or version contains characters that are not allowed, so the update was not started.
+de: Die Chocolatey-Paket-ID oder -Version enthält unzulässige Zeichen, daher wurde das Update nicht gestartet.
 en: The journal path has no directory.
 de: Der Pfad des Journals hat keinen Ordner.
 en: The last verified Razer catalog mapping is shown because the live support page did not return complete machine-readable content.

@@ -191,13 +191,14 @@ public sealed class OfficialSiteUpdateProvider(HttpClient httpClient, OfficialSi
     private async Task<string> ReadAsync(string url, CancellationToken cancellationToken)
     {
         using var request = new HttpRequestMessage(HttpMethod.Get, url);
-        request.Headers.UserAgent.ParseAdd("NaxUpdater/0.17.71");
+        request.Headers.UserAgent.ParseAdd("NaxUpdater/0.17.72");
         using var response = await httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
         response.EnsureSuccessStatusCode();
         // Version sources are small documents; never read a large file by accident.
         if (response.Content.Headers.ContentLength > 8 * 1024 * 1024)
             throw new HttpRequestException("The version source is unexpectedly large.");
-        return await response.Content.ReadAsStringAsync(cancellationToken);
+        // The header is optional, so the body itself is read with the same limit.
+        return await HttpBodyLimit.ReadStringAsync(response.Content, cancellationToken, 8 * 1024 * 1024);
     }
 
     private string? NormalizeHash(string? value)

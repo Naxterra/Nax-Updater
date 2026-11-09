@@ -214,6 +214,11 @@ public sealed class UpdatePackageDownloader
                                  response.Headers.AcceptRanges.Any(static value => value.Equals("bytes", StringComparison.OrdinalIgnoreCase));
             if (supportsRanges)
             {
+                // The server's own identity of the file; without one, kept segments cannot be
+                // tied to this file and are not reused.
+                var fileIdentity = response.Headers.ETag is null && response.Content.Headers.LastModified is null
+                    ? null
+                    : $"{contentLength}|{response.Headers.ETag}|{response.Content.Headers.LastModified:O}";
                 response.Dispose();
                 try
                 {
@@ -221,6 +226,7 @@ public sealed class UpdatePackageDownloader
                         finalUri,
                         partialPath,
                         contentLength!.Value,
+                        fileIdentity,
                         hashPolicy,
                         plan,
                         progress,
@@ -327,6 +333,7 @@ public sealed class UpdatePackageDownloader
         Uri uri,
         string partialPath,
         long contentLength,
+        string? fileIdentity,
         HashPolicy hashPolicy,
         UpdateExecutionPlan plan,
         IProgress<double>? progress,
@@ -338,6 +345,15 @@ public sealed class UpdatePackageDownloader
             .ToArray();
         long receivedTotal = 0;
         var mergeCompleted = false;
+        // Segments of an interrupted download were reused by their length alone. When the
+        // publisher had replaced the file in the meantime, old and new parts were merged and the
+        // attempt failed its hash check. They are now reused only for the same server file.
+        var identityPath = partialPath + ".segments";
+        if (fileIdentity is null || !File.Exists(identityPath) || File.ReadAllText(identityPath) != fileIdentity)
+        {
+            DeleteSegments(partialPath);
+            if (fileIdentity is not null) File.WriteAllText(identityPath, fileIdentity);
+        }
         try
         {
             var segmentSize = (contentLength + segmentCount - 1) / segmentCount;
@@ -444,7 +460,7 @@ public sealed class UpdatePackageDownloader
         {
             if (mergeCompleted)
             {
-                foreach (var segmentPath in segmentPaths)
+                foreach (var segmentPath in segmentPaths.Append(identityPath))
                 {
                     if (File.Exists(segmentPath))
                     {
@@ -574,11 +590,11 @@ public sealed class UpdatePackageDownloader
     // without a User-Agent with 403 Forbidden, so every download names the updater.
     internal static HttpRequestMessage Identified(HttpRequestMessage request)
     {
-        if (request.Headers.UserAgent.Count == 0) request.Headers.UserAgent.ParseAdd("NaxUpdater/0.17.71");
+        if (request.Headers.UserAgent.Count == 0) request.Headers.UserAgent.ParseAdd("NaxUpdater/0.17.72");
         return request;
     }
 
-    private static string SanitizePathSegment(string value)
+    internal static string SanitizePathSegment(string value)
     {
         var invalid = Path.GetInvalidFileNameChars();
         var result = string.Concat(value.Select(character => invalid.Contains(character) || character is ':' or '/' or '\\' ? '_' : character));

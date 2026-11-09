@@ -19,6 +19,25 @@ public partial class App : Application
         CultureInfo.CurrentUICulture = culture;
         CultureInfo.DefaultThreadCurrentUICulture = culture;
         InitializeComponent();
+        UnhandledException += OnUnhandledException;
+    }
+
+    // An exception that no handler caught would end the process, possibly while it waits for a
+    // running installer and holds the update lock. It is shown in the window and written to
+    // last-error.txt next to the settings, and the app keeps running so that the installer's
+    // result can still be read and recorded.
+    private static void OnUnhandledException(object sender, Microsoft.UI.Xaml.UnhandledExceptionEventArgs e)
+    {
+        e.Handled = true;
+        try
+        {
+            var directory = GetSettingsDirectory();
+            Directory.CreateDirectory(directory);
+            File.WriteAllText(Path.Combine(directory, "last-error.txt"), $"{DateTimeOffset.Now:u}{Environment.NewLine}{e.Exception}");
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException) { }
+        try { (MainWindow as NaxUpdater.MainWindow)?.ShowUnexpectedError(e.Exception); }
+        catch (Exception) { } // Reporting the error must not raise the next one.
     }
 
     protected override void OnLaunched(LaunchActivatedEventArgs args)
@@ -93,9 +112,18 @@ public partial class App : Application
         {
             return;
         }
-        var settingsDirectory = GetSettingsDirectory();
-        Directory.CreateDirectory(settingsDirectory);
-        File.WriteAllText(Path.Combine(settingsDirectory, "language.txt"), language);
+        try
+        {
+            var settingsDirectory = GetSettingsDirectory();
+            Directory.CreateDirectory(settingsDirectory);
+            File.WriteAllText(Path.Combine(settingsDirectory, "language.txt"), language);
+        }
+        // This also runs at the end of an update (a deferred language change). A settings file
+        // that cannot be written must not end the process there; the language then stays as it is.
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+        {
+            return;
+        }
         var executable = Environment.ProcessPath;
         if (string.IsNullOrWhiteSpace(executable))
         {

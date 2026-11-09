@@ -104,7 +104,7 @@ The current implementation includes:
 - producer-first source reconciliation: compatible installed/native, producer, Store and allowed WinGet sources are checked; verified executable offers are selected with explicit policy and verification guards preserved, without crossing installation types;
 - WinGet remains a verified last-resort fallback through exact product-code, MSI upgrade-family, or package-family correlation; it cannot override a producer source and Scoop is no longer consulted;
 
-- generic application process handling before conventional installer deployment, including graceful close, forced process-tree termination when required, installation, and the final version rescan;
+- generic application process handling before conventional installer deployment, including graceful close, forced termination of the plan's own processes when required (never their descendant trees), installation, and the final version rescan;
 - exact non-forced Store upgrade submission only after the Store update catalog confirms applicability and exposes a verifiable target version; `NoApplicableUpgrade` remains a failed/no-longer-applicable transaction;
 - a full-width driver workspace matching the applications and updates views: the fixed centered 1260-pixel island is removed, the device-name column remains bounded, and surplus ultra-wide space follows the action column;
 
@@ -213,7 +213,7 @@ Nax-Updater never falls back to an English Firefox installer when the detected l
 - Downloaded installers require HTTPS, an allow-listed final host, a published SHA-256/SHA-512 release digest, and an expected Authenticode publisher unless an explicitly modelled hash-only payload has an independently verified nested catalog.
 - Direct producer recipes verify installed architecture and scope; supported alternate architectures select their matching assets. Unsupported variants remain visible with an explanation.
 - Native WinGet fulfillment retains the official catalog package/version and validates the selected architecture, installer type, and locale before submission. Windows Package Manager owns download integrity, dependencies, installer switches and Windows elevation.
-- Starting an update authorizes Nax-Updater to close only path-bound processes from the fresh execution plan and force-terminate their same-session trees when necessary; inaccessible processes block the transaction instead of passing stale PIDs through an elevated `taskkill` command.
+- Starting an update authorizes Nax-Updater to close only path-bound processes from the fresh execution plan and force-terminate these same-session processes when necessary, without their descendant trees; inaccessible processes block the transaction instead of passing stale PIDs through an elevated `taskkill` command.
 - Nax-Updater does not run bulk WinGet, Chocolatey, or Scoop commands and never uninstalls without exact user confirmation.
 
 ## Application removal
@@ -232,7 +232,7 @@ From this directory:
 dotnet build NaxUpdater.slnx
 dotnet run --project tests/NaxUpdater.Core.SmokeTests/NaxUpdater.Core.SmokeTests.csproj
 dotnet publish src/NaxUpdater/NaxUpdater.csproj -c Release -r win-x64 --self-contained true -o artifacts/NaxUpdater-win-x64
-./scripts/package-release.ps1 -Version 0.17.71
+./scripts/package-release.ps1 -Version 0.17.72
 ```
 
 The desktop project uses .NET 11, WinUI 3, and the Windows App SDK. It is not an Electron or WebView application.

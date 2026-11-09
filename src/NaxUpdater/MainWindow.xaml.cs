@@ -44,6 +44,11 @@ public sealed partial class MainWindow : Window
         };
     }
 
+    public void ShowUnexpectedError(Exception exception)
+    {
+        if (RootFrame.Content is MainPage page) page.ShowUnhandledError(exception);
+    }
+
     public void SaveViewPreferences()
     {
         if (RootFrame.Content is MainPage page) page.SaveLayoutPreferences();

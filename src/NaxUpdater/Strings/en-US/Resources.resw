@@ -215,4 +215,5 @@
   <data name="DriverStatusSynapseUnverified"><value>Synapse handles drivers · firmware not verified live</value></data>
   <data name="DriverOwnerPackageVersion"><value>Package: {0}</value></data>
   <data name="DriverStatusManagedByPackage"><value>Serviced with {0}</value></data>
+  <data name="UnexpectedErrorTitle" xml:space="preserve"><value>An unexpected error occurred</value></data>
 </root>

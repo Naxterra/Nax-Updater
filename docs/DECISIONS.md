@@ -2,6 +2,28 @@
 
 Why Nax-Updater works the way it does. Newest first; every release adds its decisions here and updates [DESIGN.md](DESIGN.md). Each entry names the decision, the evidence that led to it, and what was rejected.
 
+## 0.17.72 (2026-11-10)
+
+An independent review of the whole project produced the following changes.
+
+**A signer is the whole name on the certificate.** The expected signer only had to occur somewhere in the certificate subject, so "Redmond", "C=US" or a single letter passed for a Microsoft certificate. For publishers without a published hash the signature is the only proof. The expected name must now equal the subject name or the organization. Twenty of the 28 names in use were compared with real certificates on the owner's PC and all match as they are.
+
+**Only a prerelease word makes a version older.** Any text after the numbers was read as a prerelease, so an installed "7.1a" or "2.6.12-I001" counted as older than "7.1" or "2.6.12" and the same release could be offered as an update that never completed. Known prerelease words keep their meaning, a patch letter or a patch word with a number is newer, and other text is ignored. Treating all unknown text as newer was rejected, because an unknown prerelease word would then be offered to an installation that follows final releases.
+
+**A removal waits for the processes its uninstaller starts.** NSIS uninstallers copy themselves, start the copy and exit at once with code 0, so the removal was reported as finished and the next change could start while the real uninstaller was still open. The wait also ends when the uninstall entry is gone, so a page that an uninstaller opens in a browser at its end does not hold it.
+
+**Chocolatey package IDs and versions are checked before the elevated command.** They come from a feed and were placed in a cmd.exe command line as they were. Only the characters of NuGet IDs and versions are accepted now, as for WinGet.
+
+**A package named as a driver is not installed from a package catalog.** Driver packages were kept out of WinGet and Chocolatey by a list of product names. Any other driver package that a catalog matched could have become an installable row and with it part of Update All. The name rule ("Driver", "Drivers", "...treiber") was chosen over correlating packages with devices, because it needs no device data in the application check and errs on the side of not installing.
+
+**Kept download parts belong to one server file, and the cache is swept.** Parts of an interrupted large download were reused by their length alone, and installers were deleted only when their update was verified at once. Installers of updates that were confirmed after a restart, of failed attempts and of superseded versions stayed (496 MB on the owner's PC). After a check in which every source answered, the cache now keeps only what a current offer needs. Driver packages stay, as the owner decided.
+
+**One WinGet index copy per run.** Every check service copied the 9 MB index to the temp folder, and one update creates several services, so Update All left dozens of copies. One copy is shared, replaced when WinGet installs a new index and removed when the app ends.
+
+**Small server answers are read through a size limit, and an unexpected error no longer ends the app.** A server that names no length could make the app buffer an endless answer. An exception that no handler caught ended the process, possibly while it waited for a running installer; it is now shown and written to last-error.txt, and a language file that cannot be written no longer throws at the end of an update. The Git for Windows tag rule now also applies when the GitHub API is unavailable.
+
+**Not changed.** Running applications are still closed and, if necessary, ended after a short wait, as the app states next to every update; the owner does not want a confirmation step. Installers still start from the per-user cache, because a folder that only administrators can write would need a service; the installer file itself is verified and locked until it has run. The MSI keeps its per-user registry values as key paths of the shortcut components, because Windows Installer's validation requires them for components in the Start menu and desktop folders: a test build with machine-wide key paths failed with ICE38, ICE43 and ICE57.
+
 ## 0.17.71 (2026-11-09)
 
 **Install the reviewed MSI audio package from the Drivers view.** The exact motherboard's live catalog publishes Realtek 6.0.10007.1 with an archive SHA-256. The inspected package contains the exact codec/subsystem in HDXMSI.inf, a trusted Realtek-signed setup.exe, supporting CABs and configuration, and a supplied silent response file with automatic restart disabled. Only this version, URL and hash enable the installation recipe. Unknown replacements keep their source link. Download redirects are restricted to MSI's two verified download hosts. Companion extraction is opt-in, requires a release hash, rejects unsafe or duplicate paths, preserves subdirectories, locks all payload files and participates in the execution fingerprint. Existing single-file ZIP recipes keep their behavior.

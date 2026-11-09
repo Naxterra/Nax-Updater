@@ -163,10 +163,10 @@ public sealed class IvpnUpdateProvider : IUpdateProvider
     private async Task<byte[]> GetBytesAsync(Uri uri, CancellationToken cancellationToken)
     {
         using var request = new HttpRequestMessage(HttpMethod.Get, uri);
-        request.Headers.UserAgent.ParseAdd("NaxUpdater/0.17.71");
+        request.Headers.UserAgent.ParseAdd("NaxUpdater/0.17.72");
         using var response = await _httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
         response.EnsureSuccessStatusCode();
-        return await response.Content.ReadAsByteArrayAsync(cancellationToken);
+        return await HttpBodyLimit.ReadBytesAsync(response.Content, cancellationToken);
     }
 
     private async Task<string?> ReadOfficialReleaseHashAsync(IvpnRelease release, CancellationToken cancellationToken)

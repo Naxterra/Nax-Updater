@@ -26,11 +26,11 @@ public sealed partial class WinRarUpdateProvider(HttpClient httpClient) : IUpdat
         InstalledApplication application,
         CancellationToken cancellationToken)
     {
-        using var pageResponse = await httpClient.GetAsync(DownloadPage, cancellationToken);
+        using var pageResponse = await httpClient.GetAsync(DownloadPage, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
         pageResponse.EnsureSuccessStatusCode();
         var finalPage = pageResponse.RequestMessage?.RequestUri ?? DownloadPage;
         EnsureRarLabUri(finalPage);
-        var html = await pageResponse.Content.ReadAsStringAsync(cancellationToken);
+        var html = await HttpBodyLimit.ReadStringAsync(pageResponse.Content, cancellationToken);
         var language = DetectInstalledLanguage(application.PrimaryInstallPath);
         // A beta installation follows the beta line as well as final releases;
         // a final installation is offered final releases only.
@@ -52,10 +52,11 @@ public sealed partial class WinRarUpdateProvider(HttpClient httpClient) : IUpdat
                 $"RARLAB's official download page lists {release.Label} as its newest {(installedBeta is null ? "release" : "release or beta")}; the installed WinRAR is current.");
         }
 
-        using var installerResponse = await httpClient.GetAsync(release.DownloadUri, cancellationToken);
+        using var installerResponse = await httpClient.GetAsync(release.DownloadUri, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
         installerResponse.EnsureSuccessStatusCode();
         EnsureRarLabUri(installerResponse.RequestMessage?.RequestUri ?? release.DownloadUri);
-        var installerBytes = await installerResponse.Content.ReadAsByteArrayAsync(cancellationToken);
+        // RARLAB publishes no hash, so the installer is read once to compute it; WinRAR is a few megabytes.
+        var installerBytes = await HttpBodyLimit.ReadBytesAsync(installerResponse.Content, cancellationToken, 256 * 1024 * 1024);
         var sha256 = Convert.ToHexString(SHA256.HashData(installerBytes));
         var plan = new UpdateExecutionPlan(
             UpdateExecutionKind.DownloadedExe,

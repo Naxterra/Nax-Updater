@@ -33,7 +33,7 @@ public sealed class ApplicationRemovalService
         try
         {
             using var process = Process.Start(startInfo) ?? throw new InvalidOperationException("The registered uninstaller did not start.");
-            await process.WaitForExitAsync(cancellationToken);
+            await WaitForUninstallerAsync(process, () => RegistryInventoryScanner.IsRegistered(application.Identity), cancellationToken);
             var exitCode = process.ExitCode;
             return new RemovalResult(
                 IsSuccessfulExitCode(exitCode),
@@ -48,6 +48,28 @@ public sealed class ApplicationRemovalService
     }
 
     public static bool IsSuccessfulExitCode(int exitCode) => exitCode is 0 or 1605 or 1641 or 3010;
+
+    // The removal is over when the uninstaller and the processes it started have ended. An NSIS
+    // uninstaller copies itself to the temp folder, starts the copy and exits at once with code
+    // 0; the removal was then reported as finished and the next change could start while the
+    // real uninstaller was still open. The wait also ends when the application's uninstall entry
+    // is gone, so a browser page that an uninstaller opens at its end does not hold it.
+    internal static async Task WaitForUninstallerAsync(Process process, Func<bool?> stillRegistered, CancellationToken cancellationToken)
+    {
+        var descendants = new ProcessDescendants(process);
+        while (!process.HasExited)
+        {
+            descendants.Refresh();
+            await Task.WhenAny(process.WaitForExitAsync(cancellationToken), Task.Delay(250, cancellationToken));
+            cancellationToken.ThrowIfCancellationRequested();
+        }
+        descendants.Refresh();
+        while (stillRegistered() != false && descendants.AnyDescendantRunning())
+        {
+            await Task.Delay(500, cancellationToken);
+            descendants.Refresh();
+        }
+    }
 
     private static async Task<RemovalResult> RemoveMsixAsync(RemovalPlan plan, CancellationToken cancellationToken)
     {

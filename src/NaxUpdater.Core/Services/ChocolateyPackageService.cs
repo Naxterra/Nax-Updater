@@ -132,6 +132,8 @@ public sealed class ChocolateyPackageService : IChocolateyPackageService
     {
         var target = update.ExecutionPlan?.ChocolateyTarget
             ?? throw new InvalidOperationException("The Chocolatey update target is missing.");
+        if (!IsSafeTarget(target))
+            throw new InvalidOperationException("The Chocolatey package ID or version contains characters that are not allowed, so the update was not started.");
         if (!IsAvailable)
         {
             throw new InvalidOperationException("Chocolatey (choco.exe) is no longer available.");
@@ -218,10 +220,10 @@ public sealed class ChocolateyPackageService : IChocolateyPackageService
 
     private static async Task<List<ChocolateyPackageDetails>> ParseCommunityFeedAsync(HttpClient client, string url, CancellationToken token)
     {
-        using var response = await client.GetAsync(url, token);
+        using var response = await client.GetAsync(url, HttpCompletionOption.ResponseHeadersRead, token);
         if (response.StatusCode == System.Net.HttpStatusCode.NotFound) return [];
         response.EnsureSuccessStatusCode();
-        using var reader = System.Xml.XmlReader.Create(await response.Content.ReadAsStreamAsync(token), new System.Xml.XmlReaderSettings
+        using var reader = System.Xml.XmlReader.Create(await HttpBodyLimit.ReadStreamAsync(response.Content, token), new System.Xml.XmlReaderSettings
             { DtdProcessing = System.Xml.DtdProcessing.Prohibit, XmlResolver = null, Async = true });
         var document = await System.Xml.Linq.XDocument.LoadAsync(reader, System.Xml.Linq.LoadOptions.None, token);
         System.Xml.Linq.XNamespace atom = "http://www.w3.org/2005/Atom";
@@ -277,8 +279,19 @@ public sealed class ChocolateyPackageService : IChocolateyPackageService
         }
     }
 
+    // The package ID and version come from a feed and end up in an elevated cmd.exe command line,
+    // so only the characters of NuGet IDs and versions are accepted. A value such as
+    // 1.0" & calc & rem " would otherwise run a second command as administrator.
+    private static readonly System.Text.RegularExpressions.Regex SafeToken =
+        new(@"^[A-Za-z0-9][A-Za-z0-9._+\-]*$", System.Text.RegularExpressions.RegexOptions.CultureInvariant);
+
+    internal static bool IsSafeTarget(ChocolateyUpdateTarget target) =>
+        SafeToken.IsMatch(target.PackageId) && SafeToken.IsMatch(target.Version);
+
     private static async Task<UpdateExecutionResult> RunElevatedUpgradeAsync(ChocolateyUpdateTarget target, CancellationToken token)
     {
+        if (!IsSafeTarget(target))
+            throw new UpdateExecutionRefusedException("The Chocolatey package ID or version contains characters that are not allowed, so the update was not started.");
         var exe = ResolveExecutablePath() ?? throw new InvalidOperationException("Chocolatey (choco.exe) is no longer available.");
         var logPath = Path.Combine(Path.GetTempPath(), $"naxupdater-choco-{Guid.NewGuid():N}.log");
         try
