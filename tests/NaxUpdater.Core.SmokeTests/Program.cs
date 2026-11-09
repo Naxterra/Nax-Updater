@@ -1146,6 +1146,9 @@ try
         var end = Math.Min(installerPayload.Length, start + resumeSegmentSize);
         await File.WriteAllBytesAsync($"{resumePartial}.segment{index}", installerPayload[start..end]);
     }
+    // Kept segments are reused only for the file they were downloaded for (here: the release hash).
+    await File.WriteAllTextAsync(resumePartial + ".segments",
+        UpdatePackageDownloader.SegmentIdentity(installerPayload.Length, downloadPlan.Sha256 ?? downloadPlan.Sha512, null, null));
     var resumedRangeRequests = 0;
     using var resumeClient = new HttpClient(new StubHttpMessageHandler(request =>
     {

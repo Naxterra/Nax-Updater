@@ -214,11 +214,8 @@ public sealed class UpdatePackageDownloader
                                  response.Headers.AcceptRanges.Any(static value => value.Equals("bytes", StringComparison.OrdinalIgnoreCase));
             if (supportsRanges)
             {
-                // The server's own identity of the file; without one, kept segments cannot be
-                // tied to this file and are not reused.
-                var fileIdentity = response.Headers.ETag is null && response.Content.Headers.LastModified is null
-                    ? null
-                    : $"{contentLength}|{response.Headers.ETag}|{response.Content.Headers.LastModified:O}";
+                var fileIdentity = SegmentIdentity(contentLength!.Value, hashPolicy.ExpectedHash,
+                    response.Headers.ETag?.ToString(), response.Content.Headers.LastModified);
                 response.Dispose();
                 try
                 {
@@ -470,6 +467,14 @@ public sealed class UpdatePackageDownloader
             }
         }
     }
+
+    // What kept segments belong to: the release hash when the plan has one (it names the exact
+    // file, whichever server delivers it), otherwise the server's own ETag or Last-Modified.
+    // Without either, kept segments cannot be tied to a file and are not reused.
+    internal static string? SegmentIdentity(long length, string? expectedHash, string? etag, DateTimeOffset? lastModified) =>
+        !string.IsNullOrWhiteSpace(expectedHash) ? $"{length}|{expectedHash.ToUpperInvariant()}"
+        : etag is null && lastModified is null ? null
+        : $"{length}|{etag}|{lastModified:O}";
 
     private static void DeleteSegments(string partialPath)
     {
