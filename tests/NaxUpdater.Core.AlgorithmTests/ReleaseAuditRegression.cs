@@ -71,6 +71,27 @@ internal static class ReleaseAuditRegression
                !ApplicationRemovalService.IsUninstallerProgram(Path.Combine(programs, "Browser", "browser.exe"), registered) &&
                !ApplicationRemovalService.IsUninstallerProgram(null, registered),
             "A temp-folder copy, Windows Installer, an installer by name or a copy of the registered uninstaller was not taken for the uninstaller, or the registered program itself, a browser or an unreadable path was.");
+        // An installer word counts only as a whole name part; a resident helper is not waited for without a limit.
+        assert(ApplicationRemovalService.IsUninstallerProgram(Path.Combine(programs, "Other", "Vendor Setup 2.0.exe"), registered) &&
+               ApplicationRemovalService.IsUninstallerProgram(Path.Combine(programs, "Other", "setup_x64.exe"), registered) &&
+               ApplicationRemovalService.IsUninstallerProgram(Path.Combine(programs, "Other", "Uninstall.exe"), registered) &&
+               !ApplicationRemovalService.IsUninstallerProgram(Path.Combine(programs, "Other", "SetupHelper.exe"), registered) &&
+               !ApplicationRemovalService.IsUninstallerProgram(Path.Combine(programs, "Other", "AppSetupService.exe"), registered),
+            "A program with an installer word inside another word was taken for the uninstaller, or an installer by name was not.");
+        // A registered program written as a short 8.3 path is the same program as its long path.
+        var defender = Path.Combine(programs, "Windows Defender", "MpCmdRun.exe");
+        if (File.Exists(defender))
+        {
+            using var shortName = Process.Start(new ProcessStartInfo("cmd.exe", $"/d /c for %I in (\"{defender}\") do @echo %~sI")
+            {
+                UseShellExecute = false, CreateNoWindow = true, RedirectStandardOutput = true
+            })!;
+            var shortPath = shortName.StandardOutput.ReadToEnd().Trim();
+            shortName.WaitForExit();
+            assert(string.Equals(ApplicationRemovalService.LongPath(shortPath), defender, StringComparison.OrdinalIgnoreCase) &&
+                   !ApplicationRemovalService.IsUninstallerProgram(defender, shortPath),
+                $"Another instance of the registered program was taken for the uninstaller because it was registered with its short path {shortPath}.");
+        }
         assert(string.Equals(ProcessDescendants.ImagePath(Environment.ProcessId), Environment.ProcessPath, StringComparison.OrdinalIgnoreCase),
             "The program path of a running process could not be read.");
     }

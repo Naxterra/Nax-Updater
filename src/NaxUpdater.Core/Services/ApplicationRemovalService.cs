@@ -119,7 +119,7 @@ public sealed class ApplicationRemovalService
     // A process that the uninstaller started is the uninstaller itself when it runs from a temp
     // folder (NSIS and Inno Setup copy themselves there and end their first process) or is
     // Windows Installer, when its file name says so ("uninstall.exe", "unins000.exe",
-    // "setup.exe", also when it restarts itself elevated), or when it is a copy of the
+    // "setup.exe", "Vendor Setup 2.0.exe", also when it restarts itself elevated), or when it is a copy of the
     // registered uninstaller in another folder. A helper or a browser runs from a program
     // folder under another name. Another instance of the registered program itself does not
     // count, because an application that is its own uninstaller ("Update.exe --uninstall") can
@@ -128,16 +128,34 @@ public sealed class ApplicationRemovalService
     {
         if (string.IsNullOrWhiteSpace(path)) return false;
         if (IsWindowsInstaller(path)) return true;
-        var name = Path.GetFileName(path);
-        if (name.Contains("unins", StringComparison.OrdinalIgnoreCase) || name.Contains("setup", StringComparison.OrdinalIgnoreCase)) return true;
+        // The installer words count only as a whole name part, so a resident helper such as
+        // "SetupHelper.exe" or "AppSetupService.exe" is not waited for without a limit.
+        if (InstallerName.IsMatch(Path.GetFileNameWithoutExtension(path))) return true;
+        // The registered path can be a short 8.3 path ("C:\PROGRA~1\App\App.exe"), while Windows
+        // reports a running program by its long path, so both are compared in their long form.
         if (!string.IsNullOrWhiteSpace(registeredUninstaller) &&
-            name.Equals(Path.GetFileName(registeredUninstaller), StringComparison.OrdinalIgnoreCase) &&
-            !string.Equals(Path.GetFullPath(path), Path.GetFullPath(registeredUninstaller), StringComparison.OrdinalIgnoreCase)) return true;
+            Path.GetFileName(LongPath(path)).Equals(Path.GetFileName(LongPath(registeredUninstaller)), StringComparison.OrdinalIgnoreCase) &&
+            !string.Equals(LongPath(path), LongPath(registeredUninstaller), StringComparison.OrdinalIgnoreCase)) return true;
         // An uninstaller that an administrator account started uses that account's temp folder.
         return path.StartsWith(Path.GetTempPath(), StringComparison.OrdinalIgnoreCase) ||
                path.StartsWith(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Windows), "Temp") + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase) ||
                path.Contains(@"\AppData\Local\Temp\", StringComparison.OrdinalIgnoreCase);
     }
+
+    private static readonly System.Text.RegularExpressions.Regex InstallerName = new(
+        @"^unins|(?:^|[\s_.\-])(?:uninstall(?:er)?|setup)(?:$|[\s_.\-])",
+        System.Text.RegularExpressions.RegexOptions.IgnoreCase | System.Text.RegularExpressions.RegexOptions.CultureInvariant);
+
+    internal static string LongPath(string path)
+    {
+        var full = Path.GetFullPath(path);
+        var buffer = new char[1024];
+        var length = GetLongPathName(full, buffer, (uint)buffer.Length);
+        return length > 0 && length < buffer.Length ? new string(buffer, 0, (int)length) : full;
+    }
+
+    [System.Runtime.InteropServices.DllImport("kernel32.dll", EntryPoint = "GetLongPathNameW", CharSet = System.Runtime.InteropServices.CharSet.Unicode, SetLastError = true)]
+    private static extern uint GetLongPathName(string shortPath, [System.Runtime.InteropServices.Out] char[] longPath, uint size);
 
     private static async Task<RemovalResult> RemoveMsixAsync(RemovalPlan plan, CancellationToken cancellationToken)
     {
