@@ -17,6 +17,18 @@ var noConsole = Native.GetConsoleWindow() == IntPtr.Zero;
 var batch = new StoreUpdateBatchQuery(() => Environment.ProcessPath!);
 var result = await batch.CheckAsync(CancellationToken.None);
 var passed = noConsole && result == StoreBatchCheck.NoUpdates;
+
+// windowed_parent_query_that_asks_a_question_does_not_wait_for_input: "store.exe updates" asks
+// "Would you like to install ... [y/n] (y)" whenever it lists updates. A console program started
+// from this console-less parent read its hidden console and waited until the time limit, so the
+// Store query timed out on every day with a listed update. cmd.exe asks the same way here.
+var timer = System.Diagnostics.Stopwatch.StartNew();
+var question = await new ProcessQueryRunner().RunAsync("cmd.exe",
+    ["/d", "/c", "set /p answer=Would you like to install the 2 Store update(s) now? [y/n] (y): & echo not-answered"],
+    TimeSpan.FromSeconds(15), CancellationToken.None);
+var questionSeconds = timer.Elapsed.TotalSeconds;
+var questionPassed = noConsole && question.ExitCode != -1 && questionSeconds < 5 && question.StandardOutput.Contains("not-answered");
+
 Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(report))!);
 File.WriteAllText(report, JsonSerializer.Serialize(new
 {
@@ -24,9 +36,13 @@ File.WriteAllText(report, JsonSerializer.Serialize(new
     Passed = passed,
     NoConsole = noConsole,
     HostCodePage = Console.OutputEncoding.CodePage,
-    Result = result.ToString()
+    Result = result.ToString(),
+    QuestionScenario = "windowed_parent_query_that_asks_a_question_does_not_wait_for_input",
+    QuestionPassed = questionPassed,
+    QuestionSeconds = Math.Round(questionSeconds, 1),
+    QuestionExitCode = question.ExitCode
 }));
-Environment.ExitCode = passed ? 0 : 1;
+Environment.ExitCode = passed && questionPassed ? 0 : 1;
 
 internal static class Native
 {

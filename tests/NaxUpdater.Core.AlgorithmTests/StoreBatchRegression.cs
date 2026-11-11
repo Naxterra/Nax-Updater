@@ -28,6 +28,18 @@ internal static class StoreBatchRegression
             new(0, "\u001b[31m" + Empty, ""), new(0, new string('x', 65537), "") })
             assert(StoreUpdateBatchQuery.Parse(result) == StoreBatchCheck.CheckIndividually,
                 "A failed, partial, localized, ambiguous or positive Store response was treated as Current.");
+        // store_update_list_with_an_unanswered_question_is_checked_per_app: the answer of the
+        // Store CLI on the owner's PC when it lists updates. Its input is closed, so it does not
+        // install them and ends with exit code 0; the listed updates still need the per-app checks.
+        const string listed = "Checking for updates…\r\n\r\n── Updates available (2 found) ──────────\r\n\r\n" +
+            "Store-managed updates available for bulk installation\r\nThese Store app updates can be installed together in a single operation.\r\n" +
+            "┌──────────┬───────────────┬────────────────┬────────────┐\r\n│ Name     │ Publisher     │ Version        │ Date       │\r\n" +
+            "├──────────┼───────────────┼────────────────┼────────────┤\r\n│ ChatGPT  │ OpenAI        │ 26.1103.7773.0 │ 2026-11-10 │\r\n" +
+            "│ WhatsApp │ WhatsApp Inc. │ 2.2642.101.0   │ 2026-11-04 │\r\n└──────────┴───────────────┴────────────────┴────────────┘\r\n\r\n" +
+            "Would you like to install the 2 Store update(s) now? [y/n] (y): \r\nFailed to read input in non-interactive mode.\r\n";
+        assert(StoreUpdateBatchQuery.Parse(new(0, listed, "")) == StoreBatchCheck.CheckIndividually &&
+               StoreUpdateBatchQuery.Classify(new(0, listed, ""), ranOutOfTime: false) == StoreBatchCheck.CheckIndividually,
+            "A Store answer that lists updates and asks to install them was not sent to the per-app checks.");
     }
 
     private static async Task SharedQueryAndCancellationAsync(Action<bool, string> assert)

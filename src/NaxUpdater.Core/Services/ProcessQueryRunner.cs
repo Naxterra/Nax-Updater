@@ -12,10 +12,19 @@ internal sealed class ProcessQueryRunner
         CancellationToken cancellationToken,
         Encoding? outputEncoding = null)
     {
+        // The input is redirected and closed at once, so a tool that asks a question reads the
+        // end of its input instead of waiting. Nax-Updater has no console; a child that inherited
+        // its input read from its own hidden console and waited until the time limit. The Store's
+        // "store.exe updates" asks "Would you like to install the 2 Store update(s) now? [y/n]
+        // (y)" whenever it lists updates, so its query ran out of time and every Store app was
+        // reported as not checked. With a closed input it answers "Failed to read input in
+        // non-interactive mode" and ends. Nothing is ever written to the input, because the
+        // question offers "y" as its default and an empty line would answer with it.
         var startInfo = new ProcessStartInfo(executable)
         {
             UseShellExecute = false,
             CreateNoWindow = true,
+            RedirectStandardInput = true,
             RedirectStandardOutput = true,
             RedirectStandardError = true
         };
@@ -34,6 +43,8 @@ internal sealed class ProcessQueryRunner
         {
             return new ProcessQueryResult(-1, string.Empty, "The process did not start.");
         }
+        try { process.StandardInput.Close(); }
+        catch (IOException) { } // The process has already ended and closed its side.
 
         var outputTask = process.StandardOutput.ReadToEndAsync(cancellationToken);
         var errorTask = process.StandardError.ReadToEndAsync(cancellationToken);
