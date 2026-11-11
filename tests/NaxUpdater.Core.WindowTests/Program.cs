@@ -21,9 +21,10 @@ var passed = noConsole && result == StoreBatchCheck.NoUpdates;
 // windowed_parent_query_that_asks_a_question_does_not_wait_for_input: "store.exe updates" asks
 // "Would you like to install ... [y/n] (y)" whenever it lists updates. A console program started
 // from this console-less parent read its hidden console and waited until the time limit, so the
-// Store query timed out on every day with a listed update. cmd.exe asks the same way here.
+// Store query timed out on every day with a listed update. cmd.exe asks the same way here and is
+// started with the Store query's own process settings.
 var timer = System.Diagnostics.Stopwatch.StartNew();
-var question = await new ProcessQueryRunner().RunAsync("cmd.exe",
+var question = await StoreUpdateBatchQuery.RunStoreCli("cmd.exe",
     ["/d", "/c", "set /p answer=Would you like to install the 2 Store update(s) now? [y/n] (y): & echo not-answered"],
     TimeSpan.FromSeconds(15), CancellationToken.None);
 var questionSeconds = timer.Elapsed.TotalSeconds;

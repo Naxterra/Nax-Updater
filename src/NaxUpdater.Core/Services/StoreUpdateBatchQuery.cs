@@ -22,10 +22,21 @@ internal sealed class StoreUpdateBatchQuery
         : this(() => StorePackagedExecutable.Resolve("Microsoft.WindowsStore_8wekyb3d8bbwe", "store.exe")) { }
 
     internal StoreUpdateBatchQuery(Func<string?> resolve)
-        : this(resolve, (path, args, timeout, token) => new ProcessQueryRunner().RunAsync(path, args, timeout, token,
-            // WinExe hosts otherwise inherit the ANSI code page, corrupting the
-            // Store CLI's UTF-8 protocol even though console tests decode it well.
-            outputEncoding: new System.Text.UTF8Encoding(false, true))) { }
+        : this(resolve, RunStoreCli) { }
+
+    // WinExe hosts otherwise inherit the ANSI code page, corrupting the Store CLI's UTF-8 protocol
+    // even though console tests decode it well.
+    //
+    // The input is closed. Whenever "store.exe updates" lists updates, it ends with "Would you
+    // like to install the 2 Store update(s) now? [y/n] (y)". Started from the console-less app
+    // with an inherited input, it waited for that answer until the time limit, so the query ran
+    // out of time and every Store app without a recent answer was reported as not checked. With a
+    // closed input it answers "Failed to read input in non-interactive mode", ends and installs
+    // nothing; that was checked on the owner's PC. Nothing is ever written to the input, because
+    // the question offers "y" as its default and an empty line would answer with it.
+    internal static Task<ProcessQueryResult> RunStoreCli(string path, IReadOnlyList<string> arguments, TimeSpan timeout, CancellationToken token) =>
+        new ProcessQueryRunner().RunAsync(path, arguments, timeout, token,
+            outputEncoding: new System.Text.UTF8Encoding(false, true), closeInput: true);
 
     internal StoreUpdateBatchQuery(Func<string?> resolve,
         Func<string, IReadOnlyList<string>, TimeSpan, CancellationToken, Task<ProcessQueryResult>> run,

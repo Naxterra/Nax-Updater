@@ -75,6 +75,11 @@ internal static class ReleaseAuditRegression
         assert(ApplicationRemovalService.IsUninstallerProgram(Path.Combine(programs, "Other", "Vendor Setup 2.0.exe"), registered) &&
                ApplicationRemovalService.IsUninstallerProgram(Path.Combine(programs, "Other", "setup_x64.exe"), registered) &&
                ApplicationRemovalService.IsUninstallerProgram(Path.Combine(programs, "Other", "Uninstall.exe"), registered) &&
+               ApplicationRemovalService.IsUninstallerProgram(Path.Combine(programs, "Other", "VendorUninstall.exe"), registered) &&
+               ApplicationRemovalService.IsUninstallerProgram(Path.Combine(programs, "Other", "AppUninstaller.exe"), registered) &&
+               ApplicationRemovalService.IsUninstallerProgram(Path.Combine(programs, "Other", "OneDriveSetup.exe"), registered) &&
+               ApplicationRemovalService.IsUninstallerProgram(Path.Combine(programs, "Other", "VSCodeUserSetup-x64-1.95.exe"), registered) &&
+               ApplicationRemovalService.IsUninstallerProgram(Path.Combine(programs, "Other", "setup64.exe"), registered) &&
                !ApplicationRemovalService.IsUninstallerProgram(Path.Combine(programs, "Other", "SetupHelper.exe"), registered) &&
                !ApplicationRemovalService.IsUninstallerProgram(Path.Combine(programs, "Other", "AppSetupService.exe"), registered),
             "A program with an installer word inside another word was taken for the uninstaller, or an installer by name was not.");
@@ -88,10 +93,16 @@ internal static class ReleaseAuditRegression
             })!;
             var shortPath = shortName.StandardOutput.ReadToEnd().Trim();
             shortName.WaitForExit();
-            assert(string.Equals(ApplicationRemovalService.LongPath(shortPath), defender, StringComparison.OrdinalIgnoreCase) &&
-                   !ApplicationRemovalService.IsUninstallerProgram(defender, shortPath),
-                $"Another instance of the registered program was taken for the uninstaller because it was registered with its short path {shortPath}.");
+            // A volume without 8.3 names gives the long path back, and the scenario cannot be checked there.
+            if (!shortPath.Contains('~'))
+                Console.WriteLine($"SKIPPED: ReleaseAuditRegression::relocated_uninstaller_is_waited_for_beyond_the_limit_for_other_processes, short path part: the volume of {defender} has no 8.3 names.");
+            else
+                assert(string.Equals(ApplicationRemovalService.LongPath(shortPath), defender, StringComparison.OrdinalIgnoreCase) &&
+                       !ApplicationRemovalService.IsUninstallerProgram(defender, shortPath) &&
+                       !ApplicationRemovalService.IsUninstallerProgram(defender, ApplicationRemovalService.LongPath(shortPath)),
+                    $"Another instance of the registered program was taken for the uninstaller because it was registered with its short path {shortPath}.");
         }
+        else Console.WriteLine($"SKIPPED: ReleaseAuditRegression::relocated_uninstaller_is_waited_for_beyond_the_limit_for_other_processes, short path part: {defender} is missing.");
         assert(string.Equals(ProcessDescendants.ImagePath(Environment.ProcessId), Environment.ProcessPath, StringComparison.OrdinalIgnoreCase),
             "The program path of a running process could not be read.");
     }

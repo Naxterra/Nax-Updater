@@ -30,11 +30,14 @@ public sealed class ApplicationRemovalService
         {
             startInfo.Verb = "runas";
         }
+        // The long form is read while the file still exists; an uninstaller can delete itself, and
+        // a short 8.3 path can no longer be expanded then.
+        var registeredUninstaller = LongPath(plan.Executable);
         try
         {
             using var process = Process.Start(startInfo) ?? throw new InvalidOperationException("The registered uninstaller did not start.");
             var ended = await WaitForUninstallerAsync(process, () => RegistryInventoryScanner.IsRegistered(application.Identity), cancellationToken,
-                isUninstaller: path => IsUninstallerProgram(path, plan.Executable), removedGrace: RemovedGraceFor(plan.Arguments));
+                isUninstaller: path => IsUninstallerProgram(path, registeredUninstaller), removedGrace: RemovedGraceFor(plan.Arguments));
             // The uninstall entry is gone and the started program stays open: the removal has
             // happened, and the program has no exit code to report.
             if (!ended) return new RemovalResult(true, null, false, null);
@@ -128,8 +131,10 @@ public sealed class ApplicationRemovalService
     {
         if (string.IsNullOrWhiteSpace(path)) return false;
         if (IsWindowsInstaller(path)) return true;
-        // The installer words count only as a whole name part, so a resident helper such as
-        // "SetupHelper.exe" or "AppSetupService.exe" is not waited for without a limit.
+        // An installer word counts at the end of the name or before a digit or a separator
+        // ("OneDriveSetup.exe", "setup64.exe", "AppUninstaller.exe"), not before another word, so
+        // a resident helper such as "SetupHelper.exe" or "AppSetupService.exe" is not waited for
+        // without a limit.
         if (InstallerName.IsMatch(Path.GetFileNameWithoutExtension(path))) return true;
         // The registered path can be a short 8.3 path ("C:\PROGRA~1\App\App.exe"), while Windows
         // reports a running program by its long path, so both are compared in their long form.
@@ -143,7 +148,7 @@ public sealed class ApplicationRemovalService
     }
 
     private static readonly System.Text.RegularExpressions.Regex InstallerName = new(
-        @"^unins|(?:^|[\s_.\-])(?:uninstall(?:er)?|setup)(?:$|[\s_.\-])",
+        @"^unins|(?:uninstall(?:er)?|setup)(?:$|[\d\s_.\-])",
         System.Text.RegularExpressions.RegexOptions.IgnoreCase | System.Text.RegularExpressions.RegexOptions.CultureInvariant);
 
     internal static string LongPath(string path)
