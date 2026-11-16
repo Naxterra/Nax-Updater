@@ -14,6 +14,7 @@ internal static class StoreBatchRegression
         await SharedQueryAndCancellationAsync(assert);
         await BatchAndFallbackAsync(assert, fixture);
         await ReusedServiceStartsFreshBatchAsync(assert);
+        await TimedOutScanCanRecoverAsync(assert);
     }
 
     private static void OutputMustProveNoUpdates(Action<bool, string> assert)
@@ -229,6 +230,27 @@ internal static class StoreBatchRegression
         var next = await service.CheckAsync(inventory);
         assert(calls == 2 && next.Results.Single().IsInstallable,
             "Reusing the checker carried a previous no-update batch into a new scan and hid an update.");
+    }
+
+    private static async Task TimedOutScanCanRecoverAsync(Action<bool, string> assert)
+    {
+        foreach (var retryOnly in new[] { false, true })
+        {
+            using var http = new HttpClient(new Metadata());
+            var native = new Native();
+            var calls = 0;
+            var batch = new StoreUpdateBatchQuery(() => "trusted-store.exe", (_, _, _, _) =>
+                ++calls == 1 ? Task.FromException<ProcessQueryResult>(new TimeoutException("Store did not answer"))
+                    : Task.FromResult(new ProcessQueryResult(0, Empty, "")));
+            var service = new UpdateCheckService([new MsixStoreUpdateProvider(http, new NoStoreUpdate(), native, null, batch)]);
+            var inventory = new InventorySnapshot(DateTimeOffset.UtcNow, [App("Fixture.App_publisher"), App("Fixture.Other_publisher")], [], []);
+            var failed = await service.CheckAsync(inventory);
+            assert(failed.FailedCheckCount == 2 && calls == 1 && native.Queries.Count == 0,
+                "A shared Store timeout fabricated currency or started a slow native query for each app.");
+            var recovered = retryOnly ? await service.RetryFailedAsync(inventory, failed) : await service.CheckAsync(inventory);
+            assert(recovered.AllCurrent && recovered.FailedCheckCount == 0 && calls == 2 && native.Queries.Count == 0,
+                "A fresh scan or failed-check retry retained the previous Store timeout instead of asking the Store again.");
+        }
     }
 
     private static InstalledApplication App(string family) => new("msix:" + family, family, "Fixture", "1.0.0.0", "1.0.0.0", "fixture",

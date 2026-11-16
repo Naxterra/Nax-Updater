@@ -471,6 +471,9 @@ try
     await StoreCacheAndFeedRegression.RunAsync(Assert, fixture);
     await GitHubRecipeRegression.RunAsync(Assert);
     await OfficialSiteRegression.RunAsync(Assert);
+    await SnagitHistoryRegression.RunAsync(Assert);
+    CollectionRefreshRegression.Run(Assert);
+    WingetRegistrationRefreshRegression.Run(Assert);
     await StagedRolloutRegression.RunAsync(Assert, fixture);
     await NvidiaSeriesRegression.RunAsync(Assert);
     SupersededRegistrationRegression.Run(Assert);

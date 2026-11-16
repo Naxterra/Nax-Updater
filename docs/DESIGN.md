@@ -1,6 +1,6 @@
 # Nax-Updater design
 
-Current as of 0.17.76. Updated with every release; the reasons behind each rule are in [DECISIONS.md](DECISIONS.md).
+Current as of 0.17.78. Updated with every release; the reasons behind each rule are in [DECISIONS.md](DECISIONS.md).
 
 ## Goal
 
@@ -33,6 +33,8 @@ Hard requirements:
 3. **Checks** (`UpdateCheckService`): every compatible provider is asked, grouped into authority tiers that run in parallel. Each source has a timeout; a slow source fails alone.
 4. **Selection**: one result per app, chosen by source order (below). All source results stay visible in the details panel.
 5. **Execution** (`UpdateTransactionCoordinator`): revalidate, download and verify, close bound processes, install, then re-check the installed version. A journal and a lease make interrupted updates recoverable. The journal, like the Store search cache and the Kyocera cache, is written to a temporary file of its own, forced to disk and only then moved over the old file.
+
+Scan progress preserves unchanged update-row instances. Visible collections reconcile additions, removals and moves instead of clearing and recreating every row after each result, preserving surviving selection and list containers.
 
 ## While updates run
 
@@ -73,12 +75,16 @@ A publisher's **staged rollout** that has not reached this PC is reported as cur
 
 A **superseded registration** (an entry named "Product - 12.0.30501" next to a current "Product - 12.0.40664" of the same name family, at or above the version offered for the older one) is shown as current with the provider "Neuere installierte Registrierung". Burn bundles such as Visual C++ redistributables register themselves even when all their packages are obsolete.
 
+WinGet assessment anchors package identity to the installed product codes. If that lookup denies upgrade availability, an exact package-ID lookup can refresh it only when one positive result has the identical tracked version and complete product-code set. Different or merged side-by-side registrations cannot override it. The official source, pinned version, scope and compatible installer remain mandatory during assessment and preparation.
+
 ## Local source library
 
 `update-providers.json` records, per app, where the publisher lists versions and how to download and verify the installer, so nothing is searched at run time.
 
 - `github`: repository, asset pattern, expected signer. Options: `unsigned` (GitHub asset digest only), `followInstalledPrerelease`, `privateRepository` (asset resolved through the API with the `gh` CLI token, sent only to `api.github.com`), `releaseTagPrefix`.
 - `official`: version page or feed, a regex for versions (highest wins), download and hash locations, expected signer, allowed hosts. Options: `versionFormat`, `downloadPageUrl`/`downloadPattern`, `fileName`, `nestedInstaller` (MSI inside a ZIP), `hashUrl`/`hashPattern`/`hashEncoding`, `rolloutPattern`, `stayOnInstalledMajor`, `architecture: neutral`, `allowMirrorRedirects`, `alwaysElevate`, `unsigned`, `signatureOnly`, `verifyInstallerVersion`.
+
+Snagit reads TechSmith's Windows version-history section feed across annual releases. `stayOnInstalledMajor` selects only the installed annual line, so a new year's article neither breaks the previous year's checks nor authorizes a major upgrade.
 
 A `github` recipe matches the registered name exactly, followed at most by a trailing version. A recipe that also sets `currentUserInstallerArguments` accepts the scope and bitness marks that Inno Setup appends in English or German ("(Aktueller Benutzer)"), because only installers that let the user choose the scope add them. `installerArguments` serve an all-users installation (elevated when `requiresElevation` is set) and `currentUserInstallerArguments` a per-user one, so an update keeps the installation in its scope. An installation whose scope no argument set serves is reported as not applicable.
 

@@ -373,7 +373,39 @@ public sealed partial class WingetPackageService : IWingetPackageService
         var packages = Copy(result.Matches).Select(static match => match.CatalogPackage)
             .Where(package => package.Id.Equals(id, StringComparison.OrdinalIgnoreCase) && package.InstalledVersion is not null &&
                 Copy(package.InstalledVersion.ProductCodes).Intersect(codes, StringComparer.OrdinalIgnoreCase).Any()).ToArray();
-        return packages.Length == 1 ? packages[0] : null;
+        if (packages.Length != 1) return null;
+        var local = packages[0];
+        if (local.IsUpdateAvailable) return local;
+
+        // WinGet can expose the same exact installed registration with a stale
+        // IsUpdateAvailable=false when searched by product code, but true when
+        // searched by package ID. Keep product-code lookup as the identity anchor:
+        // accept the ID result only when its version and complete code set agree.
+        // This cannot collapse a side-by-side x86/x64 installation into its sibling.
+        var byId = new FindPackagesOptions { ResultLimit = 32 };
+        byId.Selectors.Add(new PackageMatchFilter
+        {
+            Field = PackageMatchField.Id,
+            Option = PackageFieldMatchOption.EqualsCaseInsensitive,
+            Value = id
+        });
+        var refreshed = await catalog.FindPackagesAsync(byId).AsTask(token);
+        if (refreshed.Status != FindPackagesResultStatus.Ok || refreshed.WasLimitExceeded) return local;
+        var agreeing = Copy(refreshed.Matches).Select(static match => match.CatalogPackage)
+            .Where(candidate => candidate.Id.Equals(id, StringComparison.OrdinalIgnoreCase) &&
+                candidate.InstalledVersion is { } installed && candidate.IsUpdateAvailable &&
+                SameInstalledRegistration(local.InstalledVersion.Version, Copy(local.InstalledVersion.ProductCodes),
+                    installed.Version, Copy(installed.ProductCodes))).ToArray();
+        return agreeing.Length == 1 ? agreeing[0] : local;
+    }
+
+    internal static bool SameInstalledRegistration(string? version, IEnumerable<string> codes,
+        string? candidateVersion, IEnumerable<string> candidateCodes)
+    {
+        if (string.IsNullOrWhiteSpace(version) || version.Equals("Unknown", StringComparison.OrdinalIgnoreCase) ||
+            !version.Equals(candidateVersion, StringComparison.OrdinalIgnoreCase)) return false;
+        var expected = codes.Where(static code => !string.IsNullOrWhiteSpace(code)).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        return expected.Count > 0 && expected.SetEquals(candidateCodes);
     }
 
     private static PackageVersionId? VersionKey(CatalogPackage package, string version) =>

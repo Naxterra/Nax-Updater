@@ -17,7 +17,7 @@ public sealed partial class MainPage : Page
     private readonly ApplicationInventoryService _inventoryService;
     // Some publisher servers refuse requests without a User-Agent (403), so the shared
     // client always sends one; requests that set their own keep it.
-    private readonly HttpClient _httpClient = new() { Timeout = TimeSpan.FromSeconds(30), DefaultRequestHeaders = { { "User-Agent", "NaxUpdater/0.17.76" } } };
+    private readonly HttpClient _httpClient = new() { Timeout = TimeSpan.FromSeconds(30), DefaultRequestHeaders = { { "User-Agent", "NaxUpdater/0.17.78" } } };
     private readonly UpdateExecutionService _updateExecutionService = new();
     private readonly ApplicationRemovalService _applicationRemovalService = new();
     private readonly ApplicationIconService _applicationIconService = new();
@@ -387,11 +387,7 @@ public sealed partial class MainPage : Page
             : eligible.Where(row => MatchesFilter(row, filter)).ToArray();
         var sorted = SortApplications(filtered);
 
-        _visibleApplications.Clear();
-        foreach (var row in sorted)
-        {
-            _visibleApplications.Add(row);
-        }
+        ObservableCollectionSync.Apply(_visibleApplications, sorted);
         VisibleCountText.Text = LocalizationService.Format("ShownCount", _visibleApplications.Count);
 
         var restored = selectedIdentity is null
@@ -447,11 +443,7 @@ public sealed partial class MainPage : Page
             : _allUpdates.Where(row => MatchesUpdateFilter(row, filter)).ToArray();
 
         var sorted = SortUpdateRows(filtered);
-        _updates.Clear();
-        foreach (var row in sorted)
-        {
-            _updates.Add(row);
-        }
+        ObservableCollectionSync.Apply(_updates, sorted);
 
         UpdateCountText.Text = string.IsNullOrWhiteSpace(filter)
             ? LocalizationService.Format("UpdateCountFormat", _availableUpdateCount, _allUpdates.Count)
@@ -533,11 +525,7 @@ public sealed partial class MainPage : Page
                           MatchesDriverStatusFilter(row, statusFilter))
             .ToArray();
         var sorted = SortDriverRows(filtered);
-        _drivers.Clear();
-        foreach (var row in sorted)
-        {
-            _drivers.Add(row);
-        }
+        ObservableCollectionSync.Apply(_drivers, sorted);
         var direct = _allDrivers.Count(static row => row.CanUpdate);
         var manufacturerPackages = _allDrivers.Count(static row => row.Source.IsLiveChecked);
         DriverCountText.Text = string.IsNullOrWhiteSpace(filter) && statusFilter == "all"
@@ -844,14 +832,23 @@ public sealed partial class MainPage : Page
     {
         _lastCheckSnapshot = snapshot;
         var applications = _allApplications.ToDictionary(r => r.Source.Identity, StringComparer.Ordinal);
+        var existing = _allUpdates.ToDictionary(r => r.Source.ApplicationIdentity, StringComparer.Ordinal);
         _allUpdates = snapshot.Results.Select(update =>
         {
-            var row = new UpdateRow(update, applications.GetValueOrDefault(update.ApplicationIdentity), UpdateColumns);
+            var application = applications.GetValueOrDefault(update.ApplicationIdentity);
+            var row = existing.TryGetValue(update.ApplicationIdentity, out var prior) &&
+                      ReferenceEquals(prior.Source, update) && ReferenceEquals(prior.Application, application)
+                ? prior : new UpdateRow(update, application, UpdateColumns);
             if (_runOutcomes.TryGetValue(update.ApplicationIdentity, out var outcome) &&
                 !(outcome.State == UpdateRunState.Succeeded && update.IsInstallable))
             {
                 row.RunState = outcome.State;
                 row.RunMessage = outcome.Message;
+            }
+            else
+            {
+                row.RunState = UpdateRunState.None;
+                row.RunMessage = null;
             }
             return row;
         }).ToArray();
