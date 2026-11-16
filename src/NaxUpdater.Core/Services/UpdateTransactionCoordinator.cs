@@ -596,6 +596,14 @@ public static class UpdatePlanValidator
             (plan.Kind != UpdateExecutionKind.DownloadedZipExe || plan.SignatureOnly ||
              string.IsNullOrWhiteSpace(plan.Sha256) && string.IsNullOrWhiteSpace(plan.Sha512)))
             return "Installer companion files require a ZIP EXE protected by a published release hash.";
+        // A publisher's wizard runs only as one signed EXE whose download the publisher lists
+        // with its exact size; nothing else may start a dialog that the user has to click through.
+        if (plan.Interactive &&
+            (plan.Kind != UpdateExecutionKind.DownloadedExe || !plan.RequireAuthenticode || plan.ExpectedSize is not > 0 ||
+             string.IsNullOrWhiteSpace(plan.ExpectedSigner) && plan.ExpectedSigners is not { Count: > 0 }))
+            return "An installer that the user clicks through must be one signed EXE with the exact size its publisher lists.";
+        if (plan.ExpectedSize is <= 0)
+            return "The listed download size is not a positive number of bytes.";
         return plan.Kind switch
         {
             UpdateExecutionKind.NativeStoreQueue when plan.StoreQueueTarget is not { } target ||

@@ -17,7 +17,7 @@ public sealed partial class MainPage : Page
     private readonly ApplicationInventoryService _inventoryService;
     // Some publisher servers refuse requests without a User-Agent (403), so the shared
     // client always sends one; requests that set their own keep it.
-    private readonly HttpClient _httpClient = new() { Timeout = TimeSpan.FromSeconds(30), DefaultRequestHeaders = { { "User-Agent", "NaxUpdater/0.17.78" } } };
+    private readonly HttpClient _httpClient = new() { Timeout = TimeSpan.FromSeconds(30), DefaultRequestHeaders = { { "User-Agent", "NaxUpdater/0.17.79" } } };
     private readonly UpdateExecutionService _updateExecutionService = new();
     private readonly ApplicationRemovalService _applicationRemovalService = new();
     private readonly ApplicationIconService _applicationIconService = new();
@@ -1382,7 +1382,7 @@ public sealed partial class MainPage : Page
             return;
         }
         var queue = _allUpdates
-            .Where(static row => row.CanInstall)
+            .Where(static row => row.Source.InUpdateAll)
             .OrderBy(static row => row.Source.ExecutionPlan?.Kind is UpdateExecutionKind.StorePackage or UpdateExecutionKind.NativeStorePackage or UpdateExecutionKind.NativeStoreQueue ? 1 : 0)
             .ThenBy(static row => row.Name, StringComparer.CurrentCultureIgnoreCase)
             .ToArray();
@@ -1635,13 +1635,14 @@ public sealed partial class MainPage : Page
 
     private void RefreshMassUpdateButton()
     {
-        // Same predicate as UpdateAllButton_Click (CanInstall), so queued Store
-        // rows that "Update all" will resume are counted, not shown as (0).
+        // Same predicate as UpdateAllButton_Click (InUpdateAll), so queued Store
+        // rows that "Update all" will resume are counted, not shown as (0), and an
+        // installer that the user clicks through is not.
         var verifiedUpdates = _allUpdates.Count(static row =>
-            row.CanInstall &&
+            row.Source.InUpdateAll &&
             row.Source.ExecutionPlan?.Kind is not (UpdateExecutionKind.StorePackage or UpdateExecutionKind.NativeStorePackage or UpdateExecutionKind.NativeStoreQueue));
         var storeActions = _allUpdates.Count(static row =>
-            row.CanInstall &&
+            row.Source.InUpdateAll &&
             row.Source.ExecutionPlan?.Kind is UpdateExecutionKind.StorePackage or UpdateExecutionKind.NativeStorePackage or UpdateExecutionKind.NativeStoreQueue);
         UpdateAllButton.Content = storeActions > 0
             ? LocalizationService.Format("UpdateAllCountWithStore", verifiedUpdates, storeActions)

@@ -6,7 +6,10 @@ using System.Text.RegularExpressions;
 
 namespace NaxUpdater.Core.Services;
 
-public sealed record KyoceraDownload(string Name, string Product, string Version, Uri Url, string? ReleaseDate);
+// Version is read from the file name; ListedVersion is Kyocera's own "version" field
+// ("2026-11 | Ver.3.4.1108") and Size the exact byte count Kyocera lists for the file.
+public sealed record KyoceraDownload(string Name, string Product, string Version, Uri Url, string? ReleaseDate,
+    string? ListedVersion = null, long? Size = null);
 
 public sealed record KyoceraModel(string Name, string Id, string ProjectId, Uri SupportPage, IReadOnlyList<KyoceraDownload> Downloads);
 
@@ -16,8 +19,9 @@ public sealed record KyoceraModel(string Name, string Id, string ProjectId, Uri 
 // KX printer driver ("Kyocera ECOSYS MA2100cwfx KX" is model "ECOSYS MA2100cwfx").
 // With a cache folder, each downloaded file is kept with its ETag and Last-Modified, and the
 // next check asks Kyocera whether it changed: an unchanged file comes back as 304 without its
-// 480 KB body. The cached data only names versions and download pages; Kyocera publishes no
-// hashes, so nothing from it is ever installed automatically.
+// 480 KB body. Kyocera publishes no hashes. Only a utility whose signed package Kyocera lists
+// with its exact size and its version in name, version field and address can be installed, and
+// only through Kyocera's own wizard (KyoceraUtilityUpdateProvider).
 public sealed partial class KyoceraSupportCatalog(HttpClient httpClient, string? cacheDirectory = null)
 {
     private static readonly Uri SupportRoot = new("https://www.kyoceradocumentsolutions.com/support_product/");
@@ -96,7 +100,9 @@ public sealed partial class KyoceraSupportCatalog(HttpClient httpClient, string?
                     : utility.Success ? (utility.Groups["product"].Value, utility.Groups["version"].Value)
                     : (file, Text(item.Value, "version") ?? "");
                 if (downloads.Any(existing => existing.Name == name)) continue;
-                downloads.Add(new KyoceraDownload(name, product.Trim(), version, uri, Text(item.Value, "release_date")));
+                long? size = long.TryParse(Text(item.Value, "size"), NumberStyles.None, CultureInfo.InvariantCulture, out var bytes) && bytes > 0 ? bytes : null;
+                downloads.Add(new KyoceraDownload(name, product.Trim(), version, uri, Text(item.Value, "release_date"),
+                    Text(item.Value, "version"), size));
             }
         }
         return downloads;
@@ -143,7 +149,7 @@ public sealed partial class KyoceraSupportCatalog(HttpClient httpClient, string?
         try
         {
             using var request = new HttpRequestMessage(HttpMethod.Get, uri);
-            request.Headers.UserAgent.ParseAdd("NaxUpdater/0.17.78");
+            request.Headers.UserAgent.ParseAdd("NaxUpdater/0.17.79");
             if (cached?.Entry.ETag is { } etag) request.Headers.TryAddWithoutValidation("If-None-Match", etag);
             if (cached?.Entry.LastModified is { } lastModified) request.Headers.IfModifiedSince = lastModified;
             using var response = await httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, timeout.Token);

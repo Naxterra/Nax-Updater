@@ -23,6 +23,7 @@ internal static class ReleaseAuditRegression
         await removal_wait_ends_although_a_left_behind_process_keeps_running(assert);
         await relocated_uninstaller_is_waited_for_beyond_the_limit_for_other_processes(assert);
         await removal_ends_once_the_entry_is_gone_although_the_started_program_stays_open(assert);
+        await wizard_that_hands_over_to_its_unpacked_installer_is_waited_for(assert);
         prerelease_named_after_other_words_is_older_than_its_release(assert);
         await database_driver_and_driver_tool_are_not_device_drivers(assert);
         cache_folder_name_is_the_one_windows_stores(assert);
@@ -80,6 +81,9 @@ internal static class ReleaseAuditRegression
                ApplicationRemovalService.IsUninstallerProgram(Path.Combine(programs, "Other", "OneDriveSetup.exe"), registered) &&
                ApplicationRemovalService.IsUninstallerProgram(Path.Combine(programs, "Other", "VSCodeUserSetup-x64-1.95.exe"), registered) &&
                ApplicationRemovalService.IsUninstallerProgram(Path.Combine(programs, "Other", "setup64.exe"), registered) &&
+               ApplicationRemovalService.IsUninstallerProgram(Path.Combine(programs, "Kyocera", "KmInstall.exe"), registered) &&
+               ApplicationRemovalService.IsUninstallerProgram(Path.Combine(programs, "Kyocera", "KmInst32.exe"), registered) &&
+               !ApplicationRemovalService.IsUninstallerProgram(Path.Combine(programs, "Other", "InstallHelper.exe"), registered) &&
                !ApplicationRemovalService.IsUninstallerProgram(Path.Combine(programs, "Other", "SetupHelper.exe"), registered) &&
                !ApplicationRemovalService.IsUninstallerProgram(Path.Combine(programs, "Other", "AppSetupService.exe"), registered),
             "A program with an installer word inside another word was taken for the uninstaller, or an installer by name was not.");
@@ -105,6 +109,36 @@ internal static class ReleaseAuditRegression
         else Console.WriteLine($"SKIPPED: ReleaseAuditRegression::relocated_uninstaller_is_waited_for_beyond_the_limit_for_other_processes, short path part: {defender} is missing.");
         assert(string.Equals(ProcessDescendants.ImagePath(Environment.ProcessId), Environment.ProcessPath, StringComparison.OrdinalIgnoreCase),
             "The program path of a running process could not be read.");
+    }
+
+    private static async Task wizard_that_hands_over_to_its_unpacked_installer_is_waited_for(Action<bool, string> assert)
+    {
+        // Like Kyocera's package: the downloaded EXE unpacks its installer into a temp folder,
+        // starts it and ends, while the user is still in the wizard. The version may only be
+        // checked after that installer has ended, even beyond the limit for other processes.
+        var folder = Directory.CreateDirectory(Path.Combine(Path.GetTempPath(), "nax-wizard-" + Guid.NewGuid().ToString("N"))).FullName;
+        try
+        {
+            var unpacked = Path.Combine(folder, "KmInstall.exe");
+            File.Copy(Path.Combine(Environment.SystemDirectory, "PING.EXE"), unpacked);
+            using var package = Process.Start(new ProcessStartInfo("cmd.exe", $"/d /c start \"\" /b \"{unpacked}\" -n 5 127.0.0.1")
+            {
+                UseShellExecute = false, CreateNoWindow = true, RedirectStandardOutput = true
+            })!;
+            var timer = Stopwatch.StartNew();
+            await UpdateExecutionService.WaitForInteractiveInstallerAsync(package, CancellationToken.None, leftBehindLimit: TimeSpan.FromSeconds(1));
+            assert(timer.Elapsed > TimeSpan.FromSeconds(2.5) && timer.Elapsed < TimeSpan.FromSeconds(30),
+                $"The version check would have started while the unpacked installer was still running: {timer.Elapsed.TotalSeconds:N1} s");
+        }
+        finally
+        {
+            for (var attempt = 0; attempt < 20 && Directory.Exists(folder); attempt++)
+            {
+                try { Directory.Delete(folder, true); }
+                catch (UnauthorizedAccessException) { await Task.Delay(250); }
+                catch (IOException) { await Task.Delay(250); }
+            }
+        }
     }
 
     private static async Task removal_ends_once_the_entry_is_gone_although_the_started_program_stays_open(Action<bool, string> assert)

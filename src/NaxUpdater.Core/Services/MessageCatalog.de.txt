@@ -9,6 +9,7 @@ same: Bitdefender GravityZone policy
 same: Dell AW3423DW (M46J9)
 same: Dynamic Application Loader
 same: Fastmail desktop updater
+same: KYOCERA Document Solutions Inc.
 same: Firefox Setup {0}.exe
 same: GOG  sp. z o.o
 same: GeForce RTX {0} Series
@@ -1133,6 +1134,14 @@ en: Kyocera's support page for the {0} lists {1} as the newest release; the inst
 de: Kyoceras Supportseite für den {0} nennt {1} als neuestes Release. Die installierte Version ist aktuell.
 en: Kyocera's support page for the {0} lists {1}. Kyocera publishes no installer hash, so the update is not installed automatically; open the support page to download it.
 de: Kyoceras Supportseite für den {0} nennt {1}. Kyocera veröffentlicht keinen Installer-Hash, deshalb wird das Update nicht automatisch installiert. Öffnen Sie die Supportseite, um es herunterzuladen.
+en: Kyocera's support page for the {0} lists {1}. Kyocera publishes no installer hash, so the package is checked against Kyocera's signature and the exact size Kyocera lists. Kyocera's own installer then opens, and you finish the installation there. Nax-Updater checks the installed version afterwards.
+de: Kyoceras Supportseite für den {0} nennt {1}. Kyocera veröffentlicht keinen Hash für den Installer, deshalb wird das Paket gegen Kyoceras Signatur und die exakte Größe geprüft, die Kyocera angibt. Danach öffnet sich Kyoceras eigener Installer, in dem du die Installation abschließt. Nax-Updater prüft anschließend die installierte Version.
+en: The downloaded installer has {0} bytes, not the {1} bytes its publisher lists; it was not run.
+de: Der heruntergeladene Installer hat {0} Byte statt der {1} Byte, die der Hersteller angibt. Er wurde nicht ausgeführt.
+en: An installer that the user clicks through must be one signed EXE with the exact size its publisher lists.
+de: Ein Installer, den der Benutzer selbst durchklickt, muss eine einzelne signierte EXE mit der exakten Größe sein, die der Hersteller angibt.
+en: The listed download size is not a positive number of bytes.
+de: Die angegebene Downloadgröße ist keine positive Anzahl von Bytes.
 en: Kyocera's support page for the {0} lists {1}; the installed version is newer.
 de: Kyoceras Supportseite für den {0} nennt {1}. Die installierte Version ist neuer.
 en: Kyocera's support site does not list the installed printer model.

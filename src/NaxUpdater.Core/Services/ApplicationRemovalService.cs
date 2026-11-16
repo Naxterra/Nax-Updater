@@ -132,8 +132,9 @@ public sealed class ApplicationRemovalService
         if (string.IsNullOrWhiteSpace(path)) return false;
         if (IsWindowsInstaller(path)) return true;
         // An installer word counts at the end of the name or before a digit or a separator
-        // ("OneDriveSetup.exe", "setup64.exe", "AppUninstaller.exe"), not before another word, so
-        // a resident helper such as "SetupHelper.exe" or "AppSetupService.exe" is not waited for
+        // ("OneDriveSetup.exe", "setup64.exe", "AppUninstaller.exe", Kyocera's "KmInstall.exe"
+        // and "KmInst32.exe"), not before another word, so a resident helper such as
+        // "SetupHelper.exe", "AppSetupService.exe" or "InstallHelper.exe" is not waited for
         // without a limit.
         if (InstallerName.IsMatch(Path.GetFileNameWithoutExtension(path))) return true;
         // The registered path can be a short 8.3 path ("C:\PROGRA~1\App\App.exe"), while Windows
@@ -148,7 +149,7 @@ public sealed class ApplicationRemovalService
     }
 
     private static readonly System.Text.RegularExpressions.Regex InstallerName = new(
-        @"^unins|(?:uninstall(?:er)?|setup)(?:$|[\d\s_.\-])",
+        @"^unins|(?:install(?:er)?|setup)(?:$|[\d\s_.\-])|inst(?:32|64)$",
         System.Text.RegularExpressions.RegexOptions.IgnoreCase | System.Text.RegularExpressions.RegexOptions.CultureInvariant);
 
     internal static string LongPath(string path)

@@ -5,10 +5,19 @@ namespace NaxUpdater.Core.Services;
 // Kyocera's printer utilities (TWAIN driver, Status Monitor, Quick Scan, Wi-Fi Setup Tool)
 // are listed on the support page of the printer model they belong to. The model comes from
 // the installed KX printer driver; the utility is matched by its product name. Kyocera
-// publishes no installer hashes, so a newer release is reported with its download page and
-// not installed automatically.
+// publishes no installer hashes, so a newer release is reported with its download page.
+//
+// The owner approved installing such a package when Kyocera's listing agrees with itself: the
+// file name, Kyocera's version field and the address carry the same version, and Kyocera lists
+// the exact size. The package comes from Kyocera's own server and must carry Kyocera's
+// signature. Kyocera has no silent switch (the TWAIN package is its whole Product Library
+// installer), so Kyocera's installer opens and the user clicks through it; the version that
+// Windows then reports decides whether the update succeeded. A listing that does not agree
+// (Status Monitor's version field reads "5.5.4.12.3" for 5.4.12.3) stays a known release.
 public sealed class KyoceraUtilityUpdateProvider(KyoceraSupportCatalog catalog, Func<IReadOnlyList<string>>? installedModels = null) : IUpdateProvider
 {
+    internal const string Signer = "KYOCERA Document Solutions Inc.";
+
     // The printer models, or why they could not be read (a stopped print spooler must not
     // read as "no Kyocera printer").
     private readonly Lazy<(IReadOnlyList<string> Models, string? Error)> _models = new(() =>
@@ -54,6 +63,10 @@ public sealed class KyoceraUtilityUpdateProvider(KyoceraSupportCatalog catalog, 
         {
             var (model, download) = found;
             var comparison = VersionOrder.Compare(download.Version, application.NormalizedVersion);
+            if (comparison > 0 && InteractivePlan(download) is { } plan)
+                return Result(application, model, UpdateStatus.Available, download.Version,
+                    $"Kyocera's support page for the {model.Name} lists {download.Version}. Kyocera publishes no installer hash, so the package is checked against Kyocera's signature and the exact size Kyocera lists. Kyocera's own installer then opens, and you finish the installation there. Nax-Updater checks the installed version afterwards.",
+                    plan);
             return comparison > 0
                 ? Result(application, model, UpdateStatus.NewerReleaseKnown, download.Version,
                     $"Kyocera's support page for the {model.Name} lists {download.Version}. Kyocera publishes no installer hash, so the update is not installed automatically; open the support page to download it.")
@@ -68,10 +81,34 @@ public sealed class KyoceraUtilityUpdateProvider(KyoceraSupportCatalog catalog, 
                 $"Kyocera's support page for the {listedOn.Name} does not list this application.");
     }
 
-    private UpdateCheckResult Result(InstalledApplication application, KyoceraModel? model, UpdateStatus status, string? available, string message) =>
-        new(application.Identity, application.DisplayName, application.NormalizedVersion, status == UpdateStatus.NewerReleaseKnown ? available : null,
+    // A plan exists only when Kyocera's listing agrees with itself: the file name, Kyocera's
+    // version field and the address all carry the same version, and Kyocera lists a size.
+    internal static UpdateExecutionPlan? InteractivePlan(KyoceraDownload download)
+    {
+        if (download.Size is not > 0 ||
+            !download.Name.EndsWith(".exe", StringComparison.OrdinalIgnoreCase) || string.IsNullOrWhiteSpace(download.Version) ||
+            !Path.GetFileNameWithoutExtension(download.Name).EndsWith("_" + download.Version, StringComparison.Ordinal) ||
+            !Uri.UnescapeDataString(download.Url.AbsolutePath).EndsWith("/" + download.Name, StringComparison.Ordinal) ||
+            download.ListedVersion is not { } listed ||
+            // "Ver.3.4.1108" names the version; "13.4.1108", "3.4.11080" and "3.4.1108.5" do not.
+            !System.Text.RegularExpressions.Regex.IsMatch(listed, $@"(?<!\d)(?<!\d\.){System.Text.RegularExpressions.Regex.Escape(download.Version)}(?![\d.])"))
+            return null;
+        return new UpdateExecutionPlan(UpdateExecutionKind.DownloadedExe, download.Url, download.Name, null, Signer, null, [],
+            RequiresElevation: true, AllowedDownloadHosts: [download.Url.Host], RunningProcessNames: [],
+            RequireAuthenticode: true, SignatureOnly: true, ExpectedSize: download.Size, Interactive: true);
+    }
+
+    private UpdateCheckResult Result(InstalledApplication application, KyoceraModel? model, UpdateStatus status, string? available, string message,
+        UpdateExecutionPlan? plan = null) =>
+        new(application.Identity, application.DisplayName, application.NormalizedVersion,
+            status is UpdateStatus.NewerReleaseKnown or UpdateStatus.Available ? available : null,
             status, Id, model is null ? "Kyocera support page" : $"Kyocera support page · {model.Name}",
             "application-managed", "Preserved by the application's updater", InstalledApplicationMetadata.Architecture(application) ?? "unknown", "stable",
-            model?.SupportPage.AbsoluteUri, message, null,
-            Applicability: status == UpdateStatus.NewerReleaseKnown ? UpdateApplicability.NotApplicable : UpdateApplicability.NotRequired);
+            model?.SupportPage.AbsoluteUri, message, plan,
+            Applicability: status switch
+            {
+                UpdateStatus.NewerReleaseKnown => UpdateApplicability.NotApplicable,
+                UpdateStatus.Available => UpdateApplicability.Applicable,
+                _ => UpdateApplicability.NotRequired
+            });
 }

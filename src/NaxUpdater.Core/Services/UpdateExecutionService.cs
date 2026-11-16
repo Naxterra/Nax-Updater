@@ -520,7 +520,7 @@ public sealed class UpdateExecutionService
 
         try
         {
-            return await RunStartedProcessAsync(startInfo, cancellationToken);
+            return await RunStartedProcessAsync(startInfo, cancellationToken, plan.Interactive);
         }
         finally
         {
@@ -581,14 +581,16 @@ public sealed class UpdateExecutionService
 
     private static async Task<UpdateExecutionResult> RunStartedProcessAsync(
         ProcessStartInfo startInfo,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        bool interactive = false)
     {
         try
         {
             using var process = Process.Start(startInfo) ?? throw new InvalidOperationException("The updater process did not start.");
             try
             {
-                await process.WaitForExitAsync(cancellationToken);
+                if (interactive) await WaitForInteractiveInstallerAsync(process, cancellationToken);
+                else await process.WaitForExitAsync(cancellationToken);
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {
@@ -604,6 +606,16 @@ public sealed class UpdateExecutionService
             return new UpdateExecutionResult(1223, false, "The Windows elevation prompt was cancelled.", NotStarted: true);
         }
     }
+
+    // A publisher's wizard can unpack itself, start its real installer and end its first
+    // process while the user is still clicking through. The installed version is checked only
+    // after the installer processes have ended: an installer process (in a temp folder or named
+    // like an installer) is waited for as long as it runs, any other process it started is
+    // waited for at most the limit that a removal uses. This is the wait of a removal without its
+    // uninstall entry, which an installation does not have.
+    internal static Task WaitForInteractiveInstallerAsync(Process process, CancellationToken cancellationToken,
+        TimeSpan? leftBehindLimit = null) =>
+        ApplicationRemovalService.WaitForUninstallerAsync(process, static () => null, cancellationToken, leftBehindLimit);
 
     private static IReadOnlyList<string> ExpectedSigners(UpdateExecutionPlan plan) =>
         plan.ExpectedSigners is { Count: > 0 }

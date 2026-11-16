@@ -182,7 +182,14 @@ public sealed record UpdateExecutionPlan(
     string? ExpectedInstallerVersion = null,
     // Some publisher installers need CABs, response files and subdirectories beside
     // their EXE. This is permitted only for an archive protected by a release hash.
-    bool ExtractInstallerDirectory = false);
+    bool ExtractInstallerDirectory = false,
+    // The exact size in bytes that the publisher lists beside the download (Kyocera). A
+    // signature-only download of another size is not run.
+    long? ExpectedSize = null,
+    // The installer is the publisher's own wizard, which the user clicks through (Kyocera has
+    // no silent switch). Nax-Updater waits for it and for every installer process it hands
+    // over to, then checks the installed version. Such an update is never part of "Update all".
+    bool Interactive = false);
 
 public sealed record StoreQueueTarget(string ProductId, string PackageFamilyName, string InstalledVersion);
 
@@ -248,6 +255,10 @@ public sealed record UpdateCheckResult(
                                   Status == UpdateStatus.StoreQueued && ExecutionPlan is { Kind: UpdateExecutionKind.NativeStoreQueue, StoreQueueTarget: not null }) &&
                                  Applicability == UpdateApplicability.Applicable &&
                                  (ExecutionPlan.Kind != UpdateExecutionKind.NativeStoreQueue || Status == UpdateStatus.StoreQueued);
+
+    // "Update all" runs without the user. An installer that the user has to click through
+    // (Kyocera's TWAIN driver) is started only from its own row.
+    public bool InUpdateAll => IsInstallable && ExecutionPlan?.Interactive != true;
 }
 
 public sealed record UpdateCheckSnapshot(

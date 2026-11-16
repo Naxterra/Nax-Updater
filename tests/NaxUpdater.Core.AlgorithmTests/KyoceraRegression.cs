@@ -33,6 +33,95 @@ internal static class KyoceraRegression
         await one_scan_asks_kyocera_once_for_utilities_and_drivers(assert);
         await kyocera_file_with_byte_order_mark_is_read(assert);
         await catalog_sends_its_own_user_agent(assert);
+        await kyocera_twain_listing_that_agrees_with_itself_opens_kyoceras_signed_installer(assert);
+        kyocera_listing_that_disagrees_lacks_a_size_or_names_another_utility_stays_a_known_release(assert);
+        interactive_installer_is_never_part_of_update_all(assert);
+    }
+
+    // The real listing on the owner's PC on 2026-11-16: name, version field and address name
+    // 3.4.1108, and Kyocera gives the exact size of the signed package.
+    private static readonly KyoceraDownload Twain = new("Kyocera TWAIN Driver_3.4.1108.exe", "Kyocera TWAIN Driver", "3.4.1108",
+        new Uri("https://cdam.kyoceradocumentsolutions.com/content/dam/gdam_dc/dc_global/executables/web/Kyocera TWAIN Driver_3.4.1108.exe"),
+        "2026/11/16", "2026-11 | Ver.3.4.1108", 129911224);
+
+    private static async Task kyocera_twain_listing_that_agrees_with_itself_opens_kyoceras_signed_installer(Action<bool, string> assert)
+    {
+        var parsed = KyoceraSupportCatalog.ParseDownloads(System.Text.Json.JsonDocument.Parse("""
+            {"downloads":{"103":{"307":{"name":"Kyocera TWAIN Driver_3.4.1108.exe","version":"2026-11 | Ver.3.4.1108","size":"129911224",
+            "url":"https://cdam.kyoceradocumentsolutions.com/content/dam/gdam_dc/dc_global/executables/web/Kyocera TWAIN Driver_3.4.1108.exe"}}}}
+            """).RootElement).Single();
+        assert(parsed == Twain with { ReleaseDate = null }, $"Kyocera's size and version field were not read with the download: {parsed}");
+        var plan = KyoceraUtilityUpdateProvider.InteractivePlan(Twain);
+        assert(plan is { Kind: UpdateExecutionKind.DownloadedExe, SignatureOnly: true, RequireAuthenticode: true, Interactive: true,
+                   RequiresElevation: true, ExpectedSize: 129911224, ExpectedSigner: "KYOCERA Document Solutions Inc.", Sha256: null } &&
+               plan.AllowedDownloadHosts.SequenceEqual(["cdam.kyoceradocumentsolutions.com"]) && plan.Arguments.Count == 0,
+            "The agreeing TWAIN listing did not become Kyocera's signed installer with its exact size, opened for the user.");
+        var stamped = plan! with { CheckGenerationId = Guid.NewGuid(), CreatedAt = DateTimeOffset.UtcNow, ExpiresAt = DateTimeOffset.UtcNow.AddHours(1),
+            InstalledVersionPrecondition = "3.4.0328" };
+        var offer = new UpdateCheckResult("registry:twain", "Kyocera TWAIN Driver", "3.4.0328", "3.4.1108", UpdateStatus.Available, "kyocera-support",
+            "Kyocera support page", "application-managed", "fixture", "x86", "stable", null, null, stamped, CorrelationKey: "twain");
+        assert(UpdatePlanValidator.Validate(offer, DateTimeOffset.UtcNow) is null &&
+               UpdatePlanValidator.Validate(offer with { ExecutionPlan = stamped with { ExpectedSize = null } }, DateTimeOffset.UtcNow) is not null &&
+               UpdatePlanValidator.Validate(offer with { ExecutionPlan = stamped with { ExpectedSigner = null } }, DateTimeOffset.UtcNow) is not null &&
+               UpdatePlanValidator.Validate(offer with { ExecutionPlan = stamped with { Kind = UpdateExecutionKind.NativeCommand, NativeExecutable = "fixture.exe" } }, DateTimeOffset.UtcNow) is not null,
+            "Kyocera's wizard plan was refused, or a wizard without size, signer or downloaded EXE was accepted.");
+        // The package is checked against the exact size before its signature: one byte more is refused.
+        var folder = Directory.CreateDirectory(Path.Combine(Path.GetTempPath(), "nax-size-" + Guid.NewGuid().ToString("N"))).FullName;
+        try
+        {
+            var file = Path.Combine(folder, "package.exe");
+            await File.WriteAllBytesAsync(file, new byte[16]);
+            var sized = stamped with { ExpectedSize = 16 };
+            assert(UpdatePackageDownloader.SizeMismatch(file, sized) is null &&
+                   UpdatePackageDownloader.SizeMismatch(file, sized with { ExpectedSize = 17 }) is { } refused && refused.Contains("17") &&
+                   UpdatePackageDownloader.SizeMismatch(file, sized with { ExpectedSize = null }) is null,
+                "A downloaded package of another size than Kyocera lists was accepted, or the listed size was refused.");
+        }
+        finally { Directory.Delete(folder, true); }
+        // Through the provider, the TWAIN row becomes installable only with such a listing.
+        using var http = new HttpClient(new Pages(model: Model.Replace(
+            "\"Kyocera TWAIN Driver_3.4.0328.exe\",\"version\":\"3.4.0328\",\"url\":\"https://cdam.kyoceradocumentsolutions.com/content/dam/gdam_dc/dc_global/executables/web/Kyocera TWAIN Driver_3.4.0328.exe\"",
+            "\"Kyocera TWAIN Driver_3.4.1108.exe\",\"version\":\"2026-11 | Ver.3.4.1108\",\"size\":\"129911224\",\"url\":\"https://cdam.kyoceradocumentsolutions.com/content/dam/gdam_dc/dc_global/executables/web/Kyocera TWAIN Driver_3.4.1108.exe\"")));
+        var provider = new KyoceraUtilityUpdateProvider(new KyoceraSupportCatalog(http), () => ["ECOSYS MA2100cwfx"]);
+        var twain = await provider.CheckAsync(App("Kyocera TWAIN Driver", "3.4.0328"), CancellationToken.None);
+        assert(twain is { Status: UpdateStatus.Available, AvailableVersion: "3.4.1108", ExecutionPlan.Interactive: true, Applicability: UpdateApplicability.Applicable },
+            $"Kyocera's agreeing TWAIN listing was not offered as an update through Kyocera's installer: {twain.Status} · {twain.Message}");
+    }
+
+    private static void kyocera_listing_that_disagrees_lacks_a_size_or_names_another_utility_stays_a_known_release(Action<bool, string> assert)
+    {
+        (string Case, KyoceraDownload Download)[] refused =
+        [
+            ("version field names another version", Twain with { ListedVersion = "2026-11 | Ver.3.4.1107" }),
+            ("version field names a longer version", Twain with { ListedVersion = "Ver.3.4.11080" }),
+            ("version field names a version ending in it", Twain with { ListedVersion = "Ver.13.4.1108" }),
+            ("version field names a fourth part", Twain with { ListedVersion = "Ver.3.4.1108.5" }),
+            ("no version field", Twain with { ListedVersion = null }),
+            ("no size", Twain with { Size = null }),
+            ("address names another file", Twain with { Url = new Uri("https://cdam.kyoceradocumentsolutions.com/content/dam/gdam_dc/dc_global/executables/web/Kyocera TWAIN Driver_3.4.1107.exe") }),
+            ("archive instead of an EXE", Twain with { Name = "Kyocera TWAIN Driver_3.4.1108.zip" }),
+            // Status Monitor's real listing: its version field reads 5.5.4.12.3 for 5.4.12.3.
+            ("Status Monitor version field", Twain with { Name = "Status Monitor 5_5.4.12.3.exe", Product = "Status Monitor 5", Version = "5.4.12.3",
+                Url = new Uri("https://cdam.kyoceradocumentsolutions.com/content/dam/gdam_dc/dc_global/executables/utility/product_081/Status Monitor 5_5.4.12.3.exe"),
+                ListedVersion = "5.5.4.12.3" })
+        ];
+        var accepted = refused.Where(static item => KyoceraUtilityUpdateProvider.InteractivePlan(item.Download) is not null).Select(static item => item.Case).ToArray();
+        assert(accepted.Length == 0, $"A Kyocera listing that does not agree with itself became installable: {string.Join(", ", accepted)}");
+        // The rule is the same for every Kyocera utility; it is not a TWAIN exception.
+        var quickScan = Twain with { Name = "Quick Scan_2.1.2503.exe", Product = "Quick Scan", Version = "2.1.2503",
+            Url = new Uri("https://cdam.kyoceradocumentsolutions.com/content/dam/gdam_dc/dc_global/executables/web/Quick Scan_2.1.2503.exe"),
+            ListedVersion = "2.1.2503", Size = 52000000 };
+        assert(KyoceraUtilityUpdateProvider.InteractivePlan(quickScan) is { Interactive: true, ExpectedSize: 52000000 },
+            "Another Kyocera utility with an agreeing listing was not handled by the same rule.");
+    }
+
+    private static void interactive_installer_is_never_part_of_update_all(Action<bool, string> assert)
+    {
+        var plan = KyoceraUtilityUpdateProvider.InteractivePlan(Twain)!;
+        var offer = new UpdateCheckResult("registry:twain", "Kyocera TWAIN Driver", "3.4.0328", "3.4.1108", UpdateStatus.Available, "kyocera-support",
+            "Kyocera support page", "application-managed", "fixture", "x86", "stable", null, null, plan);
+        assert(offer.IsInstallable && !offer.InUpdateAll && (offer with { ExecutionPlan = plan with { Interactive = false } }).InUpdateAll,
+            "An installer that the user clicks through was put into Update all, or an unattended installer was left out.");
     }
 
     private static async Task catalog_sends_its_own_user_agent(Action<bool, string> assert)
@@ -188,7 +277,7 @@ internal static class KyoceraRegression
         new($"registry:{name}", name, "KYOCERA Document Solutions Inc.", version, version, "fixture", null, "fixture", null, null,
             InstallScope.Machine, ManagementMode.Registry, ConfidenceLevel.High, false, [], null, []);
 
-    private sealed class Pages(bool failFirst = false, bool byteOrderMark = false, bool requireUserAgent = false) : HttpMessageHandler
+    private sealed class Pages(bool failFirst = false, bool byteOrderMark = false, bool requireUserAgent = false, string? model = null) : HttpMessageHandler
     {
         private bool _failed;
 
@@ -204,7 +293,7 @@ internal static class KyoceraRegression
             var body = request.RequestUri!.AbsolutePath switch
             {
                 "/support_product/js/index.json" => Index,
-                "/support_product/js/models/358.json" => Model,
+                "/support_product/js/models/358.json" => model ?? Model,
                 "/support_product/js/models/414.json" => SecondModel,
                 _ => null
             };

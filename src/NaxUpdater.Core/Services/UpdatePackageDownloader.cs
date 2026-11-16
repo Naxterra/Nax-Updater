@@ -266,6 +266,7 @@ public sealed class UpdatePackageDownloader
             {
                 throw new InvalidDataException($"{hashPolicy.DisplayName} mismatch. Expected {hashPolicy.ExpectedHash}, received {actualHash}.");
             }
+            if (SizeMismatch(partialPath, plan) is { } sizeError) throw new InvalidDataException(sizeError);
             File.Move(partialPath, destinationPath, overwrite: true);
 
             progress?.Report(0.97);
@@ -501,7 +502,17 @@ public sealed class UpdatePackageDownloader
         {
             return new FileVerification(false, null, $"The cached installer {hashPolicy.DisplayName} does not match the release.");
         }
-        return VerifySignature(path, plan);
+        return SizeMismatch(path, plan) is { } sizeError ? new FileVerification(false, null, sizeError) : VerifySignature(path, plan);
+    }
+
+    // Kyocera lists the exact size of each download beside its address and version. For a
+    // signature-only download that size binds the file to the listing, so a file of another
+    // size is not run.
+    internal static string? SizeMismatch(string path, UpdateExecutionPlan plan)
+    {
+        if (plan.ExpectedSize is not { } expected) return null;
+        var actual = new FileInfo(path).Length;
+        return actual == expected ? null : $"The downloaded installer has {actual} bytes, not the {expected} bytes its publisher lists; it was not run.";
     }
 
     private FileVerification VerifySignature(string path, UpdateExecutionPlan plan)
@@ -595,7 +606,7 @@ public sealed class UpdatePackageDownloader
     // without a User-Agent with 403 Forbidden, so every download names the updater.
     internal static HttpRequestMessage Identified(HttpRequestMessage request)
     {
-        if (request.Headers.UserAgent.Count == 0) request.Headers.UserAgent.ParseAdd("NaxUpdater/0.17.78");
+        if (request.Headers.UserAgent.Count == 0) request.Headers.UserAgent.ParseAdd("NaxUpdater/0.17.79");
         return request;
     }
 
