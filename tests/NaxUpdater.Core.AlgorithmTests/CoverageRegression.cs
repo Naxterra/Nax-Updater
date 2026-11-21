@@ -131,6 +131,41 @@ internal static class CoverageRegression
         using var redirect = new HttpClient(new LegacyRedirectHandler(releaseUri));
         assert((await new MacriumUpdateProvider(redirect).CheckAsync(reflect, CancellationToken.None)).Status == UpdateStatus.Current,
             "Macrium's legacy HTTP redirect was not followed using HTTPS.");
+        using var forbidden = new HttpClient(new ForbiddenHandler());
+        var fallbackRequests = new List<Uri>();
+        var recoveredMacrium = new MacriumUpdateProvider(forbidden)
+        {
+            ReadBlockedReleaseAsync = (endpoint, _) =>
+            {
+                fallbackRequests.Add(endpoint);
+                HttpResponseMessage response = new(endpoint == releaseUri ? HttpStatusCode.OK : HttpStatusCode.Found);
+                if (response.StatusCode == HttpStatusCode.Found)
+                    response.Headers.Location = new UriBuilder(releaseUri) { Scheme = "http", Port = -1 }.Uri;
+                return Task.FromResult<HttpResponseMessage?>(response);
+            }
+        };
+        var recovered = await recoveredMacrium.CheckAsync(reflect, CancellationToken.None);
+        assert(recovered.Status == UpdateStatus.Current && recovered.ExecutionPlan is null &&
+               fallbackRequests.SequenceEqual([new Uri("https://updates.macrium.com/reflect/v10/latest_release_notes.asp"), releaseUri]),
+            "A blocked Macrium release check did not recover using the publisher's HTTPS release URL.");
+        var unavailableMacrium = new MacriumUpdateProvider(forbidden) { ReadBlockedReleaseAsync = (_, _) => Task.FromResult<HttpResponseMessage?>(null) };
+        var unavailable = await new UpdateCheckService([unavailableMacrium]).CheckAsync(
+            new InventorySnapshot(DateTimeOffset.UtcNow, [reflect], [], []));
+        assert(unavailable.Results.Single() is { Status: UpdateStatus.Error, AvailableVersion: null, ExecutionPlan: null },
+            "A Macrium check with no verified publisher response was treated as current.");
+        var offHostMacrium = new MacriumUpdateProvider(forbidden)
+        {
+            ReadBlockedReleaseAsync = (_, _) =>
+            {
+                HttpResponseMessage response = new(HttpStatusCode.Found);
+                response.Headers.Location = new Uri("https://example.org/reflect/v10/v10.0.8843/details10.0.8843.htm");
+                return Task.FromResult<HttpResponseMessage?>(response);
+            }
+        };
+        var offHost = await new UpdateCheckService([offHostMacrium]).CheckAsync(
+            new InventorySnapshot(DateTimeOffset.UtcNow, [reflect], [], []));
+        assert(offHost.Results.Single() is { Status: UpdateStatus.Error, ExecutionPlan: null },
+            "The Macrium fallback accepted a redirect to a different host.");
         assert(MacriumUpdateProvider.ParseReleaseVersion(releaseUri, "8") is null &&
             MacriumUpdateProvider.ParseReleaseVersion(new Uri("https://other.example/reflect/v10/v10.0.8843/details10.0.8843.htm"), "10") is null,
             "Macrium release checks accepted a different major/license line or publisher host.");
@@ -190,6 +225,11 @@ internal static class CoverageRegression
     {
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken token) =>
             Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK) { RequestMessage = new(HttpMethod.Get, final), Content = new StringContent("Macrium Reflect") });
+    }
+    private sealed class ForbiddenHandler : HttpMessageHandler
+    {
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken token) =>
+            Task.FromResult(new HttpResponseMessage(HttpStatusCode.Forbidden));
     }
     private sealed class LegacyRedirectHandler(Uri final) : HttpMessageHandler
     {

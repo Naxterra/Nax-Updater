@@ -126,8 +126,10 @@ public sealed partial class KyoceraSupportCatalog(HttpClient httpClient, string?
         try
         {
             using var searcher = new ManagementObjectSearcher(@"root\StandardCimv2", "SELECT Name, DriverVersion FROM MSFT_PrinterDriver");
-            foreach (ManagementObject item in searcher.Get())
+            using var results = searcher.Get();
+            foreach (ManagementObject item in results)
             {
+                using var row = item;
                 var name = item["Name"]?.ToString();
                 if (name is null || ModelOfKxDriver(name) is not { } model || item["DriverVersion"] is not ulong packed) continue;
                 var version = string.Join('.', new[] { 48, 32, 16, 0 }.Select(shift => (packed >> shift) & 0xffff));
@@ -149,7 +151,7 @@ public sealed partial class KyoceraSupportCatalog(HttpClient httpClient, string?
         try
         {
             using var request = new HttpRequestMessage(HttpMethod.Get, uri);
-            request.Headers.UserAgent.ParseAdd("NaxUpdater/0.17.79");
+            request.Headers.UserAgent.ParseAdd(AppVersion.UserAgent);
             if (cached?.Entry.ETag is { } etag) request.Headers.TryAddWithoutValidation("If-None-Match", etag);
             if (cached?.Entry.LastModified is { } lastModified) request.Headers.IfModifiedSince = lastModified;
             using var response = await httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, timeout.Token);

@@ -13,7 +13,7 @@ public sealed class UpdatePackageDownloader
 
     internal static HttpClient CreateDownloadClient(SocketsHttpHandler? handler = null)
     {
-        handler ??= new SocketsHttpHandler();
+        handler ??= ScopedUpdateHttp.CreateHandler();
         handler.AllowAutoRedirect = false;
         return new HttpClient(handler) { Timeout = TimeSpan.FromSeconds(30) };
     }
@@ -64,9 +64,9 @@ public sealed class UpdatePackageDownloader
     {
         var mirrorsAllowed = plan.AllowHashVerifiedRedirects && !plan.SignatureOnly &&
                              (!string.IsNullOrWhiteSpace(plan.Sha256) || !string.IsNullOrWhiteSpace(plan.Sha512));
-        if (uri.Scheme != Uri.UriSchemeHttps ||
-            (!mirrorsAllowed && !IsAllowedHost(uri.Host, plan.AllowedDownloadHosts)))
-            throw new InvalidOperationException($"The download URL uses an untrusted scheme or host '{uri.Host}'.");
+        if (!ScopedUpdateHttp.IsPublicHttps(uri) || (uri.Port != 443 && uri.Port != plan.DownloadUri?.Port) ||
+            (!mirrorsAllowed && !IsAllowedHost(uri.IdnHost, plan.AllowedDownloadHosts)))
+            throw new InvalidOperationException($"The download URL uses an untrusted scheme or host '{uri.IdnHost}'.");
     }
 
     // HttpClient.Timeout ends when the response headers arrive, so a server that stops sending
@@ -127,7 +127,8 @@ public sealed class UpdatePackageDownloader
     internal static async Task<Uri> ResolveGitHubAssetAsync(Uri assetUri, CancellationToken cancellationToken,
         Func<CancellationToken, Task<string?>>? tokenReader = null, HttpClient? resolver = null)
     {
-        if (assetUri.Scheme != Uri.UriSchemeHttps || !assetUri.Host.Equals("api.github.com", StringComparison.OrdinalIgnoreCase) ||
+        if (assetUri.Scheme != Uri.UriSchemeHttps || !assetUri.IdnHost.Equals("api.github.com", StringComparison.OrdinalIgnoreCase) ||
+            !assetUri.IsDefaultPort || assetUri.UserInfo.Length != 0 ||
             !System.Text.RegularExpressions.Regex.IsMatch(assetUri.AbsolutePath, @"^/repos/[^/]+/[^/]+/releases/assets/\d+$"))
             throw new InvalidOperationException("The private release asset URL is not a GitHub API asset URL.");
         var token = await (tokenReader ?? GitHubApiClient.ReadTokenUsingCliAsync)(cancellationToken)
@@ -203,12 +204,14 @@ public sealed class UpdatePackageDownloader
             response.EnsureSuccessStatusCode();
             var finalUri = response.RequestMessage?.RequestUri ?? sourceUri;
             if (finalUri.Scheme != Uri.UriSchemeHttps ||
-                (!plan.AllowHashVerifiedRedirects && !IsAllowedHost(finalUri.Host, plan.AllowedDownloadHosts)))
+                (!plan.AllowHashVerifiedRedirects && !IsAllowedHost(finalUri.IdnHost, plan.AllowedDownloadHosts)))
             {
-                throw new InvalidOperationException($"The download redirected to untrusted host '{finalUri.Host}'.");
+                throw new InvalidOperationException($"The download redirected to untrusted host '{finalUri.IdnHost}'.");
             }
 
             var contentLength = response.Content.Headers.ContentLength;
+            if (contentLength > MaximumDownloadBytes)
+                throw new InvalidDataException("The installer exceeds the maximum download size.");
             string actualHash;
             var supportsRanges = contentLength >= segmentedDownloadThresholdBytes &&
                                  response.Headers.AcceptRanges.Any(static value => value.Equals("bytes", StringComparison.OrdinalIgnoreCase));
@@ -238,9 +241,9 @@ public sealed class UpdatePackageDownloader
                     wholeResponse.EnsureSuccessStatusCode();
                     var wholeUri = wholeResponse.RequestMessage?.RequestUri ?? finalUri;
                     if (wholeUri.Scheme != Uri.UriSchemeHttps ||
-                        (!plan.AllowHashVerifiedRedirects && !IsAllowedHost(wholeUri.Host, plan.AllowedDownloadHosts)))
+                        (!plan.AllowHashVerifiedRedirects && !IsAllowedHost(wholeUri.IdnHost, plan.AllowedDownloadHosts)))
                     {
-                        throw new InvalidOperationException($"The download redirected to untrusted host '{wholeUri.Host}'.");
+                        throw new InvalidOperationException($"The download redirected to untrusted host '{wholeUri.IdnHost}'.");
                     }
                     if (File.Exists(partialPath)) File.Delete(partialPath);
                     actualHash = await DownloadSingleResponseAsync(
@@ -289,6 +292,8 @@ public sealed class UpdatePackageDownloader
         }
     }
 
+    private const long MaximumDownloadBytes = 16L * 1024 * 1024 * 1024;
+
     private async Task<string> DownloadSingleResponseAsync(
         HttpResponseMessage response,
         string partialPath,
@@ -297,6 +302,8 @@ public sealed class UpdatePackageDownloader
         IProgress<double>? progress,
         CancellationToken cancellationToken)
     {
+        if (contentLength > MaximumDownloadBytes)
+            throw new InvalidDataException("The installer exceeds the maximum download size.");
         await using var input = await response.Content.ReadAsStreamAsync(cancellationToken);
         await using var output = new FileStream(
             partialPath,
@@ -315,6 +322,8 @@ public sealed class UpdatePackageDownloader
             {
                 break;
             }
+            if (received + read > MaximumDownloadBytes)
+                throw new InvalidDataException("The installer exceeds the maximum download size.");
             await output.WriteAsync(buffer.AsMemory(0, read), cancellationToken);
             hash.AppendData(buffer, 0, read);
             received += read;
@@ -388,9 +397,9 @@ public sealed class UpdatePackageDownloader
                 }
                 var finalUri = response.RequestMessage?.RequestUri ?? uri;
                 if (finalUri.Scheme != Uri.UriSchemeHttps ||
-                    (!plan.AllowHashVerifiedRedirects && !IsAllowedHost(finalUri.Host, plan.AllowedDownloadHosts)))
+                    (!plan.AllowHashVerifiedRedirects && !IsAllowedHost(finalUri.IdnHost, plan.AllowedDownloadHosts)))
                 {
-                    throw new InvalidOperationException($"A download segment redirected to untrusted host '{finalUri.Host}'.");
+                    throw new InvalidOperationException($"A download segment redirected to untrusted host '{finalUri.IdnHost}'.");
                 }
                 await using var input = await response.Content.ReadAsStreamAsync(cancellationToken);
                 await using var output = new FileStream(
@@ -606,7 +615,7 @@ public sealed class UpdatePackageDownloader
     // without a User-Agent with 403 Forbidden, so every download names the updater.
     internal static HttpRequestMessage Identified(HttpRequestMessage request)
     {
-        if (request.Headers.UserAgent.Count == 0) request.Headers.UserAgent.ParseAdd("NaxUpdater/0.17.79");
+        if (request.Headers.UserAgent.Count == 0) request.Headers.UserAgent.ParseAdd(AppVersion.UserAgent);
         return request;
     }
 

@@ -26,7 +26,8 @@ public sealed partial class ElectronBuilderUpdateProvider(HttpClient httpClient,
             return Error(application, "No supported installed updater metadata was found.");
         }
 
-        using var response = await httpClient.GetAsync(configuration.MetadataUri, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
+        var trustedHosts = AllowedHosts(configuration.MetadataUri);
+        using var response = await ScopedUpdateHttp.GetAsync(httpClient, configuration.MetadataUri, trustedHosts, cancellationToken);
         // A feed that no longer exists (a deleted or private GitHub repository) is
         // not a failed check: the application's own updater gets the same answer,
         // so no update can be found through it until the publisher restores it.
@@ -44,7 +45,7 @@ public sealed partial class ElectronBuilderUpdateProvider(HttpClient httpClient,
             return Error(application, "The installed updater feed did not contain a usable version and installer hash.");
         }
 
-        var architecture = DetectArchitecture(application.PrimaryInstallPath);
+        var architecture = PeArchitectureReader.Detect(application.PrimaryInstallPath) ?? "unknown";
         var artifact = SelectArtifact(metadata.Artifacts, architecture);
         if (artifact is null)
         {
@@ -71,7 +72,7 @@ public sealed partial class ElectronBuilderUpdateProvider(HttpClient httpClient,
                 RolloutThresholdPercent = ElectronStagedRollout.ThresholdPercent(position)
             };
         }
-        var downloadUri = ResolveDownloadUri(configuration, artifact.Url);
+        var downloadUri = ResolveDownloadUri(configuration, artifact.Url, trustedHosts);
         var signer = configuration.PublisherNames.FirstOrDefault() ??
                      NativeAuthenticodeVerifier.GetTrustedSigner(application.PrimaryInstallPath ?? string.Empty);
         if (status == UpdateStatus.Available &&
@@ -84,9 +85,11 @@ public sealed partial class ElectronBuilderUpdateProvider(HttpClient httpClient,
                 configuration.ReleasePage);
         }
 
+        bool useMsi = downloadUri is not null &&
+            Path.GetExtension(downloadUri.AbsolutePath).Equals(".msi", StringComparison.OrdinalIgnoreCase);
         var plan = status == UpdateStatus.Available
             ? new UpdateExecutionPlan(
-                Path.GetExtension(artifact.Url).Equals(".msi", StringComparison.OrdinalIgnoreCase)
+                useMsi
                     ? UpdateExecutionKind.DownloadedMsi
                     : UpdateExecutionKind.DownloadedExe,
                 downloadUri,
@@ -94,9 +97,9 @@ public sealed partial class ElectronBuilderUpdateProvider(HttpClient httpClient,
                 null,
                 signer,
                 null,
-                ["/S"],
+                useMsi ? ["/passive", "/norestart"] : ["/S"],
                 application.Scope == InstallScope.Machine,
-                AllowedHosts(configuration.MetadataUri, downloadUri),
+                trustedHosts.ToArray(),
                 RunningProcesses(application),
                 artifact.Sha512)
                 with { ExpectedSigners = configuration.PublisherNames.Count > 0 ? configuration.PublisherNames : null }
@@ -156,12 +159,15 @@ public sealed partial class ElectronBuilderUpdateProvider(HttpClient httpClient,
             var values = ParseConfiguration(File.ReadAllText(path));
             var provider = Value(values, "provider")?.ToLowerInvariant();
             var channel = Value(values, "channel") ?? "latest";
+            if (channel.Length is < 1 or > 64 || channel is "." or ".." ||
+                channel.Any(character => !char.IsAsciiLetterOrDigit(character) && character is not ('.' or '_' or '-')))
+                return null;
             Uri? metadataUri = null;
             string? releasePage = null;
             Uri? downloadBaseUri = null;
 
             if (provider == "generic" && Uri.TryCreate(EnsureTrailingSlash(Value(values, "url")), UriKind.Absolute, out var genericBase) &&
-                genericBase.Scheme == Uri.UriSchemeHttps)
+                ScopedUpdateHttp.IsPublicHttps(genericBase))
             {
                 downloadBaseUri = genericBase;
                 metadataUri = new Uri(genericBase, $"{channel}.yml");
@@ -292,57 +298,22 @@ public sealed partial class ElectronBuilderUpdateProvider(HttpClient httpClient,
         };
     }
 
-    private static string DetectArchitecture(string? executablePath)
-    {
-        try
-        {
-            if (string.IsNullOrWhiteSpace(executablePath) || !File.Exists(executablePath))
-            {
-                return "unknown";
-            }
-            using var stream = File.OpenRead(executablePath);
-            using var reader = new BinaryReader(stream);
-            if (reader.ReadUInt16() != 0x5A4D)
-            {
-                return "unknown";
-            }
-            stream.Position = 0x3c;
-            var peOffset = reader.ReadInt32();
-            stream.Position = peOffset + 4;
-            return reader.ReadUInt16() switch
-            {
-                0x8664 => "x64",
-                0xAA64 => "arm64",
-                0x014c => "x86",
-                _ => "unknown"
-            };
-        }
-        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or EndOfStreamException)
-        {
-            return "unknown";
-        }
-    }
-
-    private static Uri? ResolveDownloadUri(UpdateConfiguration configuration, string artifactUrl)
+    private static Uri? ResolveDownloadUri(UpdateConfiguration configuration, string artifactUrl, IReadOnlySet<string> hosts)
     {
         if (Uri.TryCreate(artifactUrl, UriKind.Absolute, out var absolute))
         {
-            return absolute.Scheme == Uri.UriSchemeHttps ? absolute : null;
+            return ScopedUpdateHttp.IsPublicHttps(absolute) && hosts.Contains(absolute.IdnHost) ? absolute : null;
         }
-        return Uri.TryCreate(configuration.DownloadBaseUri, artifactUrl, out var relative) && relative.Scheme == Uri.UriSchemeHttps
+        return Uri.TryCreate(configuration.DownloadBaseUri, artifactUrl, out var relative) &&
+            ScopedUpdateHttp.IsPublicHttps(relative) && hosts.Contains(relative.IdnHost)
             ? relative
             : null;
     }
 
-    private static IReadOnlyList<string> AllowedHosts(Uri metadataUri, Uri downloadUri) =>
-        new[]
-        {
-            metadataUri.Host,
-            downloadUri.Host,
-            "objects.githubusercontent.com",
-            "release-assets.githubusercontent.com",
-            "github-releases.githubusercontent.com"
-        }.Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
+    private static HashSet<string> AllowedHosts(Uri metadataUri) =>
+        metadataUri.IdnHost.Equals("github.com", StringComparison.OrdinalIgnoreCase)
+            ? new HashSet<string>(ScopedUpdateHttp.GitHubAssetHosts, StringComparer.OrdinalIgnoreCase)
+            : new HashSet<string>([metadataUri.IdnHost], StringComparer.OrdinalIgnoreCase);
 
     private static IReadOnlyList<string> RunningProcesses(InstalledApplication application)
     {

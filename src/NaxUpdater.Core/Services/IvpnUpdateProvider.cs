@@ -103,7 +103,7 @@ public sealed class IvpnUpdateProvider : IUpdateProvider
         }
 
         var uiExecutable = ResolveUiExecutable(application);
-        var architecture = NodeJsUpdateProvider.DetectArchitecture(uiExecutable);
+        var architecture = PeArchitectureReader.Detect(uiExecutable);
         if (architecture is not ("x64" or "arm64") || application.Scope != InstallScope.Machine)
             return Result(application, release.Version, UpdateStatus.NewerReleaseKnown, releasePage,
                 "IVPN has a newer release, but the installed architecture or scope has no matching supported installer.",
@@ -163,7 +163,7 @@ public sealed class IvpnUpdateProvider : IUpdateProvider
     private async Task<byte[]> GetBytesAsync(Uri uri, CancellationToken cancellationToken)
     {
         using var request = new HttpRequestMessage(HttpMethod.Get, uri);
-        request.Headers.UserAgent.ParseAdd("NaxUpdater/0.17.79");
+        request.Headers.UserAgent.ParseAdd(AppVersion.UserAgent);
         using var response = await _httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
         response.EnsureSuccessStatusCode();
         return await HttpBodyLimit.ReadBytesAsync(response.Content, cancellationToken);

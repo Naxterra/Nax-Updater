@@ -123,7 +123,7 @@ internal static class MsiAudioRegression
                     "The audio installer lost its response file, CABs, INF or working directory before apply.");
                 var command = UpdateExecutionService.CreateInstallerStartInfo(update.ExecutionPlan!, prepared);
                 assert(command.FileName == prepared.ExecutablePath && command.WorkingDirectory == preparedRoot &&
-                    command.UseShellExecute && command.Verb == "runas" && command.ArgumentList.SequenceEqual(["/s"]),
+                    !command.UseShellExecute && string.IsNullOrEmpty(command.Verb) && command.ArgumentList.SequenceEqual(["/s"]),
                     "The audio installer would run without its publisher response file, correct working directory or elevation.");
                 var blocked = false;
                 try { File.WriteAllText(Path.Combine(preparedRoot, "data1.cab"), "tampered"); }

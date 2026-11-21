@@ -2,6 +2,9 @@
 # Each entry is an "en: " line followed by its "de: " line. {0}, {1}, ... stand for inserted values.
 # "same: " lines are names, commands and identifiers that are shown unchanged.
 
+en: .NET Desktop Runtime {0} is already installed for this architecture. The older {1} runtime remains installed side by side.
+de: .NET Desktop Runtime {0} ist für diese Architektur bereits installiert. Die ältere Laufzeitversion {1} bleibt parallel installiert.
+
 same: "{0}" upgrade {1} --version="{2}" -y -r --no-progress > "{3}" 2>&1
 same: Accept: application/vnd.github+json
 same: Bitdefender Endpoint Security Tools
@@ -65,6 +68,10 @@ en: A package catalog lists version {0} of this driver package. Nax-Updater does
 de: Ein Paketkatalog führt Version {0} dieses Treiberpakets. Nax-Updater installiert Treiber nicht aus einem Paketkatalog. Wenn die Treiberansicht das Gerät führt, aktualisiere es dort.
 en: A newer producer release is verified, but automatic installation is blocked until the release has a complete asset digest, download URL, and Authenticode signer policy.
 de: Ein neueres Hersteller-Release ist geprüft, aber die automatische Installation bleibt gesperrt, bis das Release einen vollständigen Asset-Hash, eine Download-URL und eine Authenticode-Signaturregel hat.
+en: Install this update manually from the official release page. This provider has no approved publisher signature policy for automatic installation.
+de: Installiere dieses Update manuell über die offizielle Releaseseite. Für die automatische Installation fehlt eine freigegebene Signaturregel des Herausgebers.
+en: The publisher's version source timed out on both attempts.
+de: Die Versionsquelle des Herausgebers hat bei beiden Versuchen nicht rechtzeitig geantwortet.
 en: A signature-only recipe must name the publisher's exact signer.
 de: Ein Rezept, das nur die Signatur prüft, muss den exakten Signierer des Herstellers nennen.
 en: Active Firefox language pack in the default installation profile
@@ -661,6 +668,81 @@ en: The Windows elevation prompt was canceled. The prepared payload was not exec
 de: Die Windows-Abfrage für Administratorrechte wurde abgebrochen. Das vorbereitete Paket wurde nicht ausgeführt.
 en: The Windows elevation prompt was cancelled.
 de: Die Windows-Abfrage für Administratorrechte wurde abgebrochen.
+
+en: A staged installer path is invalid.
+de: Ein Pfad im bereitgestellten Installationspaket ist ungültig.
+
+en: An extracted file changed before it could be locked.
+de: Eine extrahierte Datei wurde geändert, bevor sie gesperrt werden konnte.
+
+en: An installer file changed before it could be copied into protected staging.
+de: Eine Installationsdatei wurde geändert, bevor sie in den geschützten Ordner kopiert werden konnte.
+
+en: Chocolatey's {0} directory is writable by a standard user.
+de: Ein Standardbenutzer kann in das Chocolatey-Verzeichnis {0} schreiben.
+
+en: Install Chocolatey for all users in a protected folder before using it for elevated updates.
+de: Installieren Sie Chocolatey für alle Benutzer in einem geschützten Ordner, bevor Sie Updates mit Administratorrechten ausführen.
+
+en: The installer exceeds the maximum download size.
+de: Das Installationspaket überschreitet die maximale Downloadgröße.
+
+en: The Windows Program Files folder is not protected against modification.
+de: Der Windows-Programmordner ist nicht vor Änderungen geschützt.
+en: The approved installer entry is missing from its staged files.
+de: Das freigegebene Installationsprogramm fehlt in den bereitgestellten Dateien.
+en: The approved update request exceeds the channel limit.
+de: Die freigegebene Updateanforderung ist zu groß für den Übertragungskanal.
+en: The elevated WinGet request is not for the official machine catalog.
+de: Die WinGet-Anforderung mit Administratorrechten verweist nicht auf den offiziellen systemweiten Katalog.
+en: The elevated native updater is outside a protected installation.
+de: Das native Updateprogramm befindet sich außerhalb einer geschützten Installation.
+en: The elevated update channel could not verify its worker.
+de: Der Prozess mit Administratorrechten konnte nicht überprüft werden.
+en: The elevated update message has an invalid size.
+de: Die Nachricht für das Update mit Administratorrechten hat eine ungültige Größe.
+en: The elevated update message is empty.
+de: Die Nachricht für das Update mit Administratorrechten ist leer.
+en: The elevated update request did not specify an approved operation.
+de: Die Anforderung für das Update mit Administratorrechten enthält keinen freigegebenen Vorgang.
+en: The elevated update request was refused.
+de: Die Anforderung für das Update mit Administratorrechten wurde abgelehnt.
+en: The elevated update requires administrator rights.
+de: Das Update mit Administratorrechten benötigt Administratorrechte.
+en: The elevated updater closed the update channel before starting.
+de: Der Updateprozess mit Administratorrechten hat den Updatekanal vor dem Start geschlossen.
+en: The elevated updater did not connect in time.
+de: Der Updateprozess mit Administratorrechten hat sich nicht rechtzeitig verbunden.
+en: The elevated updater did not start.
+de: Der Updateprozess mit Administratorrechten wurde nicht gestartet.
+en: The elevated updater exited before connecting to the update channel.
+de: Der Updateprozess mit Administratorrechten wurde beendet, bevor er sich mit dem Updatekanal verbinden konnte.
+en: The update contains duplicate staged files.
+de: Das bereitgestellte Update enthält doppelte Dateien.
+en: The update host did not resolve to a reachable public address.
+de: Für den Update-Host wurde keine erreichbare öffentliche Adresse gefunden.
+en: The update metadata URL is not an absolute address.
+de: Die URL der Update-Metadaten ist keine absolute Adresse.
+en: The update metadata URL is outside its configured HTTPS origins.
+de: Die URL der Update-Metadaten gehört zu keinem der konfigurierten HTTPS-Ursprünge.
+en: The update metadata returned an invalid redirect.
+de: Die Update-Metadaten lieferten eine ungültige Weiterleitung.
+
+en: Install Nax-Updater for all users in a protected folder before applying updates that require administrator rights.
+de: Installieren Sie Nax-Updater für alle Benutzer in einem geschützten Ordner, bevor Sie Updates mit Administratorrechten ausführen.
+
+en: The Chocolatey update requires administrator rights.
+de: Das Chocolatey-Update benötigt Administratorrechte.
+
+en: The Python install manager could not list the installed runtimes (exit code {0}).
+de: Der Python-Installationsmanager konnte die installierten Laufzeiten nicht auflisten (Exitcode {0}).
+
+en: The Python install manager returned an unexpected runtime list.
+de: Der Python-Installationsmanager hat eine unerwartete Liste von Laufzeiten zurückgegeben.
+
+en: The Python install manager returned invalid JSON.
+de: Der Python-Installationsmanager hat ungültiges JSON zurückgegeben.
+
 en: The Zero Install CLI was not found for {0}.
 de: Die Zero-Install-CLI wurde für {0} nicht gefunden.
 en: The application to close launched NaxUpdater. Launch NaxUpdater from the Start menu so updating that application cannot terminate the updater.

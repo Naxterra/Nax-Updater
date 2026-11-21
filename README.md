@@ -214,6 +214,7 @@ Nax-Updater never falls back to an English Firefox installer when the detected l
 - Direct producer recipes verify installed architecture and scope; supported alternate architectures select their matching assets. Unsupported variants remain visible with an explanation.
 - Native WinGet fulfillment retains the official catalog package/version and validates the selected architecture, installer type, and locale before submission. Windows Package Manager owns download integrity, dependencies, installer switches and Windows elevation.
 - Starting an update authorizes Nax-Updater to close only path-bound processes from the fresh execution plan and force-terminate these same-session processes when necessary, without their descendant trees; inaccessible processes block the transaction instead of passing stale PIDs through an elevated `taskkill` command.
+- Elevated updates (all-users MSI/EXE installers, drivers, machine-scope WinGet packages, and Chocolatey packages) require installing Nax-Updater for all users into a protected folder (via the Setup EXE or MSI). Portable builds outside a protected folder can scan and apply non-elevated updates only.
 - Nax-Updater does not run bulk WinGet, Chocolatey, or Scoop commands and never uninstalls without exact user confirmation.
 
 ## Application removal
@@ -232,7 +233,7 @@ From this directory:
 dotnet build NaxUpdater.slnx
 dotnet run --project tests/NaxUpdater.Core.SmokeTests/NaxUpdater.Core.SmokeTests.csproj
 dotnet publish src/NaxUpdater/NaxUpdater.csproj -c Release -r win-x64 --self-contained true -o artifacts/NaxUpdater-win-x64
-./scripts/package-release.ps1 -Version 0.17.79
+./scripts/package-release.ps1 -Version 0.17.82
 ```
 
 The desktop project uses .NET 11, WinUI 3, and the Windows App SDK. It is not an Electron or WebView application.

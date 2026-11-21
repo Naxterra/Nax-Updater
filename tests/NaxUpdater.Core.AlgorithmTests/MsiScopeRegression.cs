@@ -38,13 +38,8 @@ internal static class MsiScopeRegression
         foreach (var installer in new[] { PackageInstallerType.Msi, PackageInstallerType.Wix, PackageInstallerType.Burn, PackageInstallerType.Exe })
         foreach (var scope in new[] { InstallScope.Machine, InstallScope.CurrentUser, InstallScope.Unknown })
         {
-            var target = new WingetUpdateTarget("Fixture.App", WingetPackageService.OfficialSourceId, "2.0", "1.0", [],
-                "X64", installer.ToString(), "", scope, null);
-            var cli = WingetPackageService.CliUpgradeArguments(target);
             var options = WingetPackageService.CreateOptions(null, scope, null, installer);
             var machineMsi = scope == InstallScope.Machine && installer is PackageInstallerType.Msi or PackageInstallerType.Wix;
-            assert(cli.Contains("--custom") == machineMsi && cli.Contains("ALLUSERS=1") == machineMsi,
-                $"WinGet CLI did not preserve MSI scope for {scope}/{installer}.");
             assert(options.AdditionalInstallerArguments == (machineMsi ? "ALLUSERS=1" : "") &&
                 string.IsNullOrEmpty(options.ReplacementInstallerArguments),
                 $"WinGet COM did not preserve MSI scope or replaced the publisher's switches for {scope}/{installer}.");

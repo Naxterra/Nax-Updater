@@ -301,6 +301,7 @@ public sealed class UpdateExecutionService
         string? extractionDirectory = null;
         var executableInstallerPath = installer.Path;
         IReadOnlyList<PreparedContentLock>? contentLocks = null;
+        IReadOnlyList<string>? approvedDirectories = null;
         try
         {
             if (plan.Kind is UpdateExecutionKind.DownloadedZipMsi or UpdateExecutionKind.DownloadedZipExe or UpdateExecutionKind.DownloadedZipDriver)
@@ -333,6 +334,7 @@ public sealed class UpdateExecutionService
                         plan.ExtractInstallerDirectory);
                     executableInstallerPath = nestedPayload.Path;
                     contentLocks = nestedPayload.ContentLocks;
+                    approvedDirectories = nestedPayload.Directories;
                 }
                 if (plan.Kind is UpdateExecutionKind.DownloadedZipMsi or UpdateExecutionKind.DownloadedZipExe && plan.RequireAuthenticode)
                 {
@@ -355,7 +357,10 @@ public sealed class UpdateExecutionService
                 Path.GetDirectoryName(executableInstallerPath),
                 extractionDirectory,
                 contentHash,
-                contentLocks);
+                contentLocks)
+            {
+                ApprovedDirectories = approvedDirectories
+            };
         }
         catch
         {
@@ -482,19 +487,19 @@ public sealed class UpdateExecutionService
         {
             try
             {
-                if (plan.RequiresElevation || !string.IsNullOrWhiteSpace(prepared.WorkingDirectory))
+                if (Environment.IsPrivilegedProcess)
+                    return await PrivilegedUpdateHost.ApplyNativeInProcessAsync(prepared.ExecutablePath,
+                        prepared.WorkingDirectory ?? Path.GetDirectoryName(prepared.ExecutablePath)!, plan.Arguments);
+                if (plan.RequiresElevation)
+                    return await PrivilegedUpdateHost.RunNativeAsync(prepared.ExecutablePath,
+                        prepared.WorkingDirectory ?? Path.GetDirectoryName(prepared.ExecutablePath)!, plan.Arguments, cancellationToken);
+                if (!string.IsNullOrWhiteSpace(prepared.WorkingDirectory))
                 {
                     var nativeStartInfo = new ProcessStartInfo(prepared.ExecutablePath)
                     {
-                        UseShellExecute = true,
-                        WorkingDirectory = string.IsNullOrWhiteSpace(prepared.WorkingDirectory)
-                            ? Path.GetDirectoryName(prepared.ExecutablePath) ?? string.Empty
-                            : prepared.WorkingDirectory
+                        UseShellExecute = false,
+                        WorkingDirectory = prepared.WorkingDirectory
                     };
-                    if (plan.RequiresElevation)
-                    {
-                        nativeStartInfo.Verb = "runas";
-                    }
                     foreach (var argument in plan.Arguments)
                     {
                         nativeStartInfo.ArgumentList.Add(argument);
@@ -508,6 +513,11 @@ public sealed class UpdateExecutionService
                     cancellationToken);
                 return new UpdateExecutionResult(query.ExitCode, IsSuccessfulExitCode(query.ExitCode), query.StandardError.Trim());
             }
+            catch (Win32Exception exception) when (exception.NativeErrorCode == 740 && !plan.RequiresElevation && !Environment.IsPrivilegedProcess)
+            {
+                return await PrivilegedUpdateHost.RunNativeAsync(prepared.ExecutablePath,
+                    prepared.WorkingDirectory ?? Path.GetDirectoryName(prepared.ExecutablePath)!, plan.Arguments, cancellationToken);
+            }
             finally
             {
                 prepared.Installer?.Dispose();
@@ -516,11 +526,18 @@ public sealed class UpdateExecutionService
             }
         }
 
-        var startInfo = CreateInstallerStartInfo(plan, prepared);
-
         try
         {
+            if (Environment.IsPrivilegedProcess)
+                return await PrivilegedUpdateHost.ApplyInstallerInProcessAsync(plan, prepared, cancellationToken);
+            if (plan.RequiresElevation)
+                return await PrivilegedUpdateHost.RunInstallerAsync(plan, prepared, cancellationToken);
+            var startInfo = CreateInstallerStartInfo(plan, prepared);
             return await RunStartedProcessAsync(startInfo, cancellationToken, plan.Interactive);
+        }
+        catch (Win32Exception exception) when (exception.NativeErrorCode == 740 && !plan.RequiresElevation && !Environment.IsPrivilegedProcess)
+        {
+            return await PrivilegedUpdateHost.RunInstallerAsync(plan, prepared, cancellationToken);
         }
         finally
         {
@@ -543,13 +560,10 @@ public sealed class UpdateExecutionService
                 new ProcessStartInfo(Path.Combine(Environment.SystemDirectory, "pnputil.exe")),
             _ => throw new InvalidOperationException($"Unsupported execution kind {plan.Kind}.")
         };
-        startInfo.UseShellExecute = true;
+        // CreateProcess reports a manifest's elevation requirement without launching the installer.
+        startInfo.UseShellExecute = false;
         if (plan.ExtractInstallerDirectory)
             startInfo.WorkingDirectory = prepared.WorkingDirectory ?? Path.GetDirectoryName(executablePath) ?? string.Empty;
-        if (plan.RequiresElevation)
-        {
-            startInfo.Verb = "runas";
-        }
         if (plan.Kind is UpdateExecutionKind.DownloadedMsi or UpdateExecutionKind.DownloadedZipMsi)
         {
             startInfo.ArgumentList.Add("/i");
@@ -579,17 +593,17 @@ public sealed class UpdateExecutionService
             ? [.. plan.Arguments, "ALLUSERS=1"]
             : plan.Arguments;
 
-    private static async Task<UpdateExecutionResult> RunStartedProcessAsync(
+    internal static async Task<UpdateExecutionResult> RunStartedProcessAsync(
         ProcessStartInfo startInfo,
         CancellationToken cancellationToken,
-        bool interactive = false)
+        bool interactive = false, string? installerWorkspace = null)
     {
         try
         {
             using var process = Process.Start(startInfo) ?? throw new InvalidOperationException("The updater process did not start.");
             try
             {
-                if (interactive) await WaitForInteractiveInstallerAsync(process, cancellationToken);
+                if (interactive) await WaitForInteractiveInstallerAsync(process, cancellationToken, installerWorkspace: installerWorkspace);
                 else await process.WaitForExitAsync(cancellationToken);
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
@@ -614,8 +628,14 @@ public sealed class UpdateExecutionService
     // waited for at most the limit that a removal uses. This is the wait of a removal without its
     // uninstall entry, which an installation does not have.
     internal static Task WaitForInteractiveInstallerAsync(Process process, CancellationToken cancellationToken,
-        TimeSpan? leftBehindLimit = null) =>
-        ApplicationRemovalService.WaitForUninstallerAsync(process, static () => null, cancellationToken, leftBehindLimit);
+        TimeSpan? leftBehindLimit = null, string? installerWorkspace = null) =>
+        ApplicationRemovalService.WaitForUninstallerAsync(process, static () => null, cancellationToken, leftBehindLimit,
+            path => IsInteractiveInstallerProgram(path, installerWorkspace));
+
+    internal static bool IsInteractiveInstallerProgram(string? path, string? installerWorkspace) =>
+        ApplicationRemovalService.IsUninstallerProgram(path, null) ||
+        path is not null && installerWorkspace is not null &&
+        path.StartsWith(Path.TrimEndingDirectorySeparator(installerWorkspace) + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase);
 
     private static IReadOnlyList<string> ExpectedSigners(UpdateExecutionPlan plan) =>
         plan.ExpectedSigners is { Count: > 0 }
@@ -785,7 +805,8 @@ public sealed class UpdateExecutionService
                 Directory.CreateDirectory(Path.GetDirectoryName(file.Destination)!);
                 locks.Add(ExtractEntryLocked(file.Entry, file.Destination));
             }
-            return new PreparedNestedPayload(Path.Combine(destinationDirectory, normalized[(separator + 1)..]), locks);
+            return new PreparedNestedPayload(Path.Combine(destinationDirectory, normalized[(separator + 1)..]), locks,
+                directories.Select(path => Path.GetRelativePath(destinationDirectory, path)).ToArray());
         }
         catch
         {
@@ -885,6 +906,7 @@ public sealed class UpdateExecutionService
 
     private static PreparedContentLock ExtractEntryLocked(ZipArchiveEntry entry, string destinationPath)
     {
+        using var digest = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
         using (var output = new FileStream(
                    destinationPath,
                    FileMode.CreateNew,
@@ -892,12 +914,24 @@ public sealed class UpdateExecutionService
                    FileShare.None))
         {
             using var input = entry.Open();
-            input.CopyTo(output);
+            byte[] buffer = new byte[128 * 1024];
+            int read;
+            while ((read = input.Read(buffer)) != 0)
+            {
+                digest.AppendData(buffer, 0, read);
+                output.Write(buffer, 0, read);
+            }
             output.Flush(flushToDisk: true);
         }
-        return new PreparedContentLock(
-            destinationPath,
-            new FileStream(destinationPath, FileMode.Open, FileAccess.Read, FileShare.Read));
+        var locked = new FileStream(destinationPath, FileMode.Open, FileAccess.Read, FileShare.Read);
+        try
+        {
+            if (!CryptographicOperations.FixedTimeEquals(SHA256.HashData(locked), digest.GetHashAndReset()))
+                throw new InvalidDataException("An extracted file changed before it could be locked.");
+            locked.Position = 0;
+            return new PreparedContentLock(destinationPath, locked);
+        }
+        catch { locked.Dispose(); throw; }
     }
 
     internal static string ReadInfDriverVersion(string infText)
@@ -976,4 +1010,5 @@ internal sealed record PreparedDriverPayload(
 
 internal sealed record PreparedNestedPayload(
     string Path,
-    IReadOnlyList<PreparedContentLock> ContentLocks);
+    IReadOnlyList<PreparedContentLock> ContentLocks,
+    IReadOnlyList<string>? Directories = null);

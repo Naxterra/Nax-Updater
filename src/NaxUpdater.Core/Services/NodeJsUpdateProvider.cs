@@ -39,7 +39,7 @@ public sealed class NodeJsUpdateProvider(HttpClient httpClient) : IUpdateProvide
         try
         {
             using var request = new HttpRequestMessage(HttpMethod.Get, ReleaseIndexUri);
-            request.Headers.UserAgent.ParseAdd("NaxUpdater/0.17.79");
+            request.Headers.UserAgent.ParseAdd(AppVersion.UserAgent);
             using var response = await httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
             response.EnsureSuccessStatusCode();
             using var document = JsonDocument.Parse(await HttpBodyLimit.ReadStreamAsync(response.Content, cancellationToken));
@@ -158,7 +158,7 @@ public sealed class NodeJsUpdateProvider(HttpClient httpClient) : IUpdateProvide
         CancellationToken cancellationToken)
     {
         using var request = new HttpRequestMessage(HttpMethod.Get, $"https://nodejs.org/dist/v{version}/SHASUMS256.txt");
-        request.Headers.UserAgent.ParseAdd("NaxUpdater/0.17.79");
+        request.Headers.UserAgent.ParseAdd(AppVersion.UserAgent);
         try
         {
             using var response = await httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
@@ -181,45 +181,7 @@ public sealed class NodeJsUpdateProvider(HttpClient httpClient) : IUpdateProvide
         return int.TryParse(first, out major) && major > 0;
     }
 
-    internal static string? DetectArchitecture(string? executablePath)
-    {
-        try
-        {
-            if (string.IsNullOrWhiteSpace(executablePath) || !File.Exists(executablePath) ||
-                !Path.GetExtension(executablePath).Equals(".exe", StringComparison.OrdinalIgnoreCase))
-            {
-                return null;
-            }
-            using var stream = File.OpenRead(executablePath);
-            using var reader = new BinaryReader(stream);
-            if (reader.ReadUInt16() != 0x5A4D)
-            {
-                return null;
-            }
-            stream.Position = 0x3c;
-            var peOffset = reader.ReadInt32();
-            if (peOffset < 0 || peOffset > stream.Length - 6)
-            {
-                return null;
-            }
-            stream.Position = peOffset;
-            if (reader.ReadUInt32() != 0x00004550)
-            {
-                return null;
-            }
-            return reader.ReadUInt16() switch
-            {
-                0x8664 => "x64",
-                0xAA64 => "arm64",
-                0x014c => "x86",
-                _ => null
-            };
-        }
-        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or ArgumentException)
-        {
-            return null;
-        }
-    }
+    internal static string? DetectArchitecture(string? executablePath) => PeArchitectureReader.Detect(executablePath);
 
     private UpdateCheckResult Result(
         InstalledApplication application,

@@ -1,6 +1,6 @@
 # Nax-Updater design
 
-Current as of 0.17.79. Updated with every release; the reasons behind each rule are in [DECISIONS.md](DECISIONS.md).
+Current as of 0.17.82. Updated with every release; the reasons behind each rule are in [DECISIONS.md](DECISIONS.md).
 
 ## Goal
 
@@ -135,6 +135,7 @@ Every download sends a User-Agent, because CDNs such as Intel's download mirror 
 ## Process and package context
 
 - Starting an update authorizes closing only the processes bound to the fresh plan's executable paths.
+- Elevated updates (installers, drivers, machine-scope WinGet, Chocolatey, and elevated native updaters) run through `PrivilegedUpdateHost`, which requires `Nax-Updater.exe` to live in an ACL-protected all-users folder, passes the hash-bound request over an ACL-protected named pipe, stages payloads into an administrator-owned Program Files workspace with sanitized `TEMP`, `TMP`, and `PATH`, and cleans up reboot-retained staging folders on the next elevated run after Windows restarts. Portable builds outside a protected folder support scanning and non-elevated updates only.
 - Nax-Updater must not run inside another application's process job or MSIX package context: a non-elevated installer would inherit it and its per-user registry writes could be redirected into that package's private hive. `UpdateHostLifetime` relaunches through the desktop shell when it is job-bound.
 - One instance only (`Local\NaxUpdater.SingleInstance`).
 
@@ -158,7 +159,7 @@ The product and executable are `Nax-Updater`; internal identifiers (namespaces, 
 
 GitHub Actions is disabled; releases are built and verified locally.
 
-1. Bump the version everywhere it appears (`git grep` the old version: README, bundle project, packaging script, app project, User-Agent strings).
+1. Bump the version everywhere it appears (`git grep` the old version: README, bundle project, packaging script, app project, `AppVersion.cs`).
 2. Packaging refuses a `-Version` that differs from the project version and checks the published `Nax-Updater.exe` version. It never overrides versions with `-p:Version`, which would renumber `NaxUpdater.Core.dll` downwards. Algorithm, transaction and smoke tests must all pass; live smoke checks assert the shape of this machine's state, not past versions.
 3. Package, push, tag `vX` (annotated), `gh release create` with Setup.exe, portable ZIP and `SHA256SUMS.txt`.
 4. Download the published assets, verify `SHA256SUMS.txt`, install with `/passive`, verify the installed version and commit, and compare the installed files with the published files (all but the `.pdb` files must be present).

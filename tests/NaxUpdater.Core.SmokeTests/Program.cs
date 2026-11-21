@@ -1702,12 +1702,13 @@ using (var naxUpdaterFixtureClient = new HttpClient(new StubHttpMessageHandler(_
         ProviderId: "github:Naxterra/Nax-Updater",
         Status: UpdateStatus.NewerReleaseKnown,
         AvailableVersion: "0.16.3",
+        AvailabilityReason: UpdateAvailabilityReason.ManualReleaseInstall,
         ExecutionPlan: null,
         Applicability: UpdateApplicability.NotApplicable
     },
-        "Unsigned NaxUpdater releases were not recognized while remaining blocked from automatic installation.");
+        "The unsigned NaxUpdater release was not identified as a manual install.");
 }
-var productionUpdateSnapshot = await new UpdateCheckService(capabilityClient, productionProviderCatalog)
+var productionUpdateSnapshot = await new UpdateCheckService(capabilityClient, productionProviderCatalog, capabilityClient)
     .CheckAsync(snapshot, CancellationToken.None);
 var diagnosticMode = Environment.GetEnvironmentVariable("NAXUPDATER_DIAGNOSTICS");
 if (diagnosticMode is "1" or "all")

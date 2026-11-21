@@ -154,6 +154,10 @@ try
             CREATE TABLE productcodes2(productcode TEXT,package INTEGER);
             INSERT INTO packages VALUES(1,'Fixture.App','Fixture App','','2.0.0');
             INSERT INTO productcodes2 VALUES('{11111111-2222-3333-4444-555555555555}',1);
+            INSERT INTO packages VALUES(2,'Microsoft.DotNet.DesktopRuntime.9','Microsoft Windows Desktop Runtime - 9.0.23 (x86)','','9.0.23');
+            INSERT INTO productcodes2 VALUES('{22222222-2222-3333-4444-555555555555}',2);
+            INSERT INTO packages VALUES(3,'Google.GeminiDesktop','Gemini','','1.21.1');
+            INSERT INTO productcodes2 VALUES('Gemini',3);
             """;
         sql.ExecuteNonQuery();
     }
@@ -168,6 +172,61 @@ try
     var offer = (await new UpdateCheckService([fallbackProvider]).CheckAsync(Snapshot(fixtureApp))).Results.Single();
     Assert(offer.IsInstallable && offer.ExecutionPlan!.Kind == UpdateExecutionKind.WingetPackage, "WinGet fallback still disables automatic updates.");
     Assert(UpdatePlanValidator.Validate(offer, DateTimeOffset.UtcNow) is null, "WinGet plan failed validation.");
+    var olderRuntime = App("Microsoft Windows Desktop Runtime - 9.0.3 (x86)", "Microsoft Corporation",
+        "9.0.3", x64, InstallScope.Machine) with
+    {
+        Evidence = [new(EvidenceKind.Registry, "Uninstall registry", "LocalMachine Registry32 · {22222222-2222-3333-4444-555555555555}", true)]
+    };
+    var runtimeTarget = target with
+    {
+        PackageId = "Microsoft.DotNet.DesktopRuntime.9", Version = "9.0.23", InstalledCatalogVersion = "9.0.3", Architecture = "X86",
+        InstalledProductCodes = ["{22222222-2222-3333-4444-555555555555}"]
+    };
+    var runtimePackages = new Packages(runtimeTarget);
+    var runtimeProvider = new WingetFallbackUpdateProvider(index, runtimePackages)
+    {
+        ReadDesktopRuntimeVersions = architecture => architecture == "x86"
+            ? [new Version(9, 0, 3), new Version(9, 0, 23), new Version(10, 0, 1)]
+            : []
+    };
+    var existingPatch = await runtimeProvider.CheckAsync(olderRuntime, CancellationToken.None);
+    Assert(existingPatch is
+        {
+            InstalledVersion: "9.0.3", AvailableVersion: "9.0.23", Status: UpdateStatus.Current, ExecutionPlan: null,
+            AvailabilityReason: UpdateAvailabilityReason.DesktopRuntimePatchInstalled
+        } && runtimePackages.AssessCount == 0, "WinGet still offered a duplicate .NET 9 x86 patch.");
+    var otherArchitecture = olderRuntime with { DisplayName = "Microsoft Windows Desktop Runtime - 9.0.3 (x64)" };
+    Assert((await runtimeProvider.CheckAsync(otherArchitecture, CancellationToken.None)).IsInstallable && runtimePackages.AssessCount == 1,
+        "An x86 runtime suppressed a legitimate x64 update.");
+    var missingTargetProvider = new WingetFallbackUpdateProvider(index, runtimePackages)
+    {
+        ReadDesktopRuntimeVersions = _ => [new Version(9, 0, 22), new Version(9, 1, 23), new Version(10, 0, 23)]
+    };
+    Assert((await missingTargetProvider.CheckAsync(olderRuntime, CancellationToken.None)).IsInstallable && runtimePackages.AssessCount == 2,
+        "An older patch or a different runtime line suppressed a legitimate update.");
+    var geminiLauncher = Pe("Gemini/Gemini.exe", 0x014c);
+    var geminiPayload = Pe("Gemini/app-1.19.0/Gemini.exe", 0x8664);
+    _ = Pe("Gemini/app-1.18.0/Gemini.exe", 0xaa64);
+    _ = Pe("Gemini/app-1.20.0/Gemini.exe", 0);
+    var gemini = App("Gemini", "Google LLC", "1.19.0", geminiLauncher, InstallScope.CurrentUser) with
+    {
+        Evidence = [new(EvidenceKind.Registry, "Uninstall registry", "CurrentUser Registry64 · Gemini", true)]
+    };
+    Assert(InstalledApplicationMetadata.Architecture(gemini) == "x64" &&
+           InstalledApplicationMetadata.Architecture(gemini with { NormalizedVersion = "1.18.0" }) == "arm64" &&
+           InstalledApplicationMetadata.Architecture(gemini with { NormalizedVersion = "1.20.0" }) == "x86" &&
+           InstalledApplicationMetadata.Architecture(gemini with { DisplayName = "Antigravity" }) == "x86",
+        "WinGet's installed architecture did not follow the matching Gemini payload, or changed another product's result.");
+    var geminiTarget = new WingetUpdateTarget("Google.GeminiDesktop", WingetPackageService.OfficialSourceId, "1.21.1", "1.19.0",
+        ["Gemini"], "X64", "Nullsoft", "", InstallScope.CurrentUser, Path.GetDirectoryName(geminiLauncher));
+    var geminiOffer = (await new UpdateCheckService([new WingetFallbackUpdateProvider(index, new Packages(geminiTarget))])
+        .CheckAsync(Snapshot(gemini))).Results.Single();
+    Assert(geminiOffer.IsInstallable &&
+           geminiOffer.ExecutionPlan?.WingetTarget is { PackageId: "Google.GeminiDesktop", Architecture: "X64", Version: "1.21.1" } &&
+           geminiOffer.ExecutionPlan.RunningExecutablePaths is { Count: 2 } runningPaths &&
+           runningPaths.Contains(Path.GetFullPath(geminiLauncher), StringComparer.OrdinalIgnoreCase) &&
+           runningPaths.Contains(Path.GetFullPath(geminiPayload), StringComparer.OrdinalIgnoreCase),
+        $"WinGet's Gemini plan did not include the selected update and both exact executable paths: {geminiOffer.Status}, {geminiOffer.Message}");
     var execution = new UpdateExecutionService(wingetPackageService: packages);
     using var downloadClient = new HttpClient(new Handler(_ => throw new Exception("Catalog updates must use the package manager.")));
     var backend = new DefaultUpdateTransactionBackend(execution, new UpdatePackageDownloader(downloadClient, new NativeAuthenticodeVerifier()), (previous, token) =>
@@ -533,6 +592,32 @@ try
         catch (Exception exception) { lastFailure = exception; }
         Assert(lastFailure is not null && calls == 1, "A real WinGet failure was retried as if the server had exited.");
     }
+    await SecurityHardeningRegression.RunAsync(Assert, fixture);
+    string approvedDirectory = Directory.CreateDirectory(Path.Combine(fixture, "approved-files")).FullName;
+    string approvedInstaller = Path.Combine(approvedDirectory, "installer.exe");
+    string stageDirectory = Directory.CreateDirectory(Path.Combine(fixture, "sealed-stage")).FullName;
+    byte[] approvedBytes = [10, 20, 30];
+    File.WriteAllBytes(approvedInstaller, approvedBytes);
+    File.WriteAllText(Path.Combine(approvedDirectory, "unlisted.txt"), "A file outside the approved payload");
+    string approvedHash = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(approvedBytes));
+    string stagedInstaller = await PrivilegedUpdateHost.StageAsync(stageDirectory, "installer.exe",
+        [new(approvedInstaller, "installer.exe", approvedHash)], ["EmptyConfig"]);
+    Assert(File.ReadAllBytes(stagedInstaller).SequenceEqual(approvedBytes) && Directory.GetFiles(stageDirectory).Length == 1 &&
+        Directory.Exists(Path.Combine(stageDirectory, "EmptyConfig")), "Protected staging must keep the approved files and directories.");
+    string changedDirectory = Directory.CreateDirectory(Path.Combine(fixture, "changed-stage")).FullName;
+    File.WriteAllText(approvedInstaller, "Changed fixture");
+    bool rejected = false;
+    try
+    {
+        await PrivilegedUpdateHost.StageAsync(changedDirectory, "installer.exe",
+            [new(approvedInstaller, "installer.exe", approvedHash)]);
+    }
+    catch (UpdateExecutionRefusedException) { rejected = true; }
+    Assert(rejected, "Staging must reject files whose content differs from the approved hash.");
+    foreach (string address in new[] { "127.0.0.1", "10.0.0.1", "169.254.1.1", "192.168.1.1", "::1", "::ffff:127.0.0.1", "fd00::1" })
+        Assert(!ScopedUpdateHttp.IsPublicAddress(System.Net.IPAddress.Parse(address)), "The update transport must refuse non-public addresses.");
+    foreach (string address in new[] { "1.1.1.1", "2606:4700:4700::1111" })
+        Assert(ScopedUpdateHttp.IsPublicAddress(System.Net.IPAddress.Parse(address)), "The update transport must accept public IPv4 and IPv6.");
     await ProcessLifetimeRegression.RunAsync(Assert, fixture);
     Console.WriteLine($"Algorithm regression tests passed: {checks} assertions. No real installers executed.");
 }
@@ -551,7 +636,12 @@ sealed class Packages(WingetUpdateTarget target) : IWingetPackageService
 {
     public bool Applied { get; set; }
     public int ApplyCount { get; private set; }
-    public Task<WingetPackageOffer> AssessAsync(InstalledApplication app, string id, string version, CancellationToken token) => Task.FromResult(new WingetPackageOffer(target, null));
+    public int AssessCount { get; private set; }
+    public Task<WingetPackageOffer> AssessAsync(InstalledApplication app, string id, string version, CancellationToken token)
+    {
+        AssessCount++;
+        return Task.FromResult(new WingetPackageOffer(target, null));
+    }
     public Task<PreparedCatalogUpdate> PrepareAsync(UpdateCheckResult update, CancellationToken token) => Task.FromResult(
         new PreparedCatalogUpdate(target, _ => { Applied = true; ApplyCount++; return Task.FromResult(new UpdateExecutionResult(0, true, null)); }));
 }

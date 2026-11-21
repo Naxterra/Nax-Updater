@@ -402,7 +402,8 @@ public sealed class StorePackageDeploymentService : IStorePackageDeploymentServi
         Task<(PackageManager Manager, PackageCatalog Catalog)> connection;
         lock (_connectionLock)
         {
-            _storeConnection ??= ConnectStoreCoreAsync();
+            if (_storeConnection is null || _storeConnection.IsFaulted || _storeConnection.IsCanceled)
+                _storeConnection = ConnectStoreCoreAsync();
             connection = _storeConnection;
         }
         return await connection.WaitAsync(cancellationToken);
@@ -413,7 +414,8 @@ public sealed class StorePackageDeploymentService : IStorePackageDeploymentServi
         Task<(PackageManager Manager, PackageCatalog Catalog)> connection;
         lock (_connectionLock)
         {
-            _storeUpdateConnection ??= ConnectStoreUpdateCoreAsync();
+            if (_storeUpdateConnection is null || _storeUpdateConnection.IsFaulted || _storeUpdateConnection.IsCanceled)
+                _storeUpdateConnection = ConnectStoreUpdateCoreAsync();
             connection = _storeUpdateConnection;
         }
         return await connection.WaitAsync(cancellationToken);

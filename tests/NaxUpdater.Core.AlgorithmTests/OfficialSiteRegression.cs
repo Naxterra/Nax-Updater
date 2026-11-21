@@ -7,6 +7,7 @@ internal static class OfficialSiteRegression
 {
     public static async Task RunAsync(Action<bool, string> assert)
     {
+        await VersionSourceRetryAsync(assert);
         assert(OfficialSiteUpdateProvider.Expand("x/{version}/{locale}/{missing}{64}", new Dictionary<string, string> { ["version"] = "1.2", ["locale"] = "de" }, false) == "x/1.2/de/{missing}{64}" &&
                OfficialSiteUpdateProvider.Expand("{version}", new Dictionary<string, string> { ["version"] = "1.2" }, true) == @"1\.2",
             "Recipe templates expanded unknown names, regex quantifiers, or unescaped values in patterns.");
@@ -153,6 +154,67 @@ internal static class OfficialSiteRegression
             catch (InvalidDataException) { assert(true, "Wrong publisher rejected."); }
         }
         finally { if (Directory.Exists(cache)) Directory.Delete(cache, true); }
+    }
+
+    private static async Task VersionSourceRetryAsync(Action<bool, string> assert)
+    {
+        var catalog = await UpdateProviderCatalogLoader.LoadAsync(Path.Combine(AppContext.BaseDirectory, "Configuration", "update-providers.json"));
+        var recipe = catalog.Official.Single(recipe => recipe.Id == "PDFXChange.PDFXChangePRO");
+        var app = new InstalledApplication("fixture:pdf", "PDF-XChange PRO", "PDF-XChange", "11.1.2.0", "11.1.2.0",
+            "fixture", null, null, null, null, InstallScope.Machine, ManagementMode.WindowsInstaller, ConfidenceLevel.High, false, [], null, []);
+        using var recovered = new VersionSite();
+        using var http = new HttpClient(recovered);
+        var provider = new OfficialSiteUpdateProvider(http, recipe) { VersionAttemptTimeout = TimeSpan.FromMilliseconds(100) };
+        var latest = await provider.CheckAsync(app, default);
+        assert(recovered.Requests == 2 && latest is { Status: UpdateStatus.Current, AvailableVersion: "11.1.2.0" },
+            "A stalled publisher response was not retried against the same version source.");
+
+        using var stalled = new VersionSite(alwaysStall: true);
+        using var stalledHttp = new HttpClient(stalled);
+        var stalledProvider = new OfficialSiteUpdateProvider(stalledHttp, recipe) { VersionAttemptTimeout = TimeSpan.FromMilliseconds(50) };
+        var failed = await stalledProvider.CheckAsync(app, default);
+        assert(stalled.Requests == 2 && failed is { Status: UpdateStatus.Error, ExecutionPlan: null },
+            "A persistently stalled publisher produced an offer or retried more than once.");
+
+        using var cancellation = new CancellationTokenSource();
+        using var canceled = new VersionSite(cancelOnRequest: cancellation);
+        using var canceledHttp = new HttpClient(canceled);
+        try
+        {
+            await new OfficialSiteUpdateProvider(canceledHttp, recipe).CheckAsync(app, cancellation.Token);
+            assert(false, "The canceled version check completed normally.");
+        }
+        catch (OperationCanceledException)
+        {
+            assert(canceled.Requests == 1, "Canceling the scan started another publisher request.");
+        }
+    }
+
+    private sealed class VersionSite(bool alwaysStall = false, CancellationTokenSource? cancelOnRequest = null) : HttpMessageHandler
+    {
+        public int Requests { get; private set; }
+
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken token)
+        {
+            Requests++;
+            cancelOnRequest?.Cancel();
+            token.ThrowIfCancellationRequested();
+            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = alwaysStall || Requests == 1
+                    ? new StreamContent(new StalledBody())
+                    : new StringContent("{\"build\":\"11.1.2.0\"}")
+            });
+        }
+    }
+
+    private sealed class StalledBody : MemoryStream
+    {
+        public override async ValueTask<int> ReadAsync(Memory<byte> buffer, CancellationToken cancellationToken = default)
+        {
+            await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
+            return 0;
+        }
     }
 
     // Like Intel's download CDN, it refuses a request without a User-Agent with 403.

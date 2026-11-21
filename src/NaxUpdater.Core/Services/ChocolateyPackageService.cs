@@ -287,54 +287,75 @@ public sealed class ChocolateyPackageService : IChocolateyPackageService
         new(@"^[A-Za-z0-9][A-Za-z0-9._+\-]*\z", System.Text.RegularExpressions.RegexOptions.CultureInvariant);
 
     internal static bool IsSafeTarget(ChocolateyUpdateTarget target) =>
+        !target.PackageId.Equals("all", StringComparison.OrdinalIgnoreCase) &&
         SafeToken.IsMatch(target.PackageId) && SafeToken.IsMatch(target.Version);
 
-    private static async Task<UpdateExecutionResult> RunElevatedUpgradeAsync(ChocolateyUpdateTarget target, CancellationToken token)
+    private static Task<UpdateExecutionResult> RunElevatedUpgradeAsync(ChocolateyUpdateTarget target, CancellationToken token)
     {
+        if (InstallRoot() is not { } detected ||
+            !string.Equals(Path.TrimEndingDirectorySeparator(detected), Path.TrimEndingDirectorySeparator(MachineInstallRoot()), StringComparison.OrdinalIgnoreCase))
+            throw new UpdateExecutionRefusedException("Install Chocolatey for all users in a protected folder before using it for elevated updates.");
+        return Environment.IsPrivilegedProcess
+            ? Task.Run(() => ApplyElevatedAsync(target), token)
+            : PrivilegedUpdateHost.RunChocolateyAsync(target, token);
+    }
+
+    internal static IReadOnlyList<string> UpgradeArguments(ChocolateyUpdateTarget target) =>
+        target.AllowInstall
+            ? ["upgrade", target.PackageId, "--version", target.Version, "-y", "-r", "--no-progress"]
+            : ["upgrade", target.PackageId, "--version", target.Version, "-y", "-r", "--no-progress", "--fail-on-not-installed"];
+
+    private static string MachineInstallRoot() =>
+        Environment.GetEnvironmentVariable("ChocolateyInstall", EnvironmentVariableTarget.Machine)
+        ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData), "chocolatey");
+
+    internal static async Task<UpdateExecutionResult> ApplyElevatedAsync(ChocolateyUpdateTarget target)
+    {
+        if (!Environment.IsPrivilegedProcess)
+            throw new UpdateExecutionRefusedException("The Chocolatey update requires administrator rights.");
         if (!IsSafeTarget(target))
             throw new UpdateExecutionRefusedException("The Chocolatey package ID or version contains characters that are not allowed, so the update was not started.");
-        var exe = ResolveExecutablePath() ?? throw new InvalidOperationException("Chocolatey (choco.exe) is no longer available.");
-        var logPath = Path.Combine(Path.GetTempPath(), $"naxupdater-choco-{Guid.NewGuid():N}.log");
-        try
+        string root = MachineInstallRoot();
+        string exe = Path.Combine(root, "bin", "choco.exe");
+        if (!Path.IsPathFullyQualified(root) || !PrivilegedUpdateHost.IsProtectedPath(root, folder: true) ||
+            !PrivilegedUpdateHost.IsProtectedPath(exe))
+            throw new UpdateExecutionRefusedException("Install Chocolatey for all users in a protected folder before using it for elevated updates.");
+        foreach (string folder in new[] { "bin", "lib", "helpers", "config", "extensions" })
         {
-            // Elevation (Verb=runas) requires ShellExecute, which cannot redirect
-            // stdout/stderr directly. Route Chocolatey's own output to a log file
-            // via cmd.exe instead so the result is still diagnosable.
-            var innerCommand = $"\"{exe}\" upgrade {target.PackageId} --version=\"{target.Version}\" -y -r --no-progress > \"{logPath}\" 2>&1";
-            var startInfo = new ProcessStartInfo("cmd.exe", $"/d /c \"{innerCommand}\"")
-            {
-                UseShellExecute = true,
-                Verb = "runas",
-                WindowStyle = ProcessWindowStyle.Hidden
-            };
-            using var process = Process.Start(startInfo)
-                ?? throw new InvalidOperationException("Chocolatey could not be started.");
-            await process.WaitForExitAsync(CancellationToken.None); // Windows owns the elevated deployment once started.
-            var log = File.Exists(logPath) ? await File.ReadAllTextAsync(logPath, token) : "";
-            // Chocolatey exit codes: 0 = success, 1641/3010 = success, reboot needed.
-            var success = process.ExitCode is 0 or 1641 or 3010;
-            if (!success)
-                return new UpdateExecutionResult(process.ExitCode, false,
-                    $"Chocolatey upgrade failed (exit code {process.ExitCode}): {LastMeaningfulLine(log)}");
-            // choco can exit 0 after resolving to another version (a dependency
-            // pin made it reinstall the old one), so its own records must agree:
-            // the package it ran and, for a wrapper route, the payload package.
-            var installed = ChocolateyDependencyPlanner.ReadInstalled(InstallRoot());
-            if (RecordMismatch(installed, target.PackageId, target.Version) is { } rootMismatch)
-                return new UpdateExecutionResult(process.ExitCode, false, $"{rootMismatch}: {LastMeaningfulLine(log)}");
-            if (target.PayloadPackageId is { } payload && target.PayloadVersion is { } payloadVersion &&
-                RecordMismatch(installed, payload, payloadVersion) is { } payloadMismatch)
-                return new UpdateExecutionResult(process.ExitCode, false, $"{payloadMismatch}: {LastMeaningfulLine(log)}");
-            return new UpdateExecutionResult(process.ExitCode, true, null);
+            var path = Path.Combine(root, folder);
+            if (Directory.Exists(path) && !PrivilegedUpdateHost.IsProtectedTree(path))
+                throw new UpdateExecutionRefusedException($"Chocolatey's {folder} directory is writable by a standard user.");
         }
-        catch (Win32Exception exception) when (exception.NativeErrorCode == 1223)
+        var startInfo = new ProcessStartInfo(exe)
         {
-            return new UpdateExecutionResult(1223, false, "The Windows elevation prompt was canceled.", NotStarted: true);
-        }
-        finally
-        {
-            try { if (File.Exists(logPath)) File.Delete(logPath); } catch (IOException) { } catch (UnauthorizedAccessException) { }
-        }
+            UseShellExecute = false,
+            WorkingDirectory = Environment.SystemDirectory,
+            CreateNoWindow = true,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true
+        };
+        foreach (var argument in UpgradeArguments(target))
+            startInfo.ArgumentList.Add(argument);
+        startInfo.Environment["ChocolateyInstall"] = root;
+        using var temporary = PrivilegedUpdateHost.CreateProtectedWorkspace();
+        PrivilegedUpdateHost.SetProtectedEnvironment(startInfo, temporary.Path);
+        using var process = Process.Start(startInfo) ?? throw new InvalidOperationException("Chocolatey could not be started.");
+        var output = process.StandardOutput.ReadToEndAsync();
+        var errors = process.StandardError.ReadToEndAsync();
+        await Task.WhenAll(process.WaitForExitAsync(), output, errors);
+        var log = output.Result + Environment.NewLine + errors.Result;
+        if (process.ExitCode is not (0 or 1641 or 3010))
+            return temporary.Finish(new UpdateExecutionResult(process.ExitCode, false,
+                $"Chocolatey upgrade failed (exit code {process.ExitCode}): {LastMeaningfulLine(log)}"));
+
+        // A dependency pin can make Chocolatey report success for a different version.
+        var installed = ChocolateyDependencyPlanner.ReadInstalled(root);
+        if (RecordMismatch(installed, target.PackageId, target.Version) is { } rootMismatch)
+            return temporary.Finish(new UpdateExecutionResult(process.ExitCode, false, $"{rootMismatch}: {LastMeaningfulLine(log)}"));
+        if (target.PayloadPackageId is { } payload && target.PayloadVersion is { } payloadVersion &&
+            RecordMismatch(installed, payload, payloadVersion) is { } payloadMismatch)
+            return temporary.Finish(new UpdateExecutionResult(process.ExitCode, false, $"{payloadMismatch}: {LastMeaningfulLine(log)}"));
+        return temporary.Finish(new UpdateExecutionResult(process.ExitCode, true, null));
     }
 
     internal static string? RecordMismatch(IReadOnlyDictionary<string, ChocolateyPackageDetails> installed, string packageId, string version) =>

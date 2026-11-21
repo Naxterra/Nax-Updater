@@ -74,6 +74,8 @@ public static partial class LocalizationService
             return Format("StorePublicationPendingMessage", update.AvailableVersion, update.PublishedPackageVersion, update.InstalledVersion);
         if (update.AvailabilityReason == UpdateAvailabilityReason.AwaitingReleaseVerification)
             return Get("AwaitingReleaseVerificationMessage");
+        if (update.AvailabilityReason == UpdateAvailabilityReason.DesktopRuntimePatchInstalled)
+            return update.Message ?? Get("StatusDesktopRuntimePatchInstalled");
         if (update.Status is UpdateStatus.Error or UpdateStatus.NewerReleaseKnown)
             return update.Message ?? Get(update.Status == UpdateStatus.Error ? "StatusCheckFailed" : "ProviderReleaseKnownNotAutomatic");
         if (update.ProviderId == "native-updater") return Format("ProviderManagedUnchecked", ProviderName(update));

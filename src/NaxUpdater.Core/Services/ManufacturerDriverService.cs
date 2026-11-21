@@ -678,7 +678,7 @@ public sealed partial class ManufacturerDriverService(HttpClient httpClient, Kyo
         try
         {
             using var request = new HttpRequestMessage(HttpMethod.Get, uri);
-            request.Headers.UserAgent.ParseAdd("NaxUpdater/0.17.79");
+            request.Headers.UserAgent.ParseAdd(AppVersion.UserAgent);
             using var response = await httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, timeout.Token);
             response.EnsureSuccessStatusCode();
             return await HttpBodyLimit.ReadStringAsync(response.Content, timeout.Token);
@@ -697,8 +697,10 @@ public sealed partial class ManufacturerDriverService(HttpClient httpClient, Kyo
         {
             using var searcher = new ManagementObjectSearcher(
                 "SELECT Name, PNPClass, Manufacturer, PNPDeviceID, HardwareID, Present, ConfigManagerErrorCode FROM Win32_PnPEntity");
-            foreach (ManagementObject entity in searcher.Get())
+            using var results = searcher.Get();
+            foreach (ManagementObject entity in results)
             {
+                using var row = entity;
                 var present = entity["Present"] is bool reportedPresent
                     ? reportedPresent
                     : Convert.ToUInt32(entity["ConfigManagerErrorCode"] ?? 1, CultureInfo.InvariantCulture) == 0;

@@ -1,4 +1,3 @@
-using System.Runtime.InteropServices;
 using NaxUpdater.Core.Models;
 using NaxUpdater.Core.Services;
 
@@ -96,34 +95,14 @@ internal static class ChocolateyDependencyRegression
                carried.ExecutionPlan?.ChocolateyTarget == new ChocolateyUpdateTarget("nodejs", "26.11.1", "nodejs.install", "26.11.1"),
             "The Node.js update was not applied through the nodejs wrapper package once it was published.");
 
-        // Elevated WinGet arguments: what winget.exe parses must be the exact folder.
+        // The elevated broker uses the same typed WinGet options as the main process.
         foreach (var location in new[] { @"C:\Program Files\LibreOffice\", @"C:\Program Files\LibreOffice", @"D:\", @"C:\A\\" })
         {
-            var quoted = WingetPackageService.QuoteArgument(location);
-            var argv = ParseCommandLine($"winget.exe --location {quoted} --next");
-            assert(argv is [_, "--location", var value, "--next"] && value == location,
-                $"The install location {location} did not survive Windows argument parsing ({quoted}).");
+            var options = WingetPackageService.CreateOptions(null, InstallScope.Machine, location);
+            assert(options.PreferredInstallLocation == location,
+                $"The installed folder {location} did not reach the typed WinGet options.");
         }
     }
-
-    private static string[] ParseCommandLine(string commandLine)
-    {
-        var pointer = CommandLineToArgvW(commandLine, out var count);
-        try
-        {
-            return Enumerable.Range(0, count).Select(i => Marshal.PtrToStringUni(Marshal.ReadIntPtr(pointer, i * IntPtr.Size))!).ToArray();
-        }
-        finally
-        {
-            LocalFree(pointer);
-        }
-    }
-
-    [DllImport("shell32.dll", CharSet = CharSet.Unicode)]
-    private static extern IntPtr CommandLineToArgvW(string commandLine, out int count);
-
-    [DllImport("kernel32.dll")]
-    private static extern IntPtr LocalFree(IntPtr memory);
 
     private sealed class FakeService(
         IReadOnlyDictionary<string, ChocolateyPackageDetails> installed,

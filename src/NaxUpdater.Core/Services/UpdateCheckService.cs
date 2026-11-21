@@ -30,6 +30,10 @@ public sealed class UpdateCheckService
 
     public UpdateCheckService(HttpClient httpClient, UpdateProviderCatalog catalog, FirefoxMetadataDetector? firefoxMetadataDetector = null,
         SharedScanSources? sharedSources = null, bool useStoreBatchCheck = true)
+        : this(httpClient, catalog, ScopedUpdateHttp.Client, firefoxMetadataDetector, sharedSources, useStoreBatchCheck) { }
+
+    internal UpdateCheckService(HttpClient httpClient, UpdateProviderCatalog catalog, HttpClient scopedMetadata,
+        FirefoxMetadataDetector? firefoxMetadataDetector = null, SharedScanSources? sharedSources = null, bool useStoreBatchCheck = true)
     {
         _sharedSources = sharedSources;
         var providers = new List<IUpdateProvider>
@@ -39,19 +43,19 @@ public sealed class UpdateCheckService
             new PythonInstallManagerUpdateProvider(new ProcessQueryRunner()),
             new ChocolateyInstalledUpdateProvider(),
             new NextcloudUpdateProvider(httpClient),
-            new ElectronBuilderUpdateProvider(httpClient),
+            new ElectronBuilderUpdateProvider(scopedMetadata),
             new GogGalaxyUpdateProvider(),
             new IvpnUpdateProvider(httpClient),
             new NodeJsUpdateProvider(httpClient),
             new WslUpdateProvider(httpClient),
-            new MacriumUpdateProvider(httpClient),
+            new MacriumUpdateProvider(),
             new DriverComponentUpdateProvider(httpClient, sharedSources),
             new ExternalOwnerUpdateProvider(),
             new WinRarUpdateProvider(httpClient),
             new KyoceraUtilityUpdateProvider(sharedSources?.Kyocera ?? new KyoceraSupportCatalog(httpClient))
         };
         providers.AddRange(catalog.GitHub.Select(recipe => new GitHubReleaseUpdateProvider(httpClient, recipe)));
-        providers.AddRange(catalog.Official.Select(recipe => new OfficialSiteUpdateProvider(httpClient, recipe)));
+        providers.AddRange(catalog.Official.Select(recipe => new OfficialSiteUpdateProvider(scopedMetadata, recipe)));
         providers.Add(new MsixStoreUpdateProvider(httpClient, useBatchCheck: useStoreBatchCheck));
         // Registration order is not authoritative. Explicit descriptors below arbitrate
         // installed protocols, producer sources, Store, and fallback catalogs.

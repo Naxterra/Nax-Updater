@@ -1,5 +1,6 @@
 using System.Net;
 using System.Text;
+using System.Text.Json;
 using NaxUpdater.Core.Models;
 using NaxUpdater.Core.Services;
 
@@ -7,6 +8,8 @@ internal static class GitHubRecipeRegression
 {
     public static async Task RunAsync(Action<bool, string> assert)
     {
+        await CheckAusweisAppAsync(assert);
+
         assert(GitHubReleaseUpdateProvider.MatchesDisplayName("Nax-TaskManager 2.0.0-alpha.23", "Nax-TaskManager") &&
                GitHubReleaseUpdateProvider.MatchesDisplayName("Nax-Copy", "Nax-Copy") &&
                !GitHubReleaseUpdateProvider.MatchesDisplayName("Nax-Copy Helper", "Nax-Copy") &&
@@ -53,6 +56,11 @@ internal static class GitHubRecipeRegression
         var stable = await provider.CheckAsync(App("1.8.0"), CancellationToken.None);
         assert(stable.AvailableVersion == "1.9.0", "A stable installation was moved onto the pre-release channel.");
 
+        using var missingDigest = new HttpClient(new Respond(_ => Release("v1.9.0", false).Replace("sha256:" + digest, "", StringComparison.Ordinal)));
+        var pending = await new GitHubReleaseUpdateProvider(missingDigest, recipe).CheckAsync(App("1.8.0"), CancellationToken.None);
+        assert(pending is { Status: UpdateStatus.NewerReleaseKnown, ExecutionPlan: null, AvailabilityReason: UpdateAvailabilityReason.AwaitingReleaseVerification },
+            "An approved installer without its digest lost the pending verification status.");
+
         // Audit of 2026-10-22, finding 3: an installed prerelease never falls back to the
         // stable release when its channel cannot be read, and an older release with a
         // legacy installer name settles an installation without requiring that installer.
@@ -94,6 +102,61 @@ internal static class GitHubRecipeRegression
             assert(false, "The GitHub token was offered to a host other than api.github.com.");
         }
         catch (InvalidOperationException) { assert(true, "Foreign asset host rejected."); }
+    }
+
+    private static async Task CheckAusweisAppAsync(Action<bool, string> assert)
+    {
+        const string release = "2.6.3";
+        const string amdInstaller = "AusweisApp-2.6.3-AMD64.msi";
+        const string armInstaller = "AusweisApp-2.6.3-ARM64.msi";
+        const string legacyInstaller = "AusweisApp-2.6.3.msi";
+        var amdDigest = new string('a', 64);
+        var armDigest = new string('b', 64);
+        const string releasePage = "https://github.com/Governikus/AusweisApp/releases/tag/" + release;
+        var catalog = await UpdateProviderCatalogLoader.LoadAsync(
+            Path.Combine(AppContext.BaseDirectory, "Configuration", "update-providers.json"));
+        var recipe = catalog.GitHub.Single(recipe => recipe.Id == "Governikus.AusweisApp");
+        var app = new InstalledApplication("fixture:ausweisapp", "AusweisApp", "Governikus Software GmbH", "2.6.2", "2.6.2",
+            "fixture", Environment.ProcessPath, "fixture", null, null, InstallScope.Machine, ManagementMode.WindowsInstaller,
+            ConfidenceLevel.High, false, [], null, []);
+        string Response(params (string Name, string Digest)[] assets) => JsonSerializer.Serialize(new
+        {
+            tag_name = release, prerelease = false, draft = false, html_url = releasePage,
+            assets = assets.Select(asset => new
+            {
+                name = asset.Name, digest = "sha256:" + asset.Digest,
+                browser_download_url = "https://github.com/Governikus/AusweisApp/releases/download/" + release + "/" + asset.Name
+            })
+        });
+        using var currentHttp = new HttpClient(new Respond(_ => Response(
+            (armInstaller, armDigest), (amdInstaller + ".sha256", armDigest), (amdInstaller, amdDigest))));
+        var provider = new GitHubReleaseUpdateProvider(currentHttp, recipe, _ => Task.FromResult<string?>(null));
+        var x64 = await provider.CheckAsync(app, CancellationToken.None);
+        var arm64 = await provider.CheckAsync(app with { DisplayName = "AusweisApp (ARM64)" }, CancellationToken.None);
+        assert(provider.CanHandle(app) && CorrectInstaller(x64, "x64", amdInstaller, amdDigest),
+            "AusweisApp 2.6.3 did not select the signed AMD64 MSI for x64.");
+        assert(CorrectInstaller(arm64, "arm64", armInstaller, armDigest),
+            "AusweisApp 2.6.3 did not select the signed ARM64 MSI for ARM64.");
+
+        using var wrongArchitectureHttp = new HttpClient(new Respond(_ => Response((armInstaller, armDigest), (amdInstaller + ".sha256", armDigest))));
+        var wrongArchitecture = await new GitHubReleaseUpdateProvider(wrongArchitectureHttp, recipe, _ => Task.FromResult<string?>(null))
+            .CheckAsync(app, CancellationToken.None);
+        assert(wrongArchitecture is { Status: UpdateStatus.Error, ExecutionPlan: null },
+            "The AusweisApp x64 recipe approved an ARM64 installer or checksum sidecar.");
+
+        using var legacyHttp = new HttpClient(new Respond(_ => Response((legacyInstaller, amdDigest))));
+        var legacy = await new GitHubReleaseUpdateProvider(legacyHttp, recipe, _ => Task.FromResult<string?>(null))
+            .CheckAsync(app, CancellationToken.None);
+        assert(CorrectInstaller(legacy, "x64", legacyInstaller, amdDigest),
+            "The AusweisApp recipe lost compatibility with older MSI file names.");
+
+        static bool CorrectInstaller(UpdateCheckResult result, string architecture, string filename, string digest) =>
+            result.IsInstallable && result.Architecture == architecture && result.AvailableVersion == release &&
+            result.ExecutionPlan is
+            {
+                Kind: UpdateExecutionKind.DownloadedMsi, ExpectedSigner: "Governikus Software GmbH",
+                RequireAuthenticode: true, Sha256: var sha, DownloadUri: { } uri
+            } && sha == digest && uri.AbsolutePath.EndsWith("/" + filename, StringComparison.Ordinal);
     }
 
     private sealed class Respond(Func<HttpRequestMessage, string?> body) : HttpMessageHandler

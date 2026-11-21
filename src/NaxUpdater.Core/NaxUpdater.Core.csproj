@@ -22,5 +22,6 @@
     <InternalsVisibleTo Include="NaxUpdater.Core.SmokeTests" />
     <InternalsVisibleTo Include="NaxUpdater.Core.AlgorithmTests" />
     <InternalsVisibleTo Include="NaxUpdater.Core.WindowTests" />
+    <InternalsVisibleTo Include="Nax-Updater" />
   </ItemGroup>
 </Project>

@@ -102,11 +102,23 @@ public sealed partial class WingetPackageService : IWingetPackageService
         var target = update.ExecutionPlan?.WingetTarget ?? throw new InvalidOperationException("The WinGet target is missing.");
         if (target.SourceId != OfficialSourceId || target.Version != update.AvailableVersion)
             throw new InvalidOperationException("The approved WinGet identity or version does not match.");
+        return await PrepareTargetAsync(target, token);
+    }
+
+    internal async Task<UpdateExecutionResult> ApplyElevatedAsync(WingetUpdateTarget target)
+    {
+        if (!IsElevated() || target.SourceId != OfficialSourceId || target.Scope != InstallScope.Machine)
+            throw new UpdateExecutionRefusedException("The elevated WinGet request is not for the official machine catalog.");
+        return await (await PrepareTargetAsync(target, CancellationToken.None)).ApplyAsync(CancellationToken.None);
+    }
+
+    private async Task<PreparedCatalogUpdate> PrepareTargetAsync(WingetUpdateTarget target, CancellationToken token)
+    {
         var (manager, catalog) = await ConnectAsync(token, reopen: true);
         var package = await FindAsync(catalog, target.PackageId, target.InstalledProductCodes, token)
-            ?? throw new InvalidOperationException("The approved WinGet package is no longer present.");
+            ?? throw new UpdateExecutionRefusedException("The approved WinGet package is no longer present.");
         var key = VersionKey(package, target.Version)
-            ?? throw new InvalidOperationException("The approved WinGet version is no longer present.");
+            ?? throw new UpdateExecutionRefusedException("The approved WinGet version is no longer present.");
         var options = CreateOptions(key, target.Scope, target.InstallLocation, Enum.Parse<PackageInstallerType>(target.InstallerType));
         SetArchitecture(options, target.Architecture);
         ValidatePrepared(package, key, options, target);
@@ -114,12 +126,10 @@ public sealed partial class WingetPackageService : IWingetPackageService
         return new PreparedCatalogUpdate(target, async (progress, cancellationToken) =>
         {
             ValidatePrepared(package, key, options, target);
-            // The COM API installs with NaxUpdater's own (asInvoker) token and never
-            // raises a UAC prompt, so a machine-scope installer just fails
-            // (APPINSTALLER_CLI_ERROR_MSI_INSTALL_FAILED). Run the same pinned
-            // package through an elevated winget.exe process instead.
+            // Repeat exact package validation in an elevated process using the same
+            // official COM catalog. CLI source names and executable aliases are user settings.
             if (target.Scope == InstallScope.Machine && !IsElevated())
-                return await RunElevatedCliUpgradeAsync(target, cancellationToken);
+                return await PrivilegedUpdateHost.RunWingetAsync(target, cancellationToken);
             var operation = manager.UpgradePackageAsync(package, options);
             try
             {
@@ -190,85 +200,8 @@ public sealed partial class WingetPackageService : IWingetPackageService
         return new WindowsPrincipal(identity).IsInRole(WindowsBuiltInRole.Administrator);
     }
 
-    private static async Task<UpdateExecutionResult> RunElevatedCliUpgradeAsync(WingetUpdateTarget target, CancellationToken token)
-    {
-        // Every value below ends up on an elevated cmd.exe command line.
-        if (!SafeToken().IsMatch(target.PackageId) || !SafeToken().IsMatch(target.Version) ||
-            !SafeToken().IsMatch(target.Architecture) || !SafeToken().IsMatch(target.InstallerType) ||
-            target.Locale.Length > 0 && !SafeToken().IsMatch(target.Locale) ||
-            target.InstallLocation is { } location && location.IndexOfAny(['"', '%', '^', '&', '|', '<', '>', '\r', '\n']) >= 0)
-            return new UpdateExecutionResult(-1, false, "The approved WinGet target contains characters that cannot be passed to an elevated installer safely.");
-        var alias = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Microsoft", "WindowsApps", "winget.exe");
-        var winget = File.Exists(alias) ? $"\"{alias}\"" : "winget.exe";
-        var arguments = CliUpgradeArguments(target);
-        var logPath = Path.Combine(Path.GetTempPath(), $"naxupdater-winget-{Guid.NewGuid():N}.log");
-        try
-        {
-            // runas requires ShellExecute, which cannot redirect output; let cmd.exe
-            // write winget's output to a log so failures stay diagnosable.
-            var startInfo = new System.Diagnostics.ProcessStartInfo("cmd.exe",
-                $"/d /c \"{winget} {string.Join(' ', arguments)} > \"{logPath}\" 2>&1\"")
-            {
-                UseShellExecute = true,
-                Verb = "runas",
-                WindowStyle = System.Diagnostics.ProcessWindowStyle.Hidden
-            };
-            using var process = System.Diagnostics.Process.Start(startInfo)
-                ?? throw new InvalidOperationException("winget.exe could not be started.");
-            // Windows owns the elevated deployment once started; never abandon or kill it.
-            await process.WaitForExitAsync(CancellationToken.None);
-            var code = process.ExitCode;
-            if (code == 0) return new UpdateExecutionResult(0, true, null);
-            if (code == unchecked((int)0x8A150109)) return new UpdateExecutionResult(3010, true, null); // INSTALL_REBOOT_REQUIRED_TO_FINISH
-            if (code == unchecked((int)0x8A15010C)) return new UpdateExecutionResult(1602, false, "The installer was cancelled.");
-            var log = File.Exists(logPath) ? await File.ReadAllTextAsync(logPath, token) : "";
-            var lastLine = log.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
-                .LastOrDefault(static line => line.Any(char.IsLetter)) ?? "no output was captured";
-            return new UpdateExecutionResult(code, false, $"WinGet returned 0x{unchecked((uint)code):X8}: {lastLine}");
-        }
-        catch (System.ComponentModel.Win32Exception exception) when (exception.NativeErrorCode == 1223)
-        {
-            return new UpdateExecutionResult(1223, false, "The Windows elevation prompt was cancelled.", NotStarted: true);
-        }
-        finally
-        {
-            try { if (File.Exists(logPath)) File.Delete(logPath); } catch (IOException) { } catch (UnauthorizedAccessException) { }
-        }
-    }
-
-    internal static IReadOnlyList<string> CliUpgradeArguments(WingetUpdateTarget target)
-    {
-        var arguments = new List<string>
-        {
-            "upgrade", "--id", target.PackageId, "--exact", "--version", target.Version, "--source", "winget",
-            "--architecture", target.Architecture.ToLowerInvariant(),
-            "--installer-type", target.InstallerType.ToLowerInvariant(),
-            "--silent", "--accept-package-agreements", "--accept-source-agreements", "--disable-interactivity"
-        };
-        if (target.Scope != InstallScope.Unknown)
-            arguments.AddRange(["--scope", target.Scope == InstallScope.Machine ? "machine" : "user"]);
-        var scopeArguments = InstallerScopeArguments(target.Scope, Enum.Parse<PackageInstallerType>(target.InstallerType));
-        if (scopeArguments.Length > 0) arguments.AddRange(["--custom", scopeArguments]);
-        if (target.Locale.Length > 0) arguments.AddRange(["--locale", target.Locale]);
-        if (target.InstallLocation is not null) arguments.AddRange(["--location", QuoteArgument(target.InstallLocation)]);
-        return arguments;
-    }
-
     private static string InstallerScopeArguments(InstallScope scope, PackageInstallerType type) =>
         scope == InstallScope.Machine && type is PackageInstallerType.Msi or PackageInstallerType.Wix ? "ALLUSERS=1" : "";
-
-    // Quotes a value that contains no '"'. Windows argument parsing reads
-    // backslashes before the closing quote as escapes, so an install folder
-    // ending in '\' ("C:\Program Files\LibreOffice\") swallowed the quote and
-    // WinGet passed msiexec a broken INSTALLLOCATION; doubled, they stay literal.
-    internal static string QuoteArgument(string value)
-    {
-        var trailing = value.Length - value.TrimEnd('\\').Length;
-        return "\"" + value + new string('\\', trailing) + "\"";
-    }
-
-    [System.Text.RegularExpressions.GeneratedRegex(@"^[A-Za-z0-9][A-Za-z0-9._+\-]*\z")]
-    private static partial System.Text.RegularExpressions.Regex SafeToken();
 
     private static void ValidatePrepared(CatalogPackage package, PackageVersionId key, InstallOptions options, WingetUpdateTarget target)
     {
@@ -276,14 +209,14 @@ public sealed partial class WingetPackageService : IWingetPackageService
         if (installed is null || installed.Version != target.InstalledCatalogVersion ||
             !Copy(installed.ProductCodes).Intersect(target.InstalledProductCodes, StringComparer.OrdinalIgnoreCase).Any() ||
             !package.IsUpdateAvailable)
-            throw new InvalidOperationException("The installed WinGet package changed after approval.");
+            throw new UpdateExecutionRefusedException("The installed WinGet package changed after approval.");
         var info = package.GetPackageVersionInfo(key);
         if (info.PackageCatalog.Info.Id != target.SourceId || info.Version != target.Version)
-            throw new InvalidOperationException("The WinGet source or version changed after approval.");
+            throw new UpdateExecutionRefusedException("The WinGet source or version changed after approval.");
         var variant = info.GetApplicableInstaller(options);
         if (variant is null || variant.Architecture.ToString() != target.Architecture ||
             variant.InstallerType.ToString() != target.InstallerType || (variant.Locale ?? "") != target.Locale)
-            throw new InvalidOperationException("The approved WinGet installer variant is no longer applicable.");
+            throw new UpdateExecutionRefusedException("The approved WinGet installer variant is no longer applicable.");
     }
 
     internal static InstallOptions CreateOptions(PackageVersionId? key, InstallScope scope, string? location,

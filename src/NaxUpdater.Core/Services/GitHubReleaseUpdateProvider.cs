@@ -172,8 +172,9 @@ public sealed class GitHubReleaseUpdateProvider : IUpdateProvider
                     "The installed version must be resolved before updating.",
                     null, Applicability: UpdateApplicability.NotApplicable);
             }
+            var requiresManualInstall = string.IsNullOrWhiteSpace(recipe.ExpectedSigner) && !recipe.Unsigned;
             if (status == UpdateStatus.Available &&
-                (string.IsNullOrWhiteSpace(downloadUrl) || sha256?.Length != 64 || string.IsNullOrWhiteSpace(recipe.ExpectedSigner) && !recipe.Unsigned))
+                (string.IsNullOrWhiteSpace(downloadUrl) || sha256?.Length != 64 || requiresManualInstall))
             {
                 return new UpdateCheckResult(
                     application.Identity,
@@ -190,10 +191,12 @@ public sealed class GitHubReleaseUpdateProvider : IUpdateProvider
                     recipe.Architecture,
                     "stable",
                     releasePage,
-                    "A newer producer release is verified, but automatic installation is blocked until the release has a complete asset digest, download URL, and Authenticode signer policy.",
+                    requiresManualInstall
+                        ? "Install this update manually from the official release page. This provider has no approved publisher signature policy for automatic installation."
+                        : "A newer producer release is verified, but automatic installation is blocked until the release has a complete asset digest, download URL, and Authenticode signer policy.",
                     null,
                     Applicability: UpdateApplicability.NotApplicable,
-                    AvailabilityReason: UpdateAvailabilityReason.AwaitingReleaseVerification);
+                    AvailabilityReason: requiresManualInstall ? UpdateAvailabilityReason.ManualReleaseInstall : UpdateAvailabilityReason.AwaitingReleaseVerification);
             }
 
             var arguments = application.Scope == InstallScope.CurrentUser && recipe.CurrentUserInstallerArguments is not null
@@ -329,7 +332,7 @@ public sealed class GitHubReleaseUpdateProvider : IUpdateProvider
             using var request = new HttpRequestMessage(
                 HttpMethod.Get,
                 $"https://api.github.com/repos/{recipe.Repository}/releases/latest");
-            request.Headers.UserAgent.ParseAdd("NaxUpdater/0.17.79");
+            request.Headers.UserAgent.ParseAdd(AppVersion.UserAgent);
             request.Headers.Accept.ParseAdd("application/vnd.github+json");
             try
             {
@@ -381,7 +384,7 @@ public sealed class GitHubReleaseUpdateProvider : IUpdateProvider
         using var request = new HttpRequestMessage(
             HttpMethod.Get,
             $"https://github.com/{recipe.Repository}/releases/latest");
-        request.Headers.UserAgent.ParseAdd("NaxUpdater/0.17.79");
+        request.Headers.UserAgent.ParseAdd(AppVersion.UserAgent);
         using var response = await httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
         var finalUri = response.RequestMessage?.RequestUri;
         var match = finalUri is null

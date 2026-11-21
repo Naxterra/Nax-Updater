@@ -54,7 +54,7 @@ public sealed partial class ChocolateyUpdateProvider(IChocolateyPackageService? 
             UpdateExecutionKind.ChocolateyPackage, null, null, null, null, null, [], true, [],
             executable is null ? [] : [Path.GetFileNameWithoutExtension(executable)],
             RunningExecutablePaths: executable is null ? [] : [executable],
-            ChocolateyTarget: offer.Target);
+            ChocolateyTarget: offer.Target with { AllowInstall = true });
         return new(
             application.Identity, application.DisplayName, application.NormalizedVersion, offer.Target.Version,
             UpdateStatus.Available, Id, "Chocolatey community feed",

@@ -10,6 +10,7 @@ namespace NaxUpdater.Core.Services;
 public sealed class OfficialSiteUpdateProvider(HttpClient httpClient, OfficialSiteRecipe recipe, string? appDataRoot = null) : IUpdateProvider
 {
     private static readonly TimeSpan PatternTimeout = TimeSpan.FromSeconds(2);
+    internal TimeSpan VersionAttemptTimeout { get; init; } = TimeSpan.FromSeconds(12);
 
     public string Id => $"official:{recipe.Id}";
     public UpdateProviderDescriptor Descriptor { get; } = new(
@@ -37,7 +38,11 @@ public sealed class OfficialSiteUpdateProvider(HttpClient httpClient, OfficialSi
         Capture(NameMatch(application), values);
 
         string document;
-        try { document = await ReadAsync(recipe.VersionUrl, cancellationToken); }
+        try { document = await ReadVersionAsync(cancellationToken); }
+        catch (TimeoutException)
+        {
+            return Error(application, "The publisher's version source timed out on both attempts.");
+        }
         catch (Exception exception) when (exception is HttpRequestException or TaskCanceledException && !cancellationToken.IsCancellationRequested)
         {
             return Error(application, $"The publisher's version source could not be read: {exception.Message}");
@@ -96,7 +101,7 @@ public sealed class OfficialSiteUpdateProvider(HttpClient httpClient, OfficialSi
         }
 
         if (!Uri.TryCreate(Expand(recipe.DownloadUrl, values, escape: false), UriKind.Absolute, out var download) ||
-            download.Scheme != Uri.UriSchemeHttps || !recipe.AllowedHosts.Contains(download.Host, StringComparer.OrdinalIgnoreCase))
+            !ScopedUpdateHttp.IsPublicHttps(download) || !recipe.AllowedHosts.Contains(download.IdnHost, StringComparer.OrdinalIgnoreCase))
             return Error(application, "The publisher's download link is not an allowed HTTPS address.", version);
 
         if (recipe.SignatureOnly && (recipe.Unsigned || string.IsNullOrWhiteSpace(recipe.ExpectedSigner)))
@@ -188,11 +193,31 @@ public sealed class OfficialSiteUpdateProvider(HttpClient httpClient, OfficialSi
         return version.Contains('{') ? null : version;
     }
 
+    private async Task<string> ReadVersionAsync(CancellationToken cancellationToken)
+    {
+        // Reserve time for one fresh request if the version page stalls. The
+        // deadline covers the response body as well as the initial connection.
+        for (var attempt = 0; ; attempt++)
+        {
+            using var deadline = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            deadline.CancelAfter(VersionAttemptTimeout);
+            try { return await ReadAsync(recipe.VersionUrl, deadline.Token); }
+            catch (OperationCanceledException) when (deadline.IsCancellationRequested && !cancellationToken.IsCancellationRequested)
+            {
+                if (attempt == 1) throw new TimeoutException();
+            }
+        }
+    }
+
     private async Task<string> ReadAsync(string url, CancellationToken cancellationToken)
     {
-        using var request = new HttpRequestMessage(HttpMethod.Get, url);
-        request.Headers.UserAgent.ParseAdd("NaxUpdater/0.17.79");
-        using var response = await httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
+        var allowed = new HashSet<string>(recipe.AllowedHosts, StringComparer.OrdinalIgnoreCase);
+        foreach (var configured in new[] { recipe.VersionUrl, recipe.DownloadPageUrl, recipe.HashUrl })
+            if (Uri.TryCreate(configured, UriKind.Absolute, out var origin) && ScopedUpdateHttp.IsPublicHttps(origin))
+                allowed.Add(origin.IdnHost);
+        if (!Uri.TryCreate(url, UriKind.Absolute, out var uri))
+            throw new HttpRequestException("The update metadata URL is not an absolute address.");
+        using var response = await ScopedUpdateHttp.GetAsync(httpClient, uri, allowed, cancellationToken);
         response.EnsureSuccessStatusCode();
         // Version sources are small documents; never read a large file by accident.
         if (response.Content.Headers.ContentLength > 8 * 1024 * 1024)

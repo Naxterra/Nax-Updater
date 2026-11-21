@@ -147,6 +147,8 @@
   <data name="StagedRolloutHeldPendingMessage"><value>Für diesen PC aktuell. Der Hersteller gibt {0} gestaffelt frei, und die Anwendung hat noch keine Freigabe-ID gespeichert; die Version wird angeboten, sobald die Freigabe abgeschlossen ist.</value></data>
   <data name="SecurityMicrosoftStoreQueue"><value>Eintrag der Microsoft-Store-Warteschlange von Windows für {0} · Bereitstellung und Prüfung durch Microsoft Store, kein eigener Installer</value></data>
   <data name="StatusAwaitingReleaseVerification"><value>Neuere Version bekannt · Verifizierung ausstehend, in Kürze erneut scannen</value></data>
+  <data name="StatusManualReleaseInstall"><value>Manuelle Installation verfügbar</value></data>
+  <data name="StatusDesktopRuntimePatchInstalled"><value>Neuerer Patch bereits installiert</value></data>
   <data name="AwaitingReleaseVerificationMessage"><value>Der Hersteller hat diese Version veröffentlicht, aber noch nicht die Prüfsumme und Herausgebersignatur bereitgestellt – Nax-Updater installiert nichts, das nicht verifiziert werden kann. Dies löst sich in der Regel innerhalb weniger Minuten nach Veröffentlichung von selbst; erneut scannen, um es zu prüfen.</value></data>
   <data name="RevalidatingUpdate"><value>{0} und das Updateangebot werden erneut geprüft…</value></data>
   <data name="ApplyingUpdate"><value>Das verifizierte Update für {0} wird angewendet…</value></data>
@@ -216,4 +218,11 @@
   <data name="DriverOwnerPackageVersion"><value>Paket: {0}</value></data>
   <data name="DriverStatusManagedByPackage"><value>Treiber über {0}</value></data>
   <data name="UnexpectedErrorTitle" xml:space="preserve"><value>Ein unerwarteter Fehler ist aufgetreten</value></data>
+  <data name="UpdateFilterAll.Content"><value>Alle Status</value></data>
+  <data name="UpdateFilterUpdates.Content"><value>Updates</value></data>
+  <data name="UpdateFilterKnown.Content"><value>Manuelle / bekannte Versionen</value></data>
+  <data name="UpdateFilterCurrent.Content"><value>Aktuell</value></data>
+  <data name="UpdateFilterErrors.Content"><value>Fehler</value></data>
+  <data name="UpdateFilterOther.Content"><value>Sonstige</value></data>
+  <data name="OpenStoreLinkFailed"><value>Windows konnte den Microsoft-Store-Link nicht öffnen.</value></data>
 </root>

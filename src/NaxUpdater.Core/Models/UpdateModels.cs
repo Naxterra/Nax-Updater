@@ -19,7 +19,7 @@ public enum UpdateApplicability
     NotApplicable
 }
 
-public enum UpdateAvailabilityReason { None, AwaitingStorePublication, AwaitingStoreOffer, NoApplicableStoreUpdate, StoreQueued, StoreUpdating, StorePaused, AwaitingReleaseVerification, StagedRollout, DriverUpdateInDriversView, StoreDidNotAnswer }
+public enum UpdateAvailabilityReason { None, AwaitingStorePublication, AwaitingStoreOffer, NoApplicableStoreUpdate, StoreQueued, StoreUpdating, StorePaused, AwaitingReleaseVerification, StagedRollout, DriverUpdateInDriversView, StoreDidNotAnswer, ManualReleaseInstall, DesktopRuntimePatchInstalled }
 public sealed record UpdateCheckProgress(int Completed, int Total, string Phase, string? ApplicationName,
     UpdateCheckResult? Result = null);
 
@@ -196,7 +196,7 @@ public sealed record StoreQueueTarget(string ProductId, string PackageFamilyName
 // PackageId/Version is what `choco upgrade` runs. For a wrapper route (nodejs pinning
 // nodejs.install) the payload package and version the application belongs to differ;
 // the installed application and Chocolatey's payload record are verified against those.
-public sealed record ChocolateyUpdateTarget(string PackageId, string Version, string? PayloadPackageId = null, string? PayloadVersion = null);
+public sealed record ChocolateyUpdateTarget(string PackageId, string Version, string? PayloadPackageId = null, string? PayloadVersion = null, bool AllowInstall = false);
 
 public sealed record PublishedStorePackage(
     string ProductId, string SkuId, string PackageFamilyName,

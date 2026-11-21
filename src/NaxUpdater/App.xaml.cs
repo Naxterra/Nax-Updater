@@ -50,6 +50,12 @@ public partial class App : Application
 
     protected override void OnLaunched(LaunchActivatedEventArgs args)
     {
+        string[] commandLine = Environment.GetCommandLineArgs();
+        if (commandLine.Length > 1 && commandLine[1] == Core.Services.PrivilegedUpdateHost.LaunchArgument)
+        {
+            _ = ApplyElevatedUpdateAsync(commandLine);
+            return;
+        }
         if (Services.ManufacturerPageQuery.TryStart(Environment.GetCommandLineArgs())) return;
         if (Environment.ProcessPath is { } executable &&
             Core.Services.UpdateHostLifetime.TryDetachFromLauncher(Environment.GetCommandLineArgs(), executable))
@@ -67,6 +73,13 @@ public partial class App : Application
         }
         MainWindow = new MainWindow();
         MainWindow.Activate();
+    }
+
+    private async Task ApplyElevatedUpdateAsync(string[] args)
+    {
+        try { Environment.ExitCode = await Core.Services.PrivilegedUpdateHost.HandleAsync(args); }
+        catch (Exception) { Environment.ExitCode = 1; }
+        Exit();
     }
 
     private const string SingleInstanceName = @"Local\NaxUpdater.SingleInstance";

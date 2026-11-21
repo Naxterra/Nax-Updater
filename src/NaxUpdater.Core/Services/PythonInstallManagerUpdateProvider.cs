@@ -95,10 +95,11 @@ internal sealed class PythonInstallManagerUpdateProvider(ProcessQueryRunner proc
         {
             if (_installed is not null) return _installed;
             var list = await processRunner.RunAsync(manager, ["list", "-f", "json"], TimeSpan.FromSeconds(30), token);
+            if (list.ExitCode != 0)
+                throw new InvalidOperationException($"The Python install manager could not list the installed runtimes (exit code {list.ExitCode}).");
             var map = new Dictionary<string, JsonElement>(StringComparer.OrdinalIgnoreCase);
-            if (list.ExitCode == 0)
-                foreach (var entry in Versions(list.StandardOutput))
-                    if (entry.TryGetProperty("id", out var id) && id.GetString() is { } value) map[value] = entry;
+            foreach (var entry in Versions(list.StandardOutput))
+                if (entry.TryGetProperty("id", out var id) && id.GetString() is { } value) map[value] = entry;
             return _installed = map;
         }
         finally { _listGate.Release(); }
@@ -108,12 +109,15 @@ internal sealed class PythonInstallManagerUpdateProvider(ProcessQueryRunner proc
     {
         try
         {
-            var root = JsonDocument.Parse(json).RootElement;
-            return root.TryGetProperty("versions", out var versions) && versions.ValueKind == JsonValueKind.Array
-                ? versions.EnumerateArray().Where(static e => e.TryGetProperty("id", out _) && e.TryGetProperty("sort-version", out _)).ToArray()
-                : [];
+            using var document = JsonDocument.Parse(json);
+            if (document.RootElement.ValueKind != JsonValueKind.Object ||
+                !document.RootElement.TryGetProperty("versions", out var versions) || versions.ValueKind != JsonValueKind.Array)
+                throw new InvalidDataException("The Python install manager returned an unexpected runtime list.");
+            return versions.EnumerateArray()
+                .Where(static e => e.ValueKind == JsonValueKind.Object && e.TryGetProperty("id", out _) && e.TryGetProperty("sort-version", out _))
+                .Select(static e => e.Clone()).ToArray();
         }
-        catch (JsonException) { return []; }
+        catch (JsonException exception) { throw new InvalidDataException("The Python install manager returned invalid JSON.", exception); }
     }
 
     private static bool IsUnmanaged(JsonElement runtime) =>

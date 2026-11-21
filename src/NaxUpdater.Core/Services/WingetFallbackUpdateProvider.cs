@@ -1,4 +1,5 @@
 using Microsoft.Data.Sqlite;
+using Microsoft.Win32;
 using NaxUpdater.Core.Internal;
 using NaxUpdater.Core.Models;
 using System.Collections.Concurrent;
@@ -17,6 +18,7 @@ public sealed partial class WingetFallbackUpdateProvider(
     private readonly Lazy<(string? Path, bool Unavailable)> _index = new(() => ResolveIndexSnapshot(catalogIndexPath));
 
     public string Id => "winget-fallback";
+    internal Func<string, IEnumerable<Version>> ReadDesktopRuntimeVersions { get; init; } = RegisteredDesktopRuntimeVersions;
     public UpdateProviderDescriptor Descriptor { get; } = new(
         UpdateProviderAuthority.FallbackCatalog,
         50,
@@ -144,12 +146,22 @@ public sealed partial class WingetFallbackUpdateProvider(
             return Result(application, identity, availableVersion, UpdateStatus.Current, source, null, null);
         }
 
+        var installedPatch = FindInstalledDesktopRuntimePatch(application, identity.Id, installedVersion, availableVersion);
+        if (installedPatch is not null)
+        {
+            return Result(application, identity, installedPatch.ToString(), UpdateStatus.Current, source,
+                $".NET Desktop Runtime {installedPatch} is already installed for this architecture. The older {installedVersion} runtime remains installed side by side.",
+                null) with { AvailabilityReason = UpdateAvailabilityReason.DesktopRuntimePatchInstalled };
+        }
+
         var offer = await _packages.AssessAsync(application, identity.Id, availableVersion, cancellationToken);
         var executable = InstalledApplicationMetadata.Executable(application);
+        var payload = InstalledApplicationMetadata.GeminiPayloadExecutable(application, executable);
+        string[] runningPaths = executable is null ? [] : payload is null ? [executable] : [executable, payload];
         var plan = offer.Target is null ? null : new UpdateExecutionPlan(
             UpdateExecutionKind.WingetPackage, null, null, null, null, null, [], false, [],
             executable is null ? [] : [Path.GetFileNameWithoutExtension(executable)],
-            RunningExecutablePaths: executable is null ? [] : [executable],
+            RunningExecutablePaths: runningPaths,
             WingetTarget: offer.Target);
         return Result(
             application,
@@ -159,6 +171,59 @@ public sealed partial class WingetFallbackUpdateProvider(
             source,
             offer.Error ?? $"WinGet correlated the installed product with {identity.Id}; the official package manager will verify and apply version {availableVersion}.",
             plan);
+    }
+
+    private Version? FindInstalledDesktopRuntimePatch(
+        InstalledApplication application, string packageId, string installedVersion, string catalogVersion)
+    {
+        if (!packageId.StartsWith("Microsoft.DotNet.DesktopRuntime.", StringComparison.OrdinalIgnoreCase) ||
+            application.Scope != InstallScope.Machine ||
+            !string.Equals(application.Publisher, "Microsoft Corporation", StringComparison.OrdinalIgnoreCase) ||
+            !Version.TryParse(installedVersion, out var installed) || installed.Build < 0 ||
+            !Version.TryParse(catalogVersion, out var target) || target.Build <= installed.Build ||
+            installed.Major != target.Major || installed.Minor != target.Minor ||
+            !packageId.Equals($"Microsoft.DotNet.DesktopRuntime.{target.Major}", StringComparison.OrdinalIgnoreCase))
+        {
+            return null;
+        }
+
+        var architecture = InstalledApplicationMetadata.Architecture(application);
+        if (architecture is not ("x86" or "x64" or "arm64"))
+        {
+            return null;
+        }
+
+        return ReadDesktopRuntimeVersions(architecture)
+            .Where(version => version.Major == target.Major && version.Minor == target.Minor && version.Build >= target.Build)
+            .Max();
+    }
+
+    private static IEnumerable<Version> RegisteredDesktopRuntimeVersions(string architecture)
+    {
+        const string framework = "Microsoft.WindowsDesktop.App";
+        try
+        {
+            // .NET records every architecture in the 32-bit registry view.
+            using var machine = RegistryKey.OpenBaseKey(RegistryHive.LocalMachine, RegistryView.Registry32);
+            using var runtime = machine.OpenSubKey($@"SOFTWARE\dotnet\Setup\InstalledVersions\{architecture}");
+            if (runtime?.GetValue("InstallLocation") is not string location || !Path.IsPathFullyQualified(location))
+            {
+                return [];
+            }
+
+            using var desktop = runtime.OpenSubKey($@"sharedfx\{framework}");
+            return desktop?.GetValueNames()
+                .Select(name => Version.TryParse(name, out var version) && version.Build >= 0 &&
+                    desktop.GetValue(name) is 1 &&
+                    File.Exists(Path.Combine(location, "shared", framework, name, framework + ".deps.json")) ? version : null)
+                .OfType<Version>()
+                .ToArray() ?? [];
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or System.Security.SecurityException)
+        {
+            // WinGet still performs its normal applicability assessment if local runtime evidence is unavailable.
+            return [];
+        }
     }
 
     private CatalogIdentity? GetIdentity(InstalledApplication application)
@@ -551,30 +616,6 @@ public sealed partial class WingetFallbackUpdateProvider(
         catch (Exception exception) when (exception is IOException or UnauthorizedAccessException) { }
     }
 
-    private static string? DetectArchitecture(string? executablePath)
-    {
-        try
-        {
-            if (!string.IsNullOrWhiteSpace(executablePath) && File.Exists(executablePath))
-            {
-                using var stream = File.OpenRead(executablePath);
-                using var reader = new BinaryReader(stream);
-                if (reader.ReadUInt16() == 0x5A4D)
-                {
-                    stream.Position = 0x3c;
-                    var offset = reader.ReadInt32();
-                    stream.Position = offset + 4;
-                    return reader.ReadUInt16() switch { 0x8664 => "x64", 0xAA64 => "arm64", 0x014c => "x86", _ => null };
-                }
-            }
-        }
-        catch
-        {
-            // An update variant must not be guessed from the operating-system architecture.
-        }
-        return null;
-    }
-
     private UpdateCheckResult Result(
         InstalledApplication application,
         CatalogIdentity identity,
@@ -636,10 +677,6 @@ public sealed partial class WingetFallbackUpdateProvider(
     private static string? UpgradeCode(InstalledApplication application) => application.Evidence
         .FirstOrDefault(static item => item.Label == RegistryInventoryScanner.InstallerUpgradeFamilyEvidenceLabel)
         ?.Value;
-
-    private static bool IsStrongCatalogIdentity(CatalogIdentity identity) =>
-        identity.MatchKind.EndsWith("product code", StringComparison.Ordinal) ||
-        identity.MatchKind.Equals("MSI upgrade code", StringComparison.Ordinal);
 
     private static string? PackageFamily(InstalledApplication application)
     {

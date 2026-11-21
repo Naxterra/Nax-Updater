@@ -35,7 +35,10 @@ public sealed record PreparedUpdateExecution(
     PreparedCatalogUpdate? CatalogUpdate = null,
     PreparedNativeStoreUpdate? NativeStoreUpdate = null,
     PreparedStoreQueueUpdate? StoreQueueUpdate = null,
-    PreparedChocolateyUpdate? ChocolateyUpdate = null);
+    PreparedChocolateyUpdate? ChocolateyUpdate = null)
+{
+    internal IReadOnlyList<string>? ApprovedDirectories { get; init; }
+}
 
 public sealed class PreparedChocolateyUpdate(
     ChocolateyUpdateTarget target,

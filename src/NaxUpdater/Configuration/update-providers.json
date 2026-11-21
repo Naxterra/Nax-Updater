@@ -200,8 +200,11 @@
       "displayName": "AusweisApp",
       "publisherContains": "Governikus",
       "repository": "Governikus/AusweisApp",
-      "assetNamePattern": "^AusweisApp-(?<version>[0-9]+(?:\\.[0-9]+)+)\\.msi$",
+      "assetNamePattern": "^AusweisApp-(?<version>[0-9]+(?:\\.[0-9]+)+)(?:-AMD64)?\\.msi$",
       "architecture": "x64",
+      "alternateArchitectureAssets": {
+        "arm64": "^AusweisApp-(?<version>[0-9]+(?:\\.[0-9]+)+)-ARM64\\.msi$"
+      },
       "language": "neutral",
       "expectedSigner": "Governikus Software GmbH",
       "installerKind": "DownloadedMsi",

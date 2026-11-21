@@ -62,7 +62,25 @@ internal static class InstalledApplicationMetadata
                 "32-bit" => "x86",
                 var value => value
             };
-        return NodeJsUpdateProvider.DetectArchitecture(Executable(application));
+        var executable = Executable(application);
+        return PeArchitectureReader.Detect(GeminiPayloadExecutable(application, executable))
+            ?? PeArchitectureReader.Detect(executable);
+    }
+
+    internal static string? GeminiPayloadExecutable(InstalledApplication application, string? executable)
+    {
+        // Gemini's registered launcher is x86 even when the versioned app is x64 or ARM64.
+        if (executable is null || !application.DisplayName.Equals("Gemini", StringComparison.OrdinalIgnoreCase) ||
+            !string.Equals(application.Publisher, "Google LLC", StringComparison.OrdinalIgnoreCase) ||
+            application.Scope != InstallScope.CurrentUser ||
+            !string.Equals(Path.GetFileName(executable), "Gemini.exe", StringComparison.OrdinalIgnoreCase) ||
+            !Version.TryParse(application.NormalizedVersion, out var version))
+        {
+            return null;
+        }
+
+        var payload = Path.Combine(Path.GetDirectoryName(executable)!, "app-" + version, "Gemini.exe");
+        return File.Exists(payload) ? payload : null;
     }
 
     public static string? InstallDirectory(InstalledApplication application)

@@ -2,6 +2,28 @@
 
 Why Nax-Updater works the way it does. Newest first; every release adds its decisions here and updates [DESIGN.md](DESIGN.md). Each entry names the decision, the evidence that led to it, and what was rejected.
 
+## 0.17.82 (2026-11-19)
+
+**Broker elevated updates through an ACL-verified copy of Nax-Updater and protected staging.** Running elevated installers, Chocolatey, or WinGet through `cmd.exe` or user-writable temporary folders exposed elevated execution to standard-user file and environment tampering. Elevated updates now run through `PrivilegedUpdateHost`, which verifies that `Nax-Updater.exe` and its installation folder are protected against standard-user writes, binds the approved request hash across a private named pipe, stages installer files into an administrator-owned workspace under Program Files with hash verification, sanitizes `TEMP`, `TMP`, and `PATH`, and reclaims reboot-retained workspaces after the next Windows restart. If Nax-Updater is already elevated, it stages and runs directly in-process instead of spawning a second elevated worker. A portable copy outside a protected folder can still scan and apply per-user or Microsoft Store updates, but elevated updates require an all-users installation in a protected folder.
+
+**Bind download and recipe metadata transports to public HTTPS endpoints.** `ScopedUpdateHttp` enforces public DNS HTTPS addresses, rejects private or loopback targets at socket connection time, disables automatic redirects, and validates each redirect hop against the configured allowed hosts.
+
+**Use the Gemini Desktop payload to identify its architecture.** The registered Gemini launcher is x86. The same-name executable in the installed version directory identifies whether the desktop app is x64 or ARM64. WinGet still selects and verifies the installer for the matching installation. The update plan includes the exact paths of the launcher and the app.
+
+**Retry a blocked Macrium release lookup through Windows curl.** Macrium's public release site challenged the .NET HTTP request. On a 403 response, the provider tries the same HTTPS resource with the Windows-supplied curl when no system proxy is configured for the host. It treats the vendor's legacy HTTP redirect as HTTPS and verifies the release host and major version. A failed retry leaves the release unknown.
+
+## 0.17.81 (2026-11-18)
+
+**Select the AusweisApp MSI for the installed architecture.** The 2.6.3 release introduced separate AMD64 and ARM64 installers. The x64 recipe also accepts the earlier unsuffixed MSI name. Both paths require the release SHA-256 and the Governikus Authenticode signature.
+
+**Skip duplicate .NET Desktop Runtime patch offers.** Desktop Runtime 9.0.3 and 9.0.23 were installed side by side on x86. WinGet still listed 9.0.23 for the old entry and rejected it at execution. An equal or newer patch in the same runtime line, architecture and machine scope now settles the older entry when both its Windows registration and desktop runtime files are present. The app explains the two installed versions and keeps the older entry available for inventory.
+
+## 0.17.80 (2026-11-17)
+
+**Retry a stalled publisher version page once.** The PDF-XChange PRO version page timed out during a scan and answered normally when checked again. Each read attempt now has a 12-second budget that covers headers and body. A second timeout remains a check failure. Canceling the scan cancels the current request and skips the retry.
+
+**Label GitHub releases that require manual installation.** A newer Nax-Updater release has an asset digest, but its recipe has no approved publisher signature policy. The row now directs the user to the official release page for manual installation. A recipe with an approved policy and missing asset details still reports pending verification.
+
 ## 0.17.79 (2026-11-16)
 
 **Kyocera's TWAIN driver can be installed from its row, through Kyocera's own installer.** Kyocera listed TWAIN 3.4.1108 for the owner's ECOSYS MA2100cwfx, but it publishes no installer hash, so the row only pointed to the support page. The package was checked first: it is signed by KYOCERA Document Solutions Inc. with the same certificate identity as the installed 3.4.0328 files, it comes from Kyocera's own server, its signature covers the whole file, and its size matches Kyocera's listing to the byte. Its own version resource names only the self-extractor (KmSFX 2.3.1314), so the version cannot come from the file. The owner approved Kyocera's listing as the proof when it agrees with itself: the file name, Kyocera's version field and the address carry the same version, and the downloaded file has the exact listed size. Kyocera documents no silent switch; the package is its whole Product Library installer with a license page and a device search, and silent installs exist only as packages built in that wizard. Guessing switches by test installs was rejected, because a wrong guess could install printer drivers or Status Monitor and accept Kyocera's license for the owner. Kyocera's installer therefore opens and the owner finishes it. Nax-Updater waits for the installer processes it hands over to and then checks the installed version, which decides the result. Such an update is never part of "Alle aktualisieren", which runs without the user. The rule applies to every Kyocera utility whose listing agrees with itself, not to TWAIN alone, because a per-app exception was ruled out; today only the TWAIN listing agrees and is newer than the installed version.

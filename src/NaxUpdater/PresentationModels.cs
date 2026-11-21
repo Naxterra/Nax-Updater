@@ -238,9 +238,13 @@ public sealed class UpdateRow : INotifyPropertyChanged
             LocalizationService.Get("StatusStoreOfferPending"),
         UpdateStatus.NewerReleaseKnown when reason == UpdateAvailabilityReason.AwaitingReleaseVerification =>
             LocalizationService.Get("StatusAwaitingReleaseVerification"),
+        UpdateStatus.NewerReleaseKnown when reason == UpdateAvailabilityReason.ManualReleaseInstall =>
+            LocalizationService.Get("StatusManualReleaseInstall"),
         UpdateStatus.NewerReleaseKnown when reason == UpdateAvailabilityReason.DriverUpdateInDriversView =>
             LocalizationService.Get("StatusDriverUpdateInDriversView"),
         UpdateStatus.NewerReleaseKnown => LocalizationService.Get("StatusNewerReleaseKnown"),
+        UpdateStatus.Current when reason == UpdateAvailabilityReason.DesktopRuntimePatchInstalled =>
+            LocalizationService.Get("StatusDesktopRuntimePatchInstalled"),
         UpdateStatus.Current => LocalizationService.Get("StatusCurrent"),
         UpdateStatus.StoreQueued => LocalizationService.Get(reason switch
         {
@@ -371,15 +375,20 @@ public sealed class DriverColumnLayout : INotifyPropertyChanged
     public GridLength SourceWidth { get => _sourceWidth; private set => Set(ref _sourceWidth, value); }
     public GridLength StatusWidth { get => _statusWidth; private set => Set(ref _statusWidth, value); }
     public GridLength ActionWidth { get => _actionWidth; private set => Set(ref _actionWidth, value); }
+    public double TableWidth => NameWidth.Value + InstalledWidth.Value + AvailableWidth.Value +
+                                SourceWidth.Value + StatusWidth.Value + ActionWidth.Value + 6 * 5 + 28;
 
     public void Synchronize(double name, double installed, double available, double source, double status, double action)
     {
+        var previousWidth = TableWidth;
         NameWidth = new GridLength(name);
         InstalledWidth = new GridLength(installed);
         AvailableWidth = new GridLength(available);
         SourceWidth = new GridLength(source);
         StatusWidth = new GridLength(status);
         ActionWidth = new GridLength(action);
+        if (Math.Abs(TableWidth - previousWidth) >= 0.5)
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(TableWidth)));
     }
 
     public event PropertyChangedEventHandler? PropertyChanged;
