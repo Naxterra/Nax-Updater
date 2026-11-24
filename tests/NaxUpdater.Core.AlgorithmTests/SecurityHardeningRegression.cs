@@ -1,5 +1,8 @@
 using System.Buffers.Binary;
+using System.Net;
+using System.Text;
 using System.Xml.Linq;
+using NaxUpdater.Core.Models;
 using NaxUpdater.Core.Services;
 
 internal static class SecurityHardeningRegression
@@ -14,6 +17,10 @@ internal static class SecurityHardeningRegression
         user_agent_version_matches_app_project_version(assert);
         desktop_shell_job_is_allowed_only_without_kill_on_close_and_with_desktop_shell_member(assert);
         winget_com_interop_version_supports_local_rpc_elevation(assert);
+        await electron_builder_falls_back_to_arch_win_manifest_and_verified_cdn(assert, fixture);
+        await stale_fallback_catalog_does_not_mask_failed_higher_authority_feed(assert);
+        await unresolved_non_store_msix_packages_are_cached_without_repeating_store_search(assert, fixture);
+        await antigravity_official_recipe_matches_live_manifest_format(assert);
     }
 
     private static void programdata_protected_subfolder_is_accepted_despite_ancestor_write_attributes(
@@ -204,5 +211,157 @@ internal static class SecurityHardeningRegression
             }
         }
         assert(versions.Count == 1, $"Projects reference inconsistent Microsoft.WindowsPackageManager.ComInterop versions: {string.Join(", ", versions)}.");
+    }
+
+    private static async Task electron_builder_falls_back_to_arch_win_manifest_and_verified_cdn(
+        Action<bool, string> assert, string fixture)
+    {
+        var dir = Directory.CreateDirectory(Path.Combine(fixture, "electron-arch-channel")).FullName;
+        var resources = Directory.CreateDirectory(Path.Combine(dir, "resources")).FullName;
+        var exe = Path.Combine(dir, "FixtureApp.exe");
+        var pe = new byte[0x90];
+        pe[0] = (byte)'M';
+        pe[1] = (byte)'Z';
+        BinaryPrimitives.WriteInt32LittleEndian(pe.AsSpan(0x3c, 4), 0x80);
+        BinaryPrimitives.WriteUInt32LittleEndian(pe.AsSpan(0x80, 4), 0x00004550);
+        BinaryPrimitives.WriteUInt16LittleEndian(pe.AsSpan(0x84, 2), 0x8664);
+        File.WriteAllBytes(exe, pe);
+        File.WriteAllText(Path.Combine(resources, "app-update.yml"),
+            "provider: generic\nurl: https://updater.example/manifest/\npublisherName:\n  - Example Publisher LLC\n");
+
+        var sha512Bytes = Enumerable.Repeat((byte)0x5a, 64).ToArray();
+        var sha512Base64 = Convert.ToBase64String(sha512Bytes);
+        var sha512Hex = Convert.ToHexString(sha512Bytes);
+        var manifest =
+            "version: 2.35.1\nfiles:\n  - url: https://cdn.example/releases/FixtureApp-x64.exe\n" +
+            $"    sha512: {sha512Base64}\npath: FixtureApp-x64.exe\nsha512: {sha512Base64}\n";
+        using var client = new HttpClient(new StubHandler(req =>
+            req.RequestUri!.AbsoluteUri == "https://updater.example/manifest/latest-x64-win.yml"
+                ? new HttpResponseMessage(HttpStatusCode.OK) { RequestMessage = req, Content = new StringContent(manifest, Encoding.UTF8, "text/yaml") }
+                : new HttpResponseMessage(HttpStatusCode.NotFound) { RequestMessage = req }));
+        var app = new InstalledApplication("fixture:electron-arch", "FixtureApp 2.35.0", "Example Publisher", "2.35.0", "2.35.0",
+            "fixture", exe, "fixture", null, null, InstallScope.CurrentUser, ManagementMode.Registry, ConfidenceLevel.High, false, [], null, []);
+        var result = await new ElectronBuilderUpdateProvider(client).CheckAsync(app, CancellationToken.None);
+        assert(result.Status == UpdateStatus.Available && result.AvailableVersion == "2.35.1" &&
+               result.ExecutionPlan is { DownloadUri.AbsoluteUri: "https://cdn.example/releases/FixtureApp-x64.exe", ExpectedSigner: "Example Publisher LLC" } &&
+               result.ExecutionPlan.Sha512 == sha512Hex &&
+               result.ExecutionPlan.AllowedDownloadHosts.Contains("cdn.example", StringComparer.OrdinalIgnoreCase),
+            "ElectronBuilderUpdateProvider did not fall back to latest-x64-win.yml or pin the verified CDN download host.");
+
+        // A transient HTTP 503 on latest-x64-win.yml must fail as an HTTP error rather than
+        // being swallowed as HTTP 404 Unsupported from latest.yml.
+        using var outageClient = new HttpClient(new StubHandler(req =>
+            req.RequestUri!.AbsoluteUri == "https://updater.example/manifest/latest-x64-win.yml"
+                ? new HttpResponseMessage(HttpStatusCode.ServiceUnavailable) { RequestMessage = req }
+                : new HttpResponseMessage(HttpStatusCode.NotFound) { RequestMessage = req }));
+        var outageThrew = false;
+        try { await new ElectronBuilderUpdateProvider(outageClient).CheckAsync(app, CancellationToken.None); }
+        catch (HttpRequestException) { outageThrew = true; }
+        assert(outageThrew, "A transient HTTP 503 on latest-x64-win.yml was swallowed as 404 Unsupported.");
+    }
+
+    private static async Task stale_fallback_catalog_does_not_mask_failed_higher_authority_feed(Action<bool, string> assert)
+    {
+        var app = new InstalledApplication("fixture:stale-mask", "SampleApp 2.35.0", "Vendor", "2.35.0", "2.35.0",
+            "fixture", Environment.ProcessPath, "fixture", null, null, InstallScope.CurrentUser, ManagementMode.Registry, ConfidenceLevel.High, false, [], null, []);
+        var deadFeed = new StubProvider("installed-updater-metadata",
+            new(UpdateProviderAuthority.InstalledUpdateProtocol, 80, "fixture"),
+            new UpdateCheckResult(app.Identity, app.DisplayName, app.NormalizedVersion, null, UpdateStatus.Unsupported,
+                "installed-updater-metadata", "Installed metadata", "neutral", "fixture", "x64", "stable", null, "Feed returned 404.", null));
+        var staleCatalog = new StubProvider("winget-fallback",
+            new(UpdateProviderAuthority.FallbackCatalog, 50, "fixture"),
+            new UpdateCheckResult(app.Identity, app.DisplayName, app.NormalizedVersion, null, UpdateStatus.Current,
+                "winget-fallback", "WinGet fallback", "neutral", "fixture", "x64", "stable", null, "Catalog is older.", null,
+                AvailabilityReason: UpdateAvailabilityReason.CatalogBehindInstalled));
+
+        var combined = await new UpdateCheckService([deadFeed, staleCatalog]).CheckAsync(new(DateTimeOffset.UtcNow, [app], [], []));
+        var selected = combined.Results.Single();
+        assert(selected.ProviderId == "installed-updater-metadata" && selected.Status == UpdateStatus.Unsupported,
+            "A stale fallback catalog masked a failed higher-authority update feed as Current.");
+
+        var standalone = await new UpdateCheckService([staleCatalog]).CheckAsync(new(DateTimeOffset.UtcNow, [app], [], []));
+        assert(standalone.Results.Single().Status == UpdateStatus.Current,
+            "A standalone fallback catalog older than the installed version should still remain Current.");
+    }
+
+    private static async Task unresolved_non_store_msix_packages_are_cached_without_repeating_store_search(
+        Action<bool, string> assert, string fixture)
+    {
+        var cachePath = Path.Combine(fixture, "store-unresolved-cache.json");
+        var cache = new StoreSearchCache(cachePath);
+        var store = new CountingStoreService(cacheable: true);
+        var provider = new MsixStoreUpdateProvider(null, store, nativeStore: null, searchCache: cache);
+        var app = new InstalledApplication("msix:NonStore.App_12345", "NonStore App", "Vendor", "1.0.0.0", "1.0.0.0",
+            "fixture", null, "fixture", null, null, InstallScope.CurrentUser, ManagementMode.Msix, ConfidenceLevel.High, false, [], null, []);
+
+        var first = await provider.CheckAsync(app, CancellationToken.None);
+        var second = await provider.CheckAsync(app, CancellationToken.None);
+        assert(first.Status == UpdateStatus.ManagedExternally && second.Status == UpdateStatus.ManagedExternally && store.Calls == 1,
+            $"Cacheable unresolved MSIX lookup ran {store.Calls} times instead of 1.");
+
+        var transientStore = new CountingStoreService(cacheable: false);
+        var transientProvider = new MsixStoreUpdateProvider(null, transientStore, nativeStore: null, searchCache: cache);
+        var app2 = app with { Identity = "msix:Transient.App_12345", DisplayName = "Transient App" };
+        await transientProvider.CheckAsync(app2, CancellationToken.None);
+        await transientProvider.CheckAsync(app2, CancellationToken.None);
+        assert(transientStore.Calls == 2,
+            $"Transient Store lookup failure was incorrectly cached (calls={transientStore.Calls}).");
+    }
+
+    private static async Task antigravity_official_recipe_matches_live_manifest_format(Action<bool, string> assert)
+    {
+        var catalogPath = Path.Combine(AppContext.BaseDirectory, "Configuration", "update-providers.json");
+        var catalog = await UpdateProviderCatalogLoader.LoadAsync(catalogPath);
+        var recipe = catalog.Official.Single(r => r.Id == "Google.Antigravity");
+        var shaBytes = Enumerable.Repeat((byte)0x3c, 64).ToArray();
+        var shaBase64 = Convert.ToBase64String(shaBytes);
+        var shaHex = Convert.ToHexString(shaBytes).ToLowerInvariant();
+        var body =
+            "version: 2.35.1\r\nfiles:\r\n  - url: https://storage.googleapis.com/antigravity-public/antigravity-hub/2.35.1-123/windows-x64/Antigravity-x64.exe\r\n" +
+            $"    sha512: {shaBase64}\r\n    size: 170272672\r\npath: Antigravity-x64.exe\r\nsha512: {shaBase64}\r\n";
+        using var http = new HttpClient(new StubHandler(req =>
+            new HttpResponseMessage(HttpStatusCode.OK) { RequestMessage = req, Content = new StringContent(body, Encoding.UTF8, "text/yaml") }));
+        var app = new InstalledApplication("fixture:ag", "Antigravity 2.35.0", "Google", "2.35.0", "2.35.0",
+            "fixture", Environment.ProcessPath, "fixture", null, null, InstallScope.CurrentUser, ManagementMode.Registry, ConfidenceLevel.High, false, [], null, []);
+        var provider = new OfficialSiteUpdateProvider(http, recipe);
+        assert(provider.CanHandle(app), "Google.Antigravity recipe did not match Antigravity 2.35.0.");
+        var result = await provider.CheckAsync(app, CancellationToken.None);
+        assert(result.Status == UpdateStatus.Available && result.AvailableVersion == "2.35.1" &&
+               result.ExecutionPlan is { ExpectedSigner: "Google LLC", RequiresElevation: false } &&
+               result.ExecutionPlan.Sha512 == shaHex &&
+               result.ExecutionPlan.DownloadUri?.Host == "storage.googleapis.com",
+            "Google.Antigravity recipe did not produce a SHA-512 and Google LLC verified update plan.");
+    }
+
+    private sealed class StubHandler(Func<HttpRequestMessage, HttpResponseMessage> respond) : HttpMessageHandler
+    {
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken) =>
+            Task.FromResult(respond(request));
+    }
+
+    private sealed class StubProvider(string id, UpdateProviderDescriptor descriptor, UpdateCheckResult result) : IUpdateProvider
+    {
+        public string Id => id;
+        public UpdateProviderDescriptor Descriptor => descriptor;
+        public bool CanHandle(InstalledApplication application) => true;
+        public Task<UpdateCheckResult> CheckAsync(InstalledApplication application, CancellationToken cancellationToken) =>
+            Task.FromResult(result);
+    }
+
+    private sealed class CountingStoreService(bool cacheable) : IStorePackageDeploymentService
+    {
+        public int Calls { get; private set; }
+        public string? LastError => "No exact Store catalog product was correlated with the installed package family.";
+        public Task<StoreUpdateAvailability> CheckForUpdateAsync(
+            string packageFamilyName, string? installedDisplayName, string? installedPublisher,
+            string? installedVersion, string? installedArchitecture, CancellationToken cancellationToken)
+        {
+            Calls++;
+            return Task.FromResult(new StoreUpdateAvailability(false, false, null, null, LastError, IsCacheableUnresolved: cacheable));
+        }
+        public Task<StoreCatalogIdentity?> ResolveAsync(string packageFamilyName, string? installedDisplayName, string? installedPublisher, CancellationToken cancellationToken) =>
+            Task.FromResult<StoreCatalogIdentity?>(null);
+        public Task<UpdateExecutionResult> InstallOrUpdateAsync(string productId, string packageFamilyName, string? installedDisplayName, string? installedPublisher, string expectedVersion, CancellationToken cancellationToken) =>
+            Task.FromResult(new UpdateExecutionResult(0, true, null));
     }
 }

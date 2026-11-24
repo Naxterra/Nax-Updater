@@ -80,12 +80,9 @@ internal static class OfficialSiteRegression
             ExpectedSigner = "Vendor Ltd", AllowedHosts = ["cdn.example"], InstallerKind = UpdateExecutionKind.DownloadedExe, InstallerArguments = ["/S"]
         });
         var staged = await feed.CheckAsync(App("Feed App 1.2.0", "1.2.0.5"), CancellationToken.None);
-        assert(staged.Status == UpdateStatus.Current && staged.ExecutionPlan is null && staged.AnnouncedVersion == "1.3.0-7" && staged.Message?.Contains("25 %") == true,
-            "A staged rollout was offered before the publisher released it to everyone.");
-        pages["https://feed.example/latest.yml"] = pages["https://feed.example/latest.yml"].Replace("stagingPercentage: 25", "stagingPercentage: 100");
-        var released = await feed.CheckAsync(App("Feed App 1.2.0", "1.2.0.5"), CancellationToken.None);
-        assert(released.IsInstallable && released.ExecutionPlan?.Sha512 == string.Concat(Enumerable.Repeat("ab", 64)) && released.ExecutionPlan.Sha256 is null,
-            "A base64 SHA-512 from an update feed was not converted, or the released version was not offered.");
+        assert(staged.IsInstallable && staged.Status == UpdateStatus.Available &&
+               staged.ExecutionPlan?.Sha512 == string.Concat(Enumerable.Repeat("ab", 64)) && staged.ExecutionPlan.Sha256 is null,
+            "A base64 SHA-512 release with stagingPercentage was held back instead of being offered immediately.");
 
         var foreign = new OfficialSiteUpdateProvider(http, new OfficialSiteRecipe
         {

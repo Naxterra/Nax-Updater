@@ -52,36 +52,32 @@ internal static class StagedRolloutRegression
             ExpectedSigner = "Vendor Ltd", AllowedHosts = ["feed.example"], Architecture = "neutral", InstallerKind = UpdateExecutionKind.DownloadedExe,
             InstallerArguments = ["/S"], CurrentUserInstallerArguments = ["/S"]
         };
-        IUpdateProvider[] providers = [new OfficialSiteUpdateProvider(http, recipe, appData), new ElectronBuilderUpdateProvider(http, appData)];
+        IUpdateProvider[] providers = [new OfficialSiteUpdateProvider(http, recipe), new ElectronBuilderUpdateProvider(http)];
         foreach (var provider in providers)
         {
             Id(null);
             var unknown = await provider.CheckAsync(app, CancellationToken.None);
-            assert(unknown is { Status: UpdateStatus.Current, ExecutionPlan: null, AvailabilityReason: UpdateAvailabilityReason.StagedRollout, AnnouncedVersion: "1.3.0-7", AvailableVersion: "1.2.0" } &&
-                   unknown.Message?.Contains("has not stored its rollout ID") == true && unknown.RolloutThresholdPercent is null,
-                $"{provider.Id}: a staged release was offered to an installation without an updater ID.");
+            assert(unknown.Status == UpdateStatus.Available && unknown.ExecutionPlan is not null && unknown.AvailableVersion == "1.3.0-7",
+                $"{provider.Id}: a verified release with stagingPercentage was held back instead of being offered immediately.");
             Id(CurseForgeId);
             var outside = await provider.CheckAsync(app, CancellationToken.None);
-            assert(outside is { Status: UpdateStatus.Current, ExecutionPlan: null, AvailabilityReason: UpdateAvailabilityReason.StagedRollout, AnnouncedVersion: "1.3.0-7" } &&
-                   outside.Message?.Contains("90.4 %") == true && outside.Message.Contains("reaches 91 %") && outside.RolloutThresholdPercent == 91,
-                $"{provider.Id}: a staged release was offered to an installation outside the rollout.");
+            assert(outside.Status == UpdateStatus.Available && outside.ExecutionPlan is not null && outside.AvailableVersion == "1.3.0-7",
+                $"{provider.Id}: a verified release with stagingPercentage was held back for an installation outside the gradual rollout.");
             Id("00000000-0000-4000-8000-000010000000");
             var inside = await provider.CheckAsync(app, CancellationToken.None);
             assert(inside.Status == UpdateStatus.Available && inside.ExecutionPlan is not null && inside.AvailableVersion == "1.3.0-7",
-                $"{provider.Id}: an installation inside the rollout was not offered the release its own updater offers.");
+                $"{provider.Id}: a verified release inside the rollout was not offered.");
         }
 
-        // A held rollout settles the application: a lower catalog with the same
-        // release must not deliver it early.
+        // Verify the official provider delivers the verified release directly without
+        // deferring to a lower fallback catalog.
         Id(CurseForgeId);
-        var held = await new UpdateCheckService([new OfficialSiteUpdateProvider(http, recipe, appData), new Catalog()])
+        var immediate = await new UpdateCheckService([new OfficialSiteUpdateProvider(http, recipe), new Catalog()])
             .CheckAsync(new(DateTimeOffset.UtcNow, [app], [], []));
-        var result = held.Results.Single();
-        assert(!result.IsInstallable && result.Status == UpdateStatus.Current && result.AvailabilityReason == UpdateAvailabilityReason.StagedRollout &&
-               held.InstallableUpdateCount == 0 && held.KnownReleaseCount == 0 &&
-               result.SourceChecks?.Any(c => c.ProviderId == "fixture-catalog" && c.Status == UpdateStatus.Available) == true &&
-               result.SourceChecks.Any(c => c.AvailabilityReason == UpdateAvailabilityReason.StagedRollout && c.RolloutThresholdPercent == 91),
-            "A fallback catalog delivered a release the publisher is still withholding from this installation.");
+        var result = immediate.Results.Single();
+        assert(result.IsInstallable && result.Status == UpdateStatus.Available && result.ProviderId == "official:Vendor.Feed" &&
+               immediate.InstallableUpdateCount == 1,
+            "A verified official release with stagingPercentage was not offered immediately.");
     }
 
     private sealed class Catalog : IUpdateProvider

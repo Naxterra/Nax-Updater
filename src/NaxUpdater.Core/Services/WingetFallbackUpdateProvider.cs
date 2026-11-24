@@ -139,7 +139,7 @@ public sealed partial class WingetFallbackUpdateProvider(
                 UpdateStatus.Current,
                 source,
                 $"The installed version {installedVersion} is newer than the fallback catalog version {availableVersion}; the older catalog value is not presented as an available release.",
-                null);
+                null) with { AvailabilityReason = UpdateAvailabilityReason.CatalogBehindInstalled };
         }
         if (comparison == 0)
         {

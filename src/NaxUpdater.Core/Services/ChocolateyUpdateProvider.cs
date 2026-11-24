@@ -42,11 +42,14 @@ public sealed partial class ChocolateyUpdateProvider(IChocolateyPackageService? 
         if (offer.Target is null)
         {
             return offer.Found
-                ? new(
+                ? new UpdateCheckResult(
                     application.Identity, application.DisplayName, application.NormalizedVersion, null,
                     UpdateStatus.Current, Id, "Chocolatey community feed",
                     "application-managed", "Selected by choco.exe", "provider-selected", "stable",
-                    null, "Chocolatey reports no newer package for this installation.", null)
+                    null, "Chocolatey reports no newer package for this installation.", null,
+                    AvailabilityReason: offer.CatalogBehindInstalled
+                        ? UpdateAvailabilityReason.CatalogBehindInstalled
+                        : UpdateAvailabilityReason.None)
                 : Unsupported(application, "No exact Chocolatey community package matched this application.");
         }
         var executable = InstalledApplicationMetadata.Executable(application);

@@ -71,6 +71,15 @@ public sealed class MsixStoreUpdateProvider : IUpdateProvider
         var nativeAssessment = await CheckNativeCatalogAsync(application, packageFamily, cancellationToken);
         if (nativeAssessment is not null) return nativeAssessment;
 
+        var unresolvedKey = string.IsNullOrWhiteSpace(application.NormalizedVersion)
+            ? null
+            : StoreSearchCache.UnresolvedKey(packageFamily, application.NormalizedVersion);
+        if (unresolvedKey is not null && _searchCache?.FindNoUpdate(unresolvedKey) is not null)
+        {
+            return Result(application, null, UpdateStatus.ManagedExternally, null, null,
+                "No exact Store catalog product was correlated with the installed package family.");
+        }
+
         var availability = await _store.CheckForUpdateAsync(
             packageFamily,
             application.DisplayName,
@@ -80,6 +89,10 @@ public sealed class MsixStoreUpdateProvider : IUpdateProvider
             cancellationToken);
         if (!availability.IsResolved)
         {
+            if (unresolvedKey is not null && availability.IsCacheableUnresolved)
+            {
+                _searchCache?.RecordNoUpdate(unresolvedKey);
+            }
             return Result(application, null, UpdateStatus.ManagedExternally, null, null, availability.Error);
         }
         if (!availability.IsUpdateAvailable || string.IsNullOrWhiteSpace(availability.ProductId))

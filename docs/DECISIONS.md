@@ -2,6 +2,16 @@
 
 Why Nax-Updater works the way it does. Newest first; every release adds its decisions here and updates [DESIGN.md](DESIGN.md). Each entry names the decision, the evidence that led to it, and what was rejected.
 
+## 0.17.84 (2026-11-24)
+
+**Offer hash- and signature-verified releases immediately without waiting for staged rollouts.** Holding back published releases behind `stagingPercentage` reproduced the 1 to 2 week delay of slow built-in updaters that Nax-Updater exists to avoid. Both `OfficialSiteUpdateProvider` and `ElectronBuilderUpdateProvider` now offer verified releases immediately once published, and `CHECKLIST.md` item 8 was updated accordingly.
+
+**Support architecture-suffixed Electron channels, verified CDN downloads, and explicit Antigravity and Nax-* recipes.** `ElectronBuilderUpdateProvider` now falls back from `latest.yml` to `latest-{arch}-win.yml` and `latest-{arch}.yml` on HTTP 404/410 and permits public HTTPS CDN downloads when both an exact SHA-512 hash and a verified Authenticode publisher are present. Added official and GitHub recipes for `Google.Antigravity`, `Naxterra.NaxFolders`, and `Naxterra.NaxTranslate`.
+
+**Stop stale fallback catalogs from masking failed official feeds as Current.** `WingetFallbackUpdateProvider` now marks catalog versions older than the installed version with `CatalogBehindInstalled`, and `UpdateCheckService` refuses to let such a stale fallback hide an earlier higher-authority `Error` or `Unsupported` result.
+
+**Cache deterministic non-Store MSIX misses and refactor `MainPage` for responsiveness.** `StorePackageDeploymentService` and `MsixStoreUpdateProvider` cache deterministic unresolved non-Store MSIX families for six hours (never caching transient errors), cutting repeated 4 to 8 second lookups on every scan. `MainPage.xaml.cs` was split into focused partial files (`MainPage.Inventory.cs`, `MainPage.Updates.cs`, `MainPage.Drivers.cs`), progressive update list refreshes are throttled to 250 ms intervals, and initial selection defaults to the top actionable update row until the user selects another row.
+
 ## 0.17.83 (2026-11-21)
 
 **Upgrade `Microsoft.WindowsPackageManager.ComInterop` to 1.29.380 and retry WinGet target preparation on COM server exits.** Starting with WinGet 1.29.380 and App Installer 1.30.x, elevated WinGet COM server manual activation switched from named pipes to local RPC (`ncalrpc`). The older 1.29.290 interop package timed out against App Installer 1.30.310 with `0x800706BA` (`RPC_S_SERVER_UNAVAILABLE`) when applying elevated machine-scope WinGet upgrades. Updating `Microsoft.WindowsPackageManager.ComInterop` to 1.29.380 aligns the elevated COM client transport with current App Installer releases, and wrapping `WingetPackageService` target preparation and pre-apply validation in `RetryWhileServerRestartsAsync` recovers cleanly when the WinGet COM server restarts between catalog checks and apply.

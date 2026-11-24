@@ -11,7 +11,7 @@ namespace NaxUpdater.Core.Services;
 // null). Only the former is non-definitive; conflating the two previously made
 // "not on Chocolatey" surface as a scary per-app Error on nearly a third of a
 // real inventory.
-public sealed record ChocolateyPackageOffer(ChocolateyUpdateTarget? Target, bool Found, string? Error);
+public sealed record ChocolateyPackageOffer(ChocolateyUpdateTarget? Target, bool Found, string? Error, bool CatalogBehindInstalled = false);
 
 public interface IChocolateyPackageService
 {
@@ -121,9 +121,10 @@ public sealed class ChocolateyPackageService : IChocolateyPackageService
             // Chocolatey actually offers. Report as unresolved instead.
             return new(null, false, null);
         }
-        if (VersionOrder.Compare(found.Version, installedVersion) <= 0)
+        var comparison = VersionOrder.Compare(found.Version, installedVersion);
+        if (comparison <= 0)
         {
-            return new(null, true, null);
+            return new(null, true, null, CatalogBehindInstalled: comparison < 0);
         }
         return new(found, true, null);
     }

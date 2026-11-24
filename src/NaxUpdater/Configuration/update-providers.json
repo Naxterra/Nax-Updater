@@ -196,6 +196,37 @@
       "requiresElevation": true
     },
     {
+      "id": "Naxterra.NaxFolders",
+      "displayName": "Nax-Folders",
+      "publisherContains": "Naxterra",
+      "repository": "Naxterra/Nax-Folders",
+      "assetNamePattern": "^NaxFolders-v(?<version>[0-9]+(?:\\.[0-9]+)+)-setup-win-x64\\.exe$",
+      "architecture": "x64",
+      "language": "neutral",
+      "unsigned": true,
+      "privateRepository": true,
+      "installerKind": "DownloadedExe",
+      "installerArguments": [ "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART", "/ALLUSERS" ],
+      "currentUserInstallerArguments": [ "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART", "/CURRENTUSER" ],
+      "runningProcessNames": [ "Nax-Folders" ],
+      "requiresElevation": true
+    },
+    {
+      "id": "Naxterra.NaxTranslate",
+      "displayName": "Nax-Translate",
+      "publisherContains": "Naxterra",
+      "repository": "Naxterra/Nax-Translate",
+      "assetNamePattern": "^Nax-Translate-(?<version>[0-9]+(?:\\.[0-9]+)+)-setup\\.exe$",
+      "architecture": "x64",
+      "language": "neutral",
+      "unsigned": true,
+      "installerKind": "DownloadedExe",
+      "installerArguments": [ "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART", "/ALLUSERS" ],
+      "currentUserInstallerArguments": [ "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART", "/CURRENTUSER" ],
+      "runningProcessNames": [ "Nax-Translate" ],
+      "requiresElevation": true
+    },
+    {
       "id": "Governikus.AusweisApp",
       "displayName": "AusweisApp",
       "publisherContains": "Governikus",
@@ -428,7 +459,6 @@
       "downloadUrl": "{url}",
       "hashAlgorithm": "sha512",
       "hashEncoding": "base64",
-      "rolloutPattern": "(?m)^stagingPercentage:\\s*(?<percent>[0-9]+)",
       "releaseNotesUrl": "https://www.curseforge.com/download/app",
       "expectedSigner": "Overwolf Ltd",
       "allowedHosts": [ "appsdl.overwolf.com" ],
@@ -566,6 +596,24 @@
       "installerArguments": [ "/quiet", "/norestart" ],
       "runningProcessNames": [ ],
       "requiresElevation": true
+    },
+    {
+      "id": "Google.Antigravity",
+      "displayNamePattern": "^Antigravity [0-9]+(?:\\.[0-9]+)+$",
+      "publisherContains": "Google",
+      "versionUrl": "https://antigravity-hub-auto-updater-974169037036.us-central1.run.app/manifest/latest-x64-win.yml",
+      "versionPattern": "(?ms)^version:\\s*(?<version>[0-9]+(?:\\.[0-9]+)+)\\r?\\n.*?^\\s*-\\s*url:\\s*(?<url>https://storage\\.googleapis\\.com/\\S+\\.exe)\\r?\\n\\s*sha512:\\s*(?<hash>\\S+)",
+      "downloadUrl": "{url}",
+      "hashAlgorithm": "sha512",
+      "hashEncoding": "base64",
+      "releaseNotesUrl": "https://antigravity.google/",
+      "expectedSigner": "Google LLC",
+      "allowedHosts": [ "storage.googleapis.com" ],
+      "installerKind": "DownloadedExe",
+      "installerArguments": [ "/S" ],
+      "currentUserInstallerArguments": [ "/S" ],
+      "runningProcessNames": [ "Antigravity" ],
+      "requiresElevation": false
     }
   ]
 }

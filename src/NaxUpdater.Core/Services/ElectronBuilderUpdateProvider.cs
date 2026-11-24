@@ -5,7 +5,7 @@ using System.Text.RegularExpressions;
 
 namespace NaxUpdater.Core.Services;
 
-public sealed partial class ElectronBuilderUpdateProvider(HttpClient httpClient, string? appDataRoot = null) : IUpdateProvider
+public sealed partial class ElectronBuilderUpdateProvider(HttpClient httpClient) : IUpdateProvider
 {
     private readonly ConcurrentDictionary<string, UpdateConfiguration> _configurations = new(StringComparer.Ordinal);
 
@@ -26,100 +26,90 @@ public sealed partial class ElectronBuilderUpdateProvider(HttpClient httpClient,
             return Error(application, "No supported installed updater metadata was found.");
         }
 
-        var trustedHosts = AllowedHosts(configuration.MetadataUri);
-        using var response = await ScopedUpdateHttp.GetAsync(httpClient, configuration.MetadataUri, trustedHosts, cancellationToken);
-        // A feed that no longer exists (a deleted or private GitHub repository) is
-        // not a failed check: the application's own updater gets the same answer,
-        // so no update can be found through it until the publisher restores it.
-        if (response.StatusCode is System.Net.HttpStatusCode.NotFound or System.Net.HttpStatusCode.Gone)
-            return Error(application,
-                $"The update feed this application checks itself ({configuration.MetadataUri}) returns HTTP {(int)response.StatusCode}, " +
-                "so the application cannot find updates through it either. No update can be verified until the publisher restores it.",
-                releasePage: configuration.ReleasePage) with { Status = UpdateStatus.Unsupported };
-        response.EnsureSuccessStatusCode();
-        var bytes = await HttpBodyLimit.ReadBytesAsync(response.Content, cancellationToken);
-        var feed = Encoding.UTF8.GetString(bytes);
-        var metadata = ParseLatestMetadata(feed);
-        if (metadata is null)
-        {
-            return Error(application, "The installed updater feed did not contain a usable version and installer hash.");
-        }
-
         var architecture = PeArchitectureReader.Detect(application.PrimaryInstallPath) ?? "unknown";
-        var artifact = SelectArtifact(metadata.Artifacts, architecture);
-        if (artifact is null)
+        var trustedHosts = AllowedHosts(configuration.MetadataUri);
+        var (response, resolvedMetadataUri) = await FetchMetadataAsync(configuration, architecture, trustedHosts, cancellationToken);
+        using (response)
         {
-            return Error(application, $"The installed updater feed has no Windows installer for {architecture}.", metadata.Version);
-        }
-
-        var status = VersionOrder.Compare(metadata.Version, application.NormalizedVersion) > 0
-            ? UpdateStatus.Available
-            : UpdateStatus.Current;
-        // The application's own updater withholds a staged release from
-        // installations outside the rollout; so does Nax-Updater.
-        if (status == UpdateStatus.Available && ElectronStagedRollout.Percentage(feed) is { } percent && percent < 100 &&
-            ElectronStagedRollout.Position(application, appDataRoot) is var position &&
-            (position is null || !ElectronStagedRollout.Includes(percent, position.Value)))
-        {
-            return Error(application, ElectronStagedRollout.HeldMessage(metadata.Version, percent, position), application.NormalizedVersion, configuration.ReleasePage) with
+            // A feed that no longer exists (a deleted or private GitHub repository) is
+            // not a failed check: the application's own updater gets the same answer,
+            // so no update can be found through it until the publisher restores it.
+            if (response.StatusCode is System.Net.HttpStatusCode.NotFound or System.Net.HttpStatusCode.Gone)
+                return Error(application,
+                    $"The update feed this application checks itself ({resolvedMetadataUri}) returns HTTP {(int)response.StatusCode}, " +
+                    "so the application cannot find updates through it either. No update can be verified until the publisher restores it.",
+                    releasePage: configuration.ReleasePage) with { Status = UpdateStatus.Unsupported };
+            response.EnsureSuccessStatusCode();
+            var bytes = await HttpBodyLimit.ReadBytesAsync(response.Content, cancellationToken);
+            var feed = Encoding.UTF8.GetString(bytes);
+            var metadata = ParseLatestMetadata(feed);
+            if (metadata is null)
             {
-                Status = UpdateStatus.Current,
-                Architecture = architecture,
-                Channel = configuration.Channel,
-                Applicability = UpdateApplicability.NotRequired,
-                AnnouncedVersion = metadata.Version,
-                AvailabilityReason = UpdateAvailabilityReason.StagedRollout,
-                RolloutThresholdPercent = ElectronStagedRollout.ThresholdPercent(position)
-            };
-        }
-        var downloadUri = ResolveDownloadUri(configuration, artifact.Url, trustedHosts);
-        var signer = configuration.PublisherNames.FirstOrDefault() ??
-                     NativeAuthenticodeVerifier.GetTrustedSigner(application.PrimaryInstallPath ?? string.Empty);
-        if (status == UpdateStatus.Available &&
-            (downloadUri is null || artifact.Sha512 is null || string.IsNullOrWhiteSpace(signer)))
-        {
-            return Error(
-                application,
-                "The installed updater metadata lacks a safe HTTPS download, SHA-512, or publisher identity; installation is blocked.",
+                return Error(application, "The installed updater feed did not contain a usable version and installer hash.");
+            }
+
+            var artifact = SelectArtifact(metadata.Artifacts, architecture);
+            if (artifact is null)
+            {
+                return Error(application, $"The installed updater feed has no Windows installer for {architecture}.", metadata.Version);
+            }
+
+            var status = VersionOrder.Compare(metadata.Version, application.NormalizedVersion) > 0
+                ? UpdateStatus.Available
+                : UpdateStatus.Current;
+            var signer = configuration.PublisherNames.FirstOrDefault() ??
+                         NativeAuthenticodeVerifier.GetTrustedSigner(application.PrimaryInstallPath ?? string.Empty);
+            var downloadUri = ResolveDownloadUri(configuration, artifact.Url, trustedHosts, allowVerifiedCdn: !string.IsNullOrWhiteSpace(signer) && artifact.Sha512 is not null);
+            if (downloadUri is not null)
+            {
+                trustedHosts.Add(downloadUri.IdnHost);
+            }
+            if (status == UpdateStatus.Available &&
+                (downloadUri is null || artifact.Sha512 is null || string.IsNullOrWhiteSpace(signer)))
+            {
+                return Error(
+                    application,
+                    "The installed updater metadata lacks a safe HTTPS download, SHA-512, or publisher identity; installation is blocked.",
+                    metadata.Version,
+                    configuration.ReleasePage);
+            }
+
+            bool useMsi = downloadUri is not null &&
+                Path.GetExtension(downloadUri.AbsolutePath).Equals(".msi", StringComparison.OrdinalIgnoreCase);
+            var plan = status == UpdateStatus.Available
+                ? new UpdateExecutionPlan(
+                    useMsi
+                        ? UpdateExecutionKind.DownloadedMsi
+                        : UpdateExecutionKind.DownloadedExe,
+                    downloadUri,
+                    Path.GetFileName(downloadUri!.LocalPath),
+                    null,
+                    signer,
+                    null,
+                    useMsi ? ["/passive", "/norestart"] : ["/S"],
+                    application.Scope == InstallScope.Machine,
+                    trustedHosts.ToArray(),
+                    RunningProcesses(application),
+                    artifact.Sha512)
+                    with { ExpectedSigners = configuration.PublisherNames.Count > 0 ? configuration.PublisherNames : null }
+                : null;
+
+            return new UpdateCheckResult(
+                application.Identity,
+                application.DisplayName,
+                application.NormalizedVersion,
                 metadata.Version,
-                configuration.ReleasePage);
+                status,
+                Id,
+                "Installed application update metadata",
+                "application-managed",
+                "Preserved by the application's updater",
+                architecture,
+                configuration.Channel,
+                configuration.ReleasePage,
+                "Discovered from the updater metadata installed with the application; SHA-512 and the configured Windows publisher are required.",
+                plan);
         }
-
-        bool useMsi = downloadUri is not null &&
-            Path.GetExtension(downloadUri.AbsolutePath).Equals(".msi", StringComparison.OrdinalIgnoreCase);
-        var plan = status == UpdateStatus.Available
-            ? new UpdateExecutionPlan(
-                useMsi
-                    ? UpdateExecutionKind.DownloadedMsi
-                    : UpdateExecutionKind.DownloadedExe,
-                downloadUri,
-                Path.GetFileName(downloadUri!.LocalPath),
-                null,
-                signer,
-                null,
-                useMsi ? ["/passive", "/norestart"] : ["/S"],
-                application.Scope == InstallScope.Machine,
-                trustedHosts.ToArray(),
-                RunningProcesses(application),
-                artifact.Sha512)
-                with { ExpectedSigners = configuration.PublisherNames.Count > 0 ? configuration.PublisherNames : null }
-            : null;
-
-        return new UpdateCheckResult(
-            application.Identity,
-            application.DisplayName,
-            application.NormalizedVersion,
-            metadata.Version,
-            status,
-            Id,
-            "Installed application update metadata",
-            "application-managed",
-            "Preserved by the application's updater",
-            architecture,
-            configuration.Channel,
-            configuration.ReleasePage,
-            "Discovered from the updater metadata installed with the application; SHA-512 and the configured Windows publisher are required.",
-            plan);
     }
 
     private UpdateConfiguration? GetConfiguration(InstalledApplication application)
@@ -298,11 +288,50 @@ public sealed partial class ElectronBuilderUpdateProvider(HttpClient httpClient,
         };
     }
 
-    private static Uri? ResolveDownloadUri(UpdateConfiguration configuration, string artifactUrl, IReadOnlySet<string> hosts)
+    private async Task<(HttpResponseMessage Response, Uri MetadataUri)> FetchMetadataAsync(
+        UpdateConfiguration configuration,
+        string architecture,
+        IReadOnlySet<string> trustedHosts,
+        CancellationToken cancellationToken)
+    {
+        var primary = await ScopedUpdateHttp.GetAsync(httpClient, configuration.MetadataUri, trustedHosts, cancellationToken);
+        if (primary.StatusCode is not (System.Net.HttpStatusCode.NotFound or System.Net.HttpStatusCode.Gone) ||
+            architecture is not ("x64" or "arm64" or "x86") ||
+            configuration.MetadataUri.IdnHost.Equals("github.com", StringComparison.OrdinalIgnoreCase))
+        {
+            return (primary, configuration.MetadataUri);
+        }
+
+        // Some Electron applications override autoUpdater.channel at runtime to an
+        // architecture/OS filename (for example latest-x64-win.yml) while leaving
+        // resources/app-update.yml on the default generic base URL.
+        try
+        {
+            foreach (var candidateName in new[] { $"{configuration.Channel}-{architecture}-win.yml", $"{configuration.Channel}-{architecture}.yml" })
+            {
+                var candidateUri = new Uri(configuration.DownloadBaseUri, candidateName);
+                var candidate = await ScopedUpdateHttp.GetAsync(httpClient, candidateUri, trustedHosts, cancellationToken);
+                if (candidate.StatusCode is not (System.Net.HttpStatusCode.NotFound or System.Net.HttpStatusCode.Gone))
+                {
+                    primary.Dispose();
+                    return (candidate, candidateUri);
+                }
+                candidate.Dispose();
+            }
+            return (primary, configuration.MetadataUri);
+        }
+        catch
+        {
+            primary.Dispose();
+            throw;
+        }
+    }
+
+    private static Uri? ResolveDownloadUri(UpdateConfiguration configuration, string artifactUrl, IReadOnlySet<string> hosts, bool allowVerifiedCdn = false)
     {
         if (Uri.TryCreate(artifactUrl, UriKind.Absolute, out var absolute))
         {
-            return ScopedUpdateHttp.IsPublicHttps(absolute) && hosts.Contains(absolute.IdnHost) ? absolute : null;
+            return ScopedUpdateHttp.IsPublicHttps(absolute) && (allowVerifiedCdn || hosts.Contains(absolute.IdnHost)) ? absolute : null;
         }
         return Uri.TryCreate(configuration.DownloadBaseUri, artifactUrl, out var relative) &&
             ScopedUpdateHttp.IsPublicHttps(relative) && hosts.Contains(relative.IdnHost)

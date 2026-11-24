@@ -9,7 +9,7 @@ This list names what Nax-Updater must never do. Every release report marks each 
 5. Nax-Updater must never report an update as successful when the installed version did not reach the target, or when a same-version repair did not change the package records it was meant to fix.
 6. Nax-Updater must never close or terminate a process that is not bound to the executable paths of the update it is running.
 7. Nax-Updater must never include a driver update in "Alle aktualisieren".
-8. Nax-Updater must never offer a release that the publisher has not released to this PC, or a beta to an installation that follows final releases.
+8. Nax-Updater must never offer an unverified release, or a beta to an installation that follows final releases.
 9. Nax-Updater must never let a lower-priority catalog (WinGet or Chocolatey) override a higher-priority source that reports the application as current.
 10. Nax-Updater must never remove an application without both confirmations, and never by deleting its folder.
 11. Nax-Updater must never delete files outside its own download cache, and never delete a cached driver package.

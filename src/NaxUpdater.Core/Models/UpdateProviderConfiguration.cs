@@ -27,7 +27,7 @@ public sealed class OfficialSiteRecipe
     public string? HashPattern { get; init; }
     public string HashAlgorithm { get; init; } = "sha256";
     public string HashEncoding { get; init; } = "hex";
-    // A vendor's staged rollout (electron-builder stagingPercentage) is honored.
+    // Optional pattern for reading a feed's rollout percentage (no longer holds back verified releases).
     public string? RolloutPattern { get; init; }
     public string? ReleaseNotesUrl { get; init; }
     public string ExpectedSigner { get; init; } = string.Empty;

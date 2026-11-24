@@ -7,7 +7,7 @@ namespace NaxUpdater.Core.Services;
 // the publisher lists its versions, where the installer and its published hash
 // are, and which signer to expect. Nothing is installed without the publisher's
 // hash; the signer is required too unless the publisher ships unsigned files.
-public sealed class OfficialSiteUpdateProvider(HttpClient httpClient, OfficialSiteRecipe recipe, string? appDataRoot = null) : IUpdateProvider
+public sealed class OfficialSiteUpdateProvider(HttpClient httpClient, OfficialSiteRecipe recipe) : IUpdateProvider
 {
     private static readonly TimeSpan PatternTimeout = TimeSpan.FromSeconds(2);
     internal TimeSpan VersionAttemptTimeout { get; init; } = TimeSpan.FromSeconds(12);
@@ -64,21 +64,6 @@ public sealed class OfficialSiteUpdateProvider(HttpClient httpClient, OfficialSi
 
         if (VersionOrder.Compare(version, installed) <= 0)
             return Result(application, version, UpdateStatus.Current, notes, $"The publisher's site lists {version} as its newest release.", null);
-
-        // A staged rollout is offered exactly when the application's own updater
-        // would offer it to this installation (see ElectronStagedRollout).
-        if (recipe.RolloutPattern is not null &&
-            Regex.Match(document, recipe.RolloutPattern, RegexOptions.CultureInvariant, PatternTimeout) is { Success: true } rollout &&
-            int.TryParse(rollout.Groups["percent"].Value, out var percent) && percent < 100 &&
-            ElectronStagedRollout.Position(application, appDataRoot) is var position &&
-            (position is null || !ElectronStagedRollout.Includes(percent, position.Value)))
-            return Result(application, installed, UpdateStatus.Current, notes,
-                ElectronStagedRollout.HeldMessage(version, percent, position), null,
-                UpdateApplicability.NotRequired, UpdateAvailabilityReason.StagedRollout) with
-            {
-                AnnouncedVersion = version,
-                RolloutThresholdPercent = ElectronStagedRollout.ThresholdPercent(position)
-            };
 
         if (recipe.LicenseAcceptanceRequired)
             return Result(application, version, UpdateStatus.NewerReleaseKnown, notes,

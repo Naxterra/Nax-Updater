@@ -327,9 +327,7 @@ public sealed class UpdateCheckService
         // nor turn it into an error. Chocolatey's "nodejs" offered 26.x over a
         // Node.js 22 LTS that nodejs.org confirmed current on its own line, and
         // Chocolatey's pinned wrapper held back a release nodejs.org already shipped.
-        // A publisher's staged rollout that has not reached this installation is
-        // reported as Current, so it settles the app the same way: no lower source
-        // may deliver the release early. Lower results stay visible in the source checks.
+        // Lower results stay visible in the source checks.
         var firstCurrent = Array.FindIndex(checks, c => c.Status == UpdateStatus.Current);
         var ranked = firstCurrent >= 0 ? firstCurrent + 1 : checks.Length;
         var available = Array.FindIndex(checks, 0, ranked, c => c.IsInstallable);
@@ -341,6 +339,16 @@ public sealed class UpdateCheckService
         var error = Array.FindIndex(checks, 0, ranked, c => c.Status == UpdateStatus.Error);
         if (queued >= 0) selectedIndex = queued;
         else if (!checks[selectedIndex].IsInstallable && error >= 0) selectedIndex = error;
+        else if (checks[selectedIndex] is { Status: UpdateStatus.Current, AvailabilityReason: UpdateAvailabilityReason.CatalogBehindInstalled } &&
+                 checkResults[selectedIndex].Provider.Descriptor.Authority == UpdateProviderAuthority.FallbackCatalog)
+        {
+            // A fallback catalog older than the installed version cannot confirm currency
+            // when a higher-authority official or installed-protocol source failed to verify.
+            var failedHigher = Array.FindIndex(checkResults, 0, selectedIndex,
+                c => c.Provider.Descriptor.Authority > UpdateProviderAuthority.FallbackCatalog &&
+                     c.Result.Status is UpdateStatus.Error or UpdateStatus.Unsupported);
+            if (failedHigher >= 0) selectedIndex = failedHigher;
+        }
         return checks[selectedIndex] with
         {
             SourceChecks = checkResults.Select(c =>

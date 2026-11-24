@@ -24,6 +24,9 @@ internal sealed class StoreSearchCache(string path, TimeProvider? time = null)
     public static string Key(string packageFamily, string installedVersion, string? catalogVersion) =>
         $"{packageFamily}|{installedVersion}|{catalogVersion ?? "-"}";
 
+    public static string UnresolvedKey(string packageFamily, string installedVersion) =>
+        $"unresolved:{packageFamily}|{installedVersion}";
+
     // When the cached search ran, if it still stands.
     public DateTimeOffset? FindNoUpdate(string key)
     {

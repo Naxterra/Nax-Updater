@@ -55,7 +55,7 @@ public sealed class StorePackageDeploymentService : IStorePackageDeploymentServi
         await _catalogQuerySlots.WaitAsync(cancellationToken);
         try
         {
-            var identity = await ResolveAsync(
+            var (identity, resolveError, cacheableMiss) = await ResolveDetailedAsync(
                 packageFamilyName,
                 installedDisplayName,
                 installedPublisher,
@@ -63,7 +63,8 @@ public sealed class StorePackageDeploymentService : IStorePackageDeploymentServi
             if (identity is null)
             {
                 return new StoreUpdateAvailability(false, false, null, null,
-                    LastError ?? "No exact Microsoft Store product matched the installed package family.");
+                    resolveError ?? "No exact Microsoft Store product matched the installed package family.",
+                    IsCacheableUnresolved: cacheableMiss);
             }
 
             var (_, catalog) = await GetStoreUpdateConnectionAsync(cancellationToken);
@@ -102,7 +103,8 @@ public sealed class StorePackageDeploymentService : IStorePackageDeploymentServi
             if (package is null)
             {
                 return new StoreUpdateAvailability(false, false, null, null,
-                    "No exact Store catalog product was correlated with the installed package family.");
+                    "No exact Store catalog product was correlated with the installed package family.",
+                    IsCacheableUnresolved: true);
             }
 
             var isUpdateAvailable = package.IsUpdateAvailable;
@@ -130,9 +132,20 @@ public sealed class StorePackageDeploymentService : IStorePackageDeploymentServi
         string? installedPublisher,
         CancellationToken cancellationToken)
     {
+        var (identity, error, _) = await ResolveDetailedAsync(packageFamilyName, installedDisplayName, installedPublisher, cancellationToken);
+        LastError = error;
+        return identity;
+    }
+
+    private async Task<(StoreCatalogIdentity? Identity, string? Error, bool CacheableMiss)> ResolveDetailedAsync(
+        string packageFamilyName,
+        string? installedDisplayName,
+        string? installedPublisher,
+        CancellationToken cancellationToken)
+    {
         if (string.IsNullOrWhiteSpace(packageFamilyName))
         {
-            return null;
+            return (null, "The installed package family is missing.", false);
         }
         try
         {
@@ -140,6 +153,7 @@ public sealed class StorePackageDeploymentService : IStorePackageDeploymentServi
             CatalogPackage? resolved = null;
             CatalogPackage? metadataFallback = null;
             var diagnostics = new List<string>();
+            var hadCatalogError = false;
             var familyOptions = new FindPackagesOptions { ResultLimit = 5 };
             familyOptions.Selectors.Add(new PackageMatchFilter
             {
@@ -160,6 +174,10 @@ public sealed class StorePackageDeploymentService : IStorePackageDeploymentServi
                     }
                 }
             }
+            else
+            {
+                hadCatalogError = true;
+            }
             foreach (var query in SearchCandidates(packageFamilyName, installedDisplayName))
             {
                 if (resolved is not null)
@@ -176,6 +194,7 @@ public sealed class StorePackageDeploymentService : IStorePackageDeploymentServi
                 var result = await catalog.FindPackagesAsync(options).AsTask(cancellationToken);
                 if (result.Status != FindPackagesResultStatus.Ok)
                 {
+                    hadCatalogError = true;
                     diagnostics.Add($"{query}:{result.Status}");
                     continue;
                 }
@@ -204,8 +223,9 @@ public sealed class StorePackageDeploymentService : IStorePackageDeploymentServi
                     }
                     if (resolved is not null && !resolved.Id.Equals(package.Id, StringComparison.OrdinalIgnoreCase))
                     {
-                        LastError = $"Multiple Store products expose package family {packageFamilyName}.";
-                        return null;
+                        var error = $"Multiple Store products expose package family {packageFamilyName}.";
+                        LastError = error;
+                        return (null, error, false);
                     }
                     resolved = package;
                 }
@@ -217,19 +237,21 @@ public sealed class StorePackageDeploymentService : IStorePackageDeploymentServi
             resolved ??= metadataFallback;
             if (resolved is null)
             {
-                LastError = $"Store search found no product exposing package family {packageFamilyName}. {string.Join(" | ", diagnostics)}";
-                return null;
+                var error = $"Store search found no product exposing package family {packageFamilyName}. {string.Join(" | ", diagnostics)}";
+                LastError = error;
+                return (null, error, !hadCatalogError);
             }
-            return new StoreCatalogIdentity(
+            return (new StoreCatalogIdentity(
                 resolved.Id,
                 resolved.Name,
                 packageFamilyName,
-                Contains(resolved.DefaultInstallVersion.PackageFamilyNames, packageFamilyName));
+                Contains(resolved.DefaultInstallVersion.PackageFamilyNames, packageFamilyName)), null, false);
         }
         catch (Exception exception)
         {
-            LastError = exception.ToString();
-            return null;
+            var error = exception.ToString();
+            LastError = error;
+            return (null, error, false);
         }
     }
 
@@ -522,4 +544,5 @@ public sealed record StoreUpdateAvailability(
     bool IsUpdateAvailable,
     string? ProductId,
     string? AvailableVersion,
-    string? Error);
+    string? Error,
+    bool IsCacheableUnresolved = false);
