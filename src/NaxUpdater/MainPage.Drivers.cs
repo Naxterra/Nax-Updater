@@ -8,8 +8,15 @@ namespace NaxUpdater;
 
 public sealed partial class MainPage
 {
+    private ManufacturerDriverRow? _detailsDriverRow;
+
     private void ApplyDriverFilter()
     {
+        if (_lastDriverSnapshot is null && _allDrivers.Count == 0)
+        {
+            DriverCountText.Text = LocalizationService.Get("NotCheckedLabel");
+            return;
+        }
         var selectedIdentity = (DriversList.SelectedItem as ManufacturerDriverRow)?.Source.Driver.Identity;
         var filter = FilterBox.Text.Trim();
         var statusFilter = (DriverStatusFilter.SelectedItem as ComboBoxItem)?.Tag?.ToString() ?? "all";
@@ -55,6 +62,7 @@ public sealed partial class MainPage
         if (DriversList is not null && DriverCountText is not null)
         {
             ApplyDriverFilter();
+            RefreshKpiCards();
         }
     }
 
@@ -116,13 +124,74 @@ public sealed partial class MainPage
         {
             return;
         }
-        InventoryWorkspace.Visibility = Visibility.Collapsed;
-        UpdatesWorkspace.Visibility = Visibility.Collapsed;
-        DriversWorkspace.Visibility = Visibility.Visible;
-        ConfigureDriverHeader();
-        FilterBox.IsEnabled = true;
-        ShowSystemComponentsCheckBox.IsEnabled = false;
+        SwitchWorkspace(WorkspaceTab.Drivers);
         await CheckManufacturerDriversAsync(reuseScan: true);
+    }
+
+    private void DetailsDriverRow_PropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
+    {
+        if (sender is not ManufacturerDriverRow row || !ReferenceEquals(row, _detailsDriverRow)) return;
+        if (e.PropertyName == nameof(ManufacturerDriverRow.CanAct))
+        {
+            DriverInspectorActionButton.IsEnabled = row.CanAct;
+        }
+    }
+
+    private void DriversList_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (_detailsDriverRow is not null) _detailsDriverRow.PropertyChanged -= DetailsDriverRow_PropertyChanged;
+        _detailsDriverRow = DriversList.SelectedItem as ManufacturerDriverRow;
+        if (_detailsDriverRow is not null) _detailsDriverRow.PropertyChanged += DetailsDriverRow_PropertyChanged;
+        if (DriversList.SelectedItem is not ManufacturerDriverRow row)
+        {
+            DriverDetailsPlaceholder.Visibility = Visibility.Visible;
+            DriverDetailsContent.Visibility = Visibility.Collapsed;
+            return;
+        }
+
+        DriverDetailsPlaceholder.Visibility = Visibility.Collapsed;
+        DriverDetailsContent.Visibility = Visibility.Visible;
+        DriverDetailNameText.Text = row.Name;
+        DriverDetailStatusText.Text = $"{row.Provider} · {row.Status}";
+        DriverInspectorActionButton.Content = row.ActionText;
+        DriverInspectorActionButton.Visibility = row.ActionVisibility;
+        DriverInspectorActionButton.IsEnabled = row.CanAct;
+        DriverDetailVersionText.Text = row.Available == "—"
+            ? LocalizationService.Format("InstalledFormat", row.Installed)
+            : LocalizationService.Format("VersionChangeFormat", row.Installed, row.Available);
+        DriverDetailHardwareIdText.Text = row.HardwareIdDetail;
+        DriverDetailInfText.Text = row.InfAndDateDetail;
+        if (row.SourceUri is { } sourceUri)
+        {
+            DriverDetailSourceLink.Tag = sourceUri;
+            DriverDetailSourceLinkText.Text = row.SourceUrlText;
+            DriverDetailSourceLink.Visibility = Visibility.Visible;
+            DriverDetailSourceText.Visibility = Visibility.Collapsed;
+        }
+        else
+        {
+            DriverDetailSourceLink.Tag = null;
+            DriverDetailSourceLink.Visibility = Visibility.Collapsed;
+            DriverDetailSourceText.Text = row.SourceUrlText;
+            DriverDetailSourceText.Visibility = Visibility.Visible;
+        }
+        DriverDetailNotesText.Text = row.NotesDetail;
+    }
+
+    private async void DriverInspectorActionButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (DriversList.SelectedItem is ManufacturerDriverRow row)
+        {
+            await ExecuteDriverActionAsync(row);
+        }
+    }
+
+    private async void DriverDetailSourceLink_Click(object sender, RoutedEventArgs e)
+    {
+        if (DriverDetailSourceLink.Tag is Uri page)
+        {
+            await OpenInBrowserAsync(page);
+        }
     }
 
     // Opening the driver view shows the latest scan's driver check while it is fresh; "check
@@ -176,17 +245,21 @@ public sealed partial class MainPage
             var checkedPackages = snapshot.CheckedSourceCount;
             var available = direct + manufacturerDownloads;
             UpdateDriverSummary(snapshot, checkedPackages, direct);
-            UpdateBar.Title = available == 0
+            var statusSummary = available == 0
                 ? LocalizationService.Format("DriversCheckedNoUpdates", checkedPackages)
                 : LocalizationService.Format("DriverUpdatesAvailable", direct, manufacturerDownloads);
-            UpdateBar.Message = snapshot.CheckIssueCount == 0
-                ? LocalizationService.Get("ManufacturerDriverSafety")
-                : LocalizationService.Format("DriverScanIssues", snapshot.CheckIssueCount);
-            UpdateBar.Severity = snapshot.CheckIssueCount > 0
-                ? InfoBarSeverity.Warning
-                : available > 0 ? InfoBarSeverity.Success : InfoBarSeverity.Informational;
-            UpdateBar.IsOpen = true;
-            StatusText.Text = UpdateBar.Title;
+            StatusText.Text = statusSummary;
+            if (snapshot.CheckIssueCount > 0)
+            {
+                UpdateBar.Title = statusSummary;
+                UpdateBar.Message = LocalizationService.Format("DriverScanIssues", snapshot.CheckIssueCount);
+                UpdateBar.Severity = InfoBarSeverity.Warning;
+                UpdateBar.IsOpen = true;
+            }
+            else
+            {
+                UpdateBar.IsOpen = false;
+            }
         }
         catch (OperationCanceledException) when (token.IsCancellationRequested) { throw; }
         catch (Exception exception)
@@ -201,15 +274,24 @@ public sealed partial class MainPage
 
     private void UpdateDriverSummary(ManufacturerDriverSnapshot snapshot, int checkedPackages, int installableUpdates)
     {
-        DetectedCountText.Text = snapshot.Results.Count.ToString("N0");
-        VersionCountText.Text = checkedPackages.ToString("N0");
-        PathCountText.Text = installableUpdates.ToString("N0");
-        GuardCountText.Text = snapshot.CheckIssueCount.ToString("N0");
+        UpdateNavBadges();
+        if (_activeTab == WorkspaceTab.Drivers)
+        {
+            RefreshKpiCards();
+        }
     }
 
     private async void DriverRowButton_Click(object sender, RoutedEventArgs e)
     {
-        if (_updateBusy || _massUpdateBusy || _restartPending || sender is not Button { DataContext: ManufacturerDriverRow row })
+        if (sender is Button { DataContext: ManufacturerDriverRow row })
+        {
+            await ExecuteDriverActionAsync(row);
+        }
+    }
+
+    private async Task ExecuteDriverActionAsync(ManufacturerDriverRow row)
+    {
+        if (_updateBusy || _massUpdateBusy || _restartPending)
         {
             return;
         }
@@ -229,8 +311,8 @@ public sealed partial class MainPage
         _lastDriverSnapshot = null;
         _driversCheckedAt = null;
         SetUpdateBusy(true, LocalizationService.Format("RevalidatingUpdate", row.Name));
-        DriverProgress.Visibility = Visibility.Visible;
-        DriverProgress.IsIndeterminate = true;
+        OperationProgressBar.Visibility = Visibility.Visible;
+        OperationProgressBar.IsIndeterminate = true;
         try
         {
             var cacheRoot = Path.Combine(
@@ -239,10 +321,10 @@ public sealed partial class MainPage
                 "DriverDownloads");
             var progress = new Progress<UpdateTransactionProgress>(state =>
             {
-                DriverProgress.IsIndeterminate = state.Fraction is null;
+                OperationProgressBar.IsIndeterminate = state.Fraction is null;
                 if (state.Fraction is double fraction)
                 {
-                    DriverProgress.Value = Math.Clamp(fraction * 100, 0, 100);
+                    OperationProgressBar.Value = Math.Clamp(fraction * 100, 0, 100);
                 }
                 StatusText.Text = state.Stage switch
                 {
@@ -299,8 +381,8 @@ public sealed partial class MainPage
                 UpdateBar.Severity = outcomeSeverity;
                 UpdateBar.IsOpen = true;
                 StatusText.Text = outcomeTitle;
-                DriverProgress.Visibility = Visibility.Collapsed;
-                DriverProgress.IsIndeterminate = false;
+                OperationProgressBar.Visibility = Visibility.Collapsed;
+                OperationProgressBar.IsIndeterminate = false;
                 SetUpdateBusy(false, null);
                 EndMutation();
             }

@@ -21,6 +21,7 @@ internal static class SecurityHardeningRegression
         await stale_fallback_catalog_does_not_mask_failed_higher_authority_feed(assert);
         await unresolved_non_store_msix_packages_are_cached_without_repeating_store_search(assert, fixture);
         await antigravity_official_recipe_matches_live_manifest_format(assert);
+        await explicit_official_recipe_outranks_failing_generic_electron_metadata(assert, fixture);
     }
 
     private static void programdata_protected_subfolder_is_accepted_despite_ancestor_write_attributes(
@@ -331,6 +332,90 @@ internal static class SecurityHardeningRegression
                result.ExecutionPlan.Sha512 == shaHex &&
                result.ExecutionPlan.DownloadUri?.Host == "storage.googleapis.com",
             "Google.Antigravity recipe did not produce a SHA-512 and Google LLC verified update plan.");
+    }
+
+    private static async Task explicit_official_recipe_outranks_failing_generic_electron_metadata(
+        Action<bool, string> assert, string fixture)
+    {
+        // Reproduces the Antigravity case: installed app has an app-update.yml without
+        // publisherName and an unsigned main binary, so generic ElectronBuilderUpdateProvider
+        // blocks installation with UpdateStatus.Error. An explicit reviewed official recipe
+        // (ProducerRelease, priority 95) must outrank generic app-update.yml discovery
+        // (ProducerRelease, priority 80) and offer the verified update cleanly.
+        var dir = Directory.CreateDirectory(Path.Combine(fixture, "electron-vs-official")).FullName;
+        var resources = Directory.CreateDirectory(Path.Combine(dir, "resources")).FullName;
+        var exe = Path.Combine(dir, "Antigravity.exe");
+        var pe = new byte[0x90];
+        pe[0] = (byte)'M';
+        pe[1] = (byte)'Z';
+        BinaryPrimitives.WriteInt32LittleEndian(pe.AsSpan(0x3c, 4), 0x80);
+        BinaryPrimitives.WriteUInt32LittleEndian(pe.AsSpan(0x80, 4), 0x00004550);
+        BinaryPrimitives.WriteUInt16LittleEndian(pe.AsSpan(0x84, 2), 0x8664);
+        File.WriteAllBytes(exe, pe);
+        File.WriteAllText(Path.Combine(resources, "app-update.yml"),
+            "provider: generic\nurl: https://antigravity-hub-auto-updater-974169037036.us-central1.run.app/manifest/\n");
+
+        var catalogPath = Path.Combine(AppContext.BaseDirectory, "Configuration", "update-providers.json");
+        var catalog = await UpdateProviderCatalogLoader.LoadAsync(catalogPath);
+        var recipe = catalog.Official.Single(r => r.Id == "Google.Antigravity");
+
+        var shaBytes = Enumerable.Repeat((byte)0x4d, 64).ToArray();
+        var shaBase64 = Convert.ToBase64String(shaBytes);
+        var body =
+            "version: 2.35.1\r\nfiles:\r\n  - url: https://storage.googleapis.com/antigravity-public/antigravity-hub/2.35.1-123/windows-x64/Antigravity-x64.exe\r\n" +
+            $"    sha512: {shaBase64}\r\n    size: 170272672\r\npath: Antigravity-x64.exe\r\nsha512: {shaBase64}\r\n";
+        using var http = new HttpClient(new StubHandler(req =>
+            req.RequestUri!.AbsoluteUri.EndsWith("latest-x64-win.yml", StringComparison.OrdinalIgnoreCase)
+                ? new HttpResponseMessage(HttpStatusCode.OK) { RequestMessage = req, Content = new StringContent(body, Encoding.UTF8, "text/yaml") }
+                : new HttpResponseMessage(HttpStatusCode.NotFound) { RequestMessage = req }));
+
+        var app = new InstalledApplication("fixture:ag-priority", "Antigravity 2.35.0", "Google", "2.35.0", "2.35.0",
+            "fixture", exe, "fixture", null, null, InstallScope.CurrentUser, ManagementMode.Registry, ConfidenceLevel.High, false, [], null, []);
+        var electronProvider = new ElectronBuilderUpdateProvider(http);
+        var officialProvider = new OfficialSiteUpdateProvider(http, recipe);
+
+        assert(officialProvider.Descriptor.Authority == UpdateProviderAuthority.ProducerRelease &&
+               electronProvider.Descriptor.Authority == UpdateProviderAuthority.ProducerRelease &&
+               officialProvider.Descriptor.Specificity > electronProvider.Descriptor.Specificity,
+            "Explicit OfficialSiteUpdateProvider must outrank generic ElectronBuilderUpdateProvider.");
+
+        var snapshot = await new UpdateCheckService([electronProvider, officialProvider])
+            .CheckAsync(new(DateTimeOffset.UtcNow, [app], [], []));
+        var selected = snapshot.Results.Single();
+        assert(selected.Status == UpdateStatus.Available &&
+               selected.ProviderId == "official:Google.Antigravity" &&
+               selected.AvailableVersion == "2.35.1" &&
+               selected.IsInstallable &&
+               selected.ExecutionPlan is { ExpectedSigner: "Google LLC" },
+            $"Expected official:Google.Antigravity Available update, got {selected.ProviderId} ({selected.Status}): {selected.Message}");
+
+        // Once already at 2.35.1, official:Google.Antigravity confirms Current and skips
+        // generic app-update.yml probing cleanly.
+        var currentApp = app with { DisplayName = "Antigravity 2.35.1", InstalledVersion = "2.35.1", NormalizedVersion = "2.35.1" };
+        var currentSnapshot = await new UpdateCheckService([electronProvider, officialProvider])
+            .CheckAsync(new(DateTimeOffset.UtcNow, [currentApp], [], []));
+        var currentResult = currentSnapshot.Results.Single();
+        assert(currentResult.Status == UpdateStatus.Current &&
+               currentResult.ProviderId == "official:Google.Antigravity" &&
+               (currentResult.SourceChecks?.All(s => s.ProviderId != electronProvider.Id) ?? true),
+            $"Expected official:Google.Antigravity Current without generic Electron fallback, got {currentResult.ProviderId} ({currentResult.Status}).");
+
+        // When a higher-specificity official provider reports NewerReleaseKnown (for example
+        // manual install or license acceptance), a failing skippable generic Electron feed
+        // must not override it with UpdateStatus.Error.
+        var knownOfficial = new StubProvider("official:Google.Antigravity",
+            new(UpdateProviderAuthority.ProducerRelease, 95, "fixture"),
+            new UpdateCheckResult(app.Identity, app.DisplayName, app.NormalizedVersion, "2.35.1",
+                UpdateStatus.NewerReleaseKnown, "official:Google.Antigravity", "Official site",
+                "neutral", "fixture", "x64", "stable", null, "Manual release.", null,
+                AvailabilityReason: UpdateAvailabilityReason.ManualReleaseInstall));
+        var knownSnapshot = await new UpdateCheckService([electronProvider, knownOfficial])
+            .CheckAsync(new(DateTimeOffset.UtcNow, [app], [], []));
+        var knownResult = knownSnapshot.Results.Single();
+        assert(knownResult.Status == UpdateStatus.NewerReleaseKnown &&
+               knownResult.ProviderId == "official:Google.Antigravity" &&
+               (knownResult.SourceChecks?.All(s => s.ProviderId != electronProvider.Id) ?? true),
+            $"Expected official:Google.Antigravity NewerReleaseKnown without generic Electron override, got {knownResult.ProviderId} ({knownResult.Status}).");
     }
 
     private sealed class StubHandler(Func<HttpRequestMessage, HttpResponseMessage> respond) : HttpMessageHandler

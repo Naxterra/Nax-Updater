@@ -164,6 +164,8 @@ public sealed class UpdateRow : INotifyPropertyChanged
     private UpdateRunState _runState;
     private string? _runMessage;
     private bool _actionsLocked;
+    private double _progressValue;
+    private bool _isProgressIndeterminate = true;
 
     public UpdateRow(UpdateCheckResult source, ApplicationRow? application = null, TableColumnLayout? layout = null)
     {
@@ -181,9 +183,49 @@ public sealed class UpdateRow : INotifyPropertyChanged
         {
             if (_runState == value) return;
             _runState = value;
-            Notify(nameof(RunState), nameof(Status), nameof(StatusForeground), nameof(StatusBackground));
+            Notify(nameof(RunState), nameof(Status), nameof(StatusForeground), nameof(StatusBackground), nameof(IsUpdating), nameof(InlineProgressVisibility));
         }
     }
+
+    public bool IsUpdating => RunState is UpdateRunState.Preparing or UpdateRunState.Closing or UpdateRunState.Installing or UpdateRunState.Verifying;
+    public Visibility InlineProgressVisibility => IsUpdating ? Visibility.Visible : Visibility.Collapsed;
+
+    public double ProgressValue
+    {
+        get => _progressValue;
+        private set
+        {
+            if (Math.Abs(_progressValue - value) < 0.2) return;
+            _progressValue = value;
+            Notify(nameof(ProgressValue));
+        }
+    }
+
+    public bool IsProgressIndeterminate
+    {
+        get => _isProgressIndeterminate;
+        private set
+        {
+            if (_isProgressIndeterminate == value) return;
+            _isProgressIndeterminate = value;
+            Notify(nameof(IsProgressIndeterminate));
+        }
+    }
+
+    public void SetProgress(double? fraction)
+    {
+        IsProgressIndeterminate = fraction is null;
+        if (fraction is double value)
+        {
+            ProgressValue = Math.Clamp(value * 100, 0, 100);
+        }
+    }
+
+    public Brush AvailableForeground => Source.Status is UpdateStatus.Available or UpdateStatus.NewerReleaseKnown
+        ? PresentationBrushes.Get("NaxGreenBrush")
+        : PresentationBrushes.Get("NaxBlueBrush");
+
+    public bool HasInstallPath => !string.IsNullOrWhiteSpace(Application?.Source.PrimaryInstallPath);
 
     // Why an update did not complete; shown above the provider notes.
     public string? RunMessage
@@ -337,7 +379,7 @@ public sealed class TableColumnLayout(string name, double[] defaults) : INotifyP
     public GridLength ThirdWidth => new(_widths[2]);
     public GridLength FourthWidth => new(_widths[3]);
     public GridLength FifthWidth => new(_widths.Length > 4 ? _widths[4] : 0);
-    public double TableWidth => _widths.Sum() + 6 * (_widths.Length - 1) + 28;
+    public double TableWidth => _widths.Sum() + 10 * (_widths.Length - 1) + 28;
     public event PropertyChangedEventHandler? PropertyChanged;
     public void Synchronize(params double[] widths)
     {
@@ -376,7 +418,7 @@ public sealed class DriverColumnLayout : INotifyPropertyChanged
     public GridLength StatusWidth { get => _statusWidth; private set => Set(ref _statusWidth, value); }
     public GridLength ActionWidth { get => _actionWidth; private set => Set(ref _actionWidth, value); }
     public double TableWidth => NameWidth.Value + InstalledWidth.Value + AvailableWidth.Value +
-                                SourceWidth.Value + StatusWidth.Value + ActionWidth.Value + 6 * 5 + 28;
+                                SourceWidth.Value + StatusWidth.Value + ActionWidth.Value + 10 * 5 + 28;
 
     public void Synchronize(double name, double installed, double available, double source, double status, double action)
     {
@@ -511,6 +553,57 @@ public sealed class ManufacturerDriverRow(ManufacturerDriverResult source, Drive
         ManufacturerDriverStatus.NoVerifiedCatalog => "NaxPurpleCardBrush",
         _ => "NaxPinkCardBrush"
     });
+    public string HardwareIdDetail => string.IsNullOrWhiteSpace(Source.Driver.HardwareId) ? LocalizationService.Get("Unknown") : Source.Driver.HardwareId;
+    public string InfAndDateDetail => string.Join(" · ", new[] { Source.Driver.InfName, Source.Driver.DriverDate }.Where(static v => !string.IsNullOrWhiteSpace(v))) is { Length: > 0 } combined
+        ? combined : LocalizationService.Get("Unknown");
+    public string NotesDetail => string.IsNullOrWhiteSpace(Source.Message) ? LocalizationService.Get("NoAdditionalNotes") : LocalizationService.Text(Source.Message);
+    public Uri? SourceUri => Source.SourceUri;
+    public string SourceUrlText => Source.SourceUri?.AbsoluteUri ?? LocalizationService.Get("NotProvided");
+    public bool HasSourceUrl => Source.SourceUri is not null;
+}
+
+public sealed class SourceCheckRow
+{
+    public SourceCheckRow(UpdateSourceCheck source)
+    {
+        ProviderName = LocalizationService.ProviderName(source.ProviderId, source.ProviderDisplayName);
+        StatusText = source.Status is UpdateStatus.ManagedExternally or UpdateStatus.Unsupported
+            ? LocalizationService.Get("StatusNotChecked")
+            : UpdateRow.StatusText(source.Status, source.AvailabilityReason, source.RolloutThresholdPercent);
+        VersionText = string.IsNullOrWhiteSpace(source.AvailableVersion) ? string.Empty : source.AvailableVersion;
+        VersionVisibility = string.IsNullOrWhiteSpace(source.AvailableVersion) ? Visibility.Collapsed : Visibility.Visible;
+        DurationText = source.ElapsedMilliseconds is { } ms ? LocalizationService.Format("SourceCheckDurationFormat", ms) : string.Empty;
+        DurationVisibility = source.ElapsedMilliseconds is not null ? Visibility.Visible : Visibility.Collapsed;
+        Message = string.IsNullOrWhiteSpace(source.Message) ? string.Empty : LocalizationService.Text(source.Message);
+        MessageVisibility = string.IsNullOrWhiteSpace(Message) ? Visibility.Collapsed : Visibility.Visible;
+        StatusForeground = PresentationBrushes.Get(source.Status switch
+        {
+            UpdateStatus.Available => "NaxOrangeBrush",
+            UpdateStatus.Current => "NaxGreenBrush",
+            UpdateStatus.NewerReleaseKnown or UpdateStatus.StoreQueued => "NaxBlueBrush",
+            UpdateStatus.Error => "NaxPinkBrush",
+            _ => "NaxPurpleBrush"
+        });
+        StatusBackground = PresentationBrushes.Get(source.Status switch
+        {
+            UpdateStatus.Available => "NaxOrangeCardBrush",
+            UpdateStatus.Current => "NaxGreenCardBrush",
+            UpdateStatus.NewerReleaseKnown or UpdateStatus.StoreQueued => "NaxBlueCardBrush",
+            UpdateStatus.Error => "NaxPinkCardBrush",
+            _ => "NaxPurpleCardBrush"
+        });
+    }
+
+    public string ProviderName { get; }
+    public string StatusText { get; }
+    public string VersionText { get; }
+    public Visibility VersionVisibility { get; }
+    public string DurationText { get; }
+    public Visibility DurationVisibility { get; }
+    public string Message { get; }
+    public Visibility MessageVisibility { get; }
+    public Brush StatusForeground { get; }
+    public Brush StatusBackground { get; }
 }
 
 internal static class PresentationBrushes

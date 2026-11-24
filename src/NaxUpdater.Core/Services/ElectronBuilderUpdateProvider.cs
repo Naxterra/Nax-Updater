@@ -11,10 +11,11 @@ public sealed partial class ElectronBuilderUpdateProvider(HttpClient httpClient)
 
     public string Id => "installed-updater-metadata";
     public UpdateProviderDescriptor Descriptor { get; } = new(
-        UpdateProviderAuthority.InstalledUpdateProtocol,
+        UpdateProviderAuthority.ProducerRelease,
         80,
         "Updater metadata installed with the application",
-        [ManagementMode.Unmanaged, ManagementMode.Registry, ManagementMode.WindowsInstaller, ManagementMode.DirectVendor]);
+        [ManagementMode.Unmanaged, ManagementMode.Registry, ManagementMode.WindowsInstaller, ManagementMode.DirectVendor],
+        SkippableAfterHigherSiblingResolves: true);
 
     public bool CanHandle(InstalledApplication application) => GetConfiguration(application) is not null;
 

@@ -14,6 +14,11 @@ public sealed partial class MainPage
 
     private void ApplyUpdateFilter()
     {
+        if (_lastCheckSnapshot is null && _allUpdates.Count == 0)
+        {
+            UpdateCountText.Text = LocalizationService.Get("NotCheckedLabel");
+            return;
+        }
         var selectedIdentity = _userSelectedUpdate
             ? (UpdatesList.SelectedItem as UpdateRow)?.Source.ApplicationIdentity
             : null;
@@ -59,6 +64,7 @@ public sealed partial class MainPage
         if (UpdatesList is not null && UpdateCountText is not null)
         {
             ApplyUpdateFilter();
+            RefreshKpiCards();
         }
     }
 
@@ -166,10 +172,8 @@ public sealed partial class MainPage
         _availableUpdateCount = snapshot.InstallableUpdateCount;
         ApplyUpdateFilter();
         RefreshMassUpdateButton();
-        ShowUpdatesButton.Content = LocalizationService.Format("UpdatesNavigationCoverage",
-            snapshot.InstallableUpdateCount + snapshot.KnownReleaseCount,
-            snapshot.CheckedVersionCount, _snapshot?.Applications.Count(a => !a.IsSystemComponent) ?? snapshot.Results.Count);
-        ShowUpdatesButton.IsEnabled = _allUpdates.Count > 0;
+        UpdateNavBadges();
+        RefreshKpiCards();
         RefreshRetryButton();
     }
 
@@ -256,18 +260,21 @@ public sealed partial class MainPage
             PublishUpdateResults(result);
             if (showWorkspace) ShowUpdatesWorkspace();
             var errors = result.FailedCheckCount;
-            StatusText.Text = LocalizationService.Format("UpdateCheckedStatusDetailed", result.CheckedVersionCount,
+            var summary = LocalizationService.Format("UpdateCheckedStatusDetailed", result.CheckedVersionCount,
                 result.InstallableUpdateCount, result.ManagedExternallyCount, result.UnsupportedApplicationCount,
                 errors, result.KnownReleaseCount);
-            UpdateBar.Title = result.InstallableUpdateCount > 0
-                ? LocalizationService.Format("UpdatesAvailableTitle", result.InstallableUpdateCount)
-                : result.StoreQueueCount > 0 ? LocalizationService.Format("StoreQueueTitle", result.StoreQueueCount)
-                : result.KnownReleaseCount > 0 ? LocalizationService.Format("ReleasesKnownTitle", result.KnownReleaseCount)
-                : LocalizationService.Get(result.AllCurrent ? "ApplicationsCurrent" : errors > 0 ? "ChecksIncomplete" : "NoUpdatesAmongChecked");
-            UpdateBar.Message = StatusText.Text;
-            StatusText.Text += $" · {checkTimer.Elapsed.TotalSeconds:N1} s";
-            UpdateBar.Severity = errors > 0 ? InfoBarSeverity.Warning : result.InstallableUpdateCount > 0 ? InfoBarSeverity.Success : InfoBarSeverity.Informational;
-            UpdateBar.IsOpen = true;
+            StatusText.Text = $"{summary} · {checkTimer.Elapsed.TotalSeconds:N1} s";
+            if (errors > 0)
+            {
+                UpdateBar.Title = LocalizationService.Get("ChecksIncomplete");
+                UpdateBar.Message = summary;
+                UpdateBar.Severity = InfoBarSeverity.Warning;
+                UpdateBar.IsOpen = true;
+            }
+            else
+            {
+                UpdateBar.IsOpen = false;
+            }
         }
         catch (OperationCanceledException) when (token.IsCancellationRequested)
         {
@@ -327,6 +334,8 @@ public sealed partial class MainPage
             UpdateProviderText.Text = $"{row.Provider} · {row.Status}";
         if (e.PropertyName is nameof(UpdateRow.Message) or nameof(UpdateRow.RunMessage))
             UpdateMessageText.Text = row.Message;
+        if (e.PropertyName is nameof(UpdateRow.CanAct) or nameof(UpdateRow.ActionsLocked))
+            UpdateInspectorActionButton.IsEnabled = row.CanAct;
     }
 
     private void UpdatesList_SelectionChanged(object sender, SelectionChangedEventArgs e)
@@ -348,13 +357,16 @@ public sealed partial class MainPage
         UpdateNameText.Text = row.Name;
         UpdateProviderText.Text = $"{row.Provider} · {row.Status}";
         UpdateVersionText.Text = row.VersionChange;
-        UpdateSourcesText.Text = string.Join(Environment.NewLine, (row.Source.SourceChecks ?? []).Select(source =>
-            $"{LocalizationService.Text(source.ProviderDisplayName)}: {(source.Status is UpdateStatus.ManagedExternally or UpdateStatus.Unsupported ? LocalizationService.Get("StatusNotChecked") : UpdateRow.StatusText(source.Status, source.AvailabilityReason, source.RolloutThresholdPercent))}"));
+        UpdateInspectorActionButton.Content = row.UpdateActionText;
+        UpdateInspectorActionButton.Visibility = row.UpdateActionVisibility;
+        UpdateInspectorActionButton.IsEnabled = row.CanAct;
+        UpdateInspectorRetryButton.IsEnabled = !_updateBusy && !_massUpdateBusy && _snapshot is not null;
+        UpdateInspectorFolderButton.Visibility = row.HasInstallPath ? Visibility.Visible : Visibility.Collapsed;
+        Grid.SetColumnSpan(UpdateInspectorRetryButton, row.HasInstallPath ? 1 : 2);
+        UpdateSourcesItems.ItemsSource = (row.Source.SourceChecks ?? []).Select(static source => new SourceCheckRow(source)).ToArray();
         UpdatePlatformText.Text = row.PlatformDetail;
         UpdateSecurityText.Text = row.SecurityDetail;
-        if (Uri.TryCreate(row.Source.ReleaseNotesUrl, UriKind.Absolute, out var releaseUri) &&
-            (releaseUri.Scheme == Uri.UriSchemeHttps || releaseUri.Scheme == Uri.UriSchemeHttp ||
-             releaseUri.Scheme.Equals("ms-windows-store", StringComparison.OrdinalIgnoreCase)))
+        if (TryGetReleaseUri(row, out var releaseUri))
         {
             UpdateReleaseLink.Tag = releaseUri;
             UpdateReleaseLinkText.Text = releaseUri.AbsoluteUri;
@@ -371,15 +383,192 @@ public sealed partial class MainPage
         UpdateMessageText.Text = row.Message;
     }
 
-    private async void UpdateRowButton_Click(object sender, RoutedEventArgs e)
+    private static bool TryGetReleaseUri(UpdateRow row, out Uri uri)
     {
-        if (!_checksComplete || _updateBusy || _massUpdateBusy || _restartPending || sender is not Button { DataContext: UpdateRow row } ||
+        if (Uri.TryCreate(row.Source.ReleaseNotesUrl, UriKind.Absolute, out var parsed) &&
+            (parsed.Scheme == Uri.UriSchemeHttps || parsed.Scheme == Uri.UriSchemeHttp ||
+             parsed.Scheme.Equals("ms-windows-store", StringComparison.OrdinalIgnoreCase)))
+        {
+            uri = parsed;
+            return true;
+        }
+        uri = null!;
+        return false;
+    }
+
+    private async void UpdateInspectorActionButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (UpdatesList.SelectedItem is UpdateRow row)
+        {
+            await StartSingleUpdateAsync(row);
+        }
+    }
+
+    private async void UpdateInspectorRetryButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (UpdatesList.SelectedItem is UpdateRow row)
+        {
+            await RecheckSingleApplicationAsync(row);
+        }
+    }
+
+    private async void UpdateInspectorFolderButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (UpdatesList.SelectedItem is UpdateRow row)
+        {
+            await OpenInstallFolderAsync(row.Application?.Source.PrimaryInstallPath);
+        }
+    }
+
+    private void UpdateRowMenu_Opening(object sender, object e)
+    {
+        if (sender is not MenuFlyout flyout) return;
+        var row = (flyout.Target as FrameworkElement)?.DataContext as UpdateRow;
+        foreach (var item in flyout.Items.OfType<MenuFlyoutItem>())
+        {
+            item.DataContext = row;
+            switch (item.Tag?.ToString())
+            {
+                case "update":
+                    item.Text = row?.UpdateActionText ?? string.Empty;
+                    item.Visibility = row?.UpdateActionVisibility ?? Visibility.Collapsed;
+                    item.IsEnabled = row?.CanAct == true;
+                    break;
+                case "recheck":
+                    item.Text = LocalizationService.Get("RetrySingleCheck");
+                    item.IsEnabled = row is not null && !_updateBusy && !_massUpdateBusy && _snapshot is not null;
+                    break;
+                case "folder":
+                    item.Text = LocalizationService.Get("OpenInstallFolder");
+                    item.IsEnabled = row?.HasInstallPath == true;
+                    break;
+                case "release":
+                    item.Text = LocalizationService.Get("OpenReleasePage");
+                    item.IsEnabled = row is not null && TryGetReleaseUri(row, out _);
+                    break;
+                case "copy":
+                    item.Text = LocalizationService.Get("CopyDetails");
+                    item.IsEnabled = row is not null;
+                    break;
+            }
+        }
+    }
+
+    private async void UpdateRowMenuUpdate_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is MenuFlyoutItem { DataContext: UpdateRow row })
+        {
+            await StartSingleUpdateAsync(row);
+        }
+    }
+
+    private async void UpdateRowMenuRecheck_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is MenuFlyoutItem { DataContext: UpdateRow row })
+        {
+            await RecheckSingleApplicationAsync(row);
+        }
+    }
+
+    private async void UpdateRowMenuFolder_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is MenuFlyoutItem { DataContext: UpdateRow row })
+        {
+            await OpenInstallFolderAsync(row.Application?.Source.PrimaryInstallPath);
+        }
+    }
+
+    private async void UpdateRowMenuRelease_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is MenuFlyoutItem { DataContext: UpdateRow row } && TryGetReleaseUri(row, out var uri))
+        {
+            await OpenInBrowserAsync(uri);
+        }
+    }
+
+    private void UpdateRowMenuCopy_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is not MenuFlyoutItem { DataContext: UpdateRow row }) return;
+        var lines = new[]
+        {
+            $"{row.Name} ({row.Provider})",
+            row.VersionChange,
+            row.Status,
+            row.Message
+        };
+        CopyToClipboard(string.Join(Environment.NewLine, lines.Where(static l => !string.IsNullOrWhiteSpace(l))));
+    }
+
+    private async Task RecheckSingleApplicationAsync(UpdateRow row)
+    {
+        if (_updateBusy || _massUpdateBusy || _snapshot is null || _lastCheckSnapshot is null)
+        {
+            return;
+        }
+        await RunScanAsync(async token =>
+        {
+            StatusText.Text = LocalizationService.Format("RevalidatingUpdate", row.Name);
+            try
+            {
+                var refreshed = await RevalidateUpdateAsync(row.Source, token);
+                token.ThrowIfCancellationRequested();
+                _runOutcomes.Remove(row.Source.ApplicationIdentity);
+                if (refreshed is not null)
+                {
+                    _runOutcomes.Remove(refreshed.ApplicationIdentity);
+                }
+                if (refreshed is null ||
+                    !refreshed.ApplicationIdentity.Equals(row.Source.ApplicationIdentity, StringComparison.OrdinalIgnoreCase) ||
+                    !string.Equals(refreshed.InstalledVersion, row.Source.InstalledVersion, StringComparison.Ordinal))
+                {
+                    await ScanAndCheckCoreAsync(token);
+                    return;
+                }
+                var replaced = _lastCheckSnapshot.Results
+                    .Select(existing => existing.ApplicationIdentity.Equals(row.Source.ApplicationIdentity, StringComparison.OrdinalIgnoreCase)
+                        ? refreshed
+                        : existing)
+                    .ToArray();
+                var updatedSnapshot = new UpdateCheckSnapshot(
+                    DateTimeOffset.UtcNow,
+                    replaced,
+                    replaced.Count(static r => r.Status == UpdateStatus.Unsupported));
+                _userSelectedUpdate = true;
+                PublishUpdateResults(updatedSnapshot);
+                var match = _updates.FirstOrDefault(item =>
+                    item.Source.ApplicationIdentity.Equals(refreshed.ApplicationIdentity, StringComparison.OrdinalIgnoreCase));
+                if (match is not null)
+                {
+                    UpdatesList.SelectedItem = match;
+                }
+                StatusText.Text = $"{refreshed.DisplayName}: {UpdateRow.StatusText(refreshed.Status, refreshed.AvailabilityReason, refreshed.RolloutThresholdPercent)}";
+            }
+            catch (OperationCanceledException) when (token.IsCancellationRequested) { throw; }
+            catch (Exception exception)
+            {
+                ShowUnexpectedFailure(LocalizationService.Get("UpdateCheckFailed"), exception);
+                StatusText.Text = LocalizationService.Get("UpdateCheckDidNotComplete");
+            }
+        });
+    }
+
+    private async Task StartSingleUpdateAsync(UpdateRow row)
+    {
+        if (!_checksComplete || _updateBusy || _massUpdateBusy || _restartPending ||
             !row.CanInstall || row.Source.ExecutionPlan is null)
         {
             return;
         }
         UpdatesList.SelectedItem = row;
         await ExecuteUpdateAsync(row, rescanAfterSuccess: true);
+    }
+
+    private async void UpdateRowButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is Button { DataContext: UpdateRow row })
+        {
+            await StartSingleUpdateAsync(row);
+        }
     }
 
     private async void UpdateAllButton_Click(object sender, RoutedEventArgs e)
@@ -448,7 +637,7 @@ public sealed partial class MainPage
         finally
         {
             _massUpdateBusy = false;
-            RefreshMassUpdateButton();
+            RefreshActionStates();
             EndMutation();
         }
     }
@@ -467,8 +656,9 @@ public sealed partial class MainPage
         StopOperationButton.Content = LocalizationService.Get(_waitingForStoreQueue ? "StopStoreWaiting" : "StopAfterCurrent");
         StopOperationButton.Visibility = _waitingForStoreQueue || _massUpdateBusy ? Visibility.Visible : Visibility.Collapsed;
         StopOperationButton.IsEnabled = true;
-        UpdateProgress.Visibility = Visibility.Visible;
-        UpdateProgress.IsIndeterminate = true;
+        OperationProgressBar.Visibility = Visibility.Visible;
+        OperationProgressBar.IsIndeterminate = true;
+        row.SetProgress(null);
         row.RunState = UpdateRunState.Preparing;
         row.RunMessage = null;
         try
@@ -479,11 +669,12 @@ public sealed partial class MainPage
                 "Downloads");
             var transactionProgress = new Progress<UpdateTransactionProgress>(state =>
             {
-                UpdateProgress.IsIndeterminate = state.Fraction is null;
+                OperationProgressBar.IsIndeterminate = state.Fraction is null;
                 if (state.Fraction is double fraction)
                 {
-                    UpdateProgress.Value = Math.Clamp(fraction * 100, 0, 100);
+                    OperationProgressBar.Value = Math.Clamp(fraction * 100, 0, 100);
                 }
+                row.SetProgress(state.Fraction);
                 row.RunState = state.Stage switch
                 {
                     UpdateTransactionStage.Revalidating or UpdateTransactionStage.Preparing => UpdateRunState.Preparing,
@@ -569,7 +760,7 @@ public sealed partial class MainPage
                 try { await RescanAfterChangeAsync(); }
                 finally
                 {
-                    if (_checksComplete && (_snapshot?.Issues.Count ?? 0) == 0)
+                    if (_checksComplete)
                     {
                         UpdateBar.Title = outcomeTitle;
                         UpdateBar.Message = outcomeMessage;
@@ -595,8 +786,8 @@ public sealed partial class MainPage
             _waitingForStoreQueue = false;
             _operationCancellation = null;
             StopOperationButton.Visibility = Visibility.Collapsed;
-            UpdateProgress.Visibility = Visibility.Collapsed;
-            UpdateProgress.IsIndeterminate = false;
+            OperationProgressBar.Visibility = Visibility.Collapsed;
+            OperationProgressBar.IsIndeterminate = false;
             SetUpdateBusy(false, null);
             EndMutation();
         }

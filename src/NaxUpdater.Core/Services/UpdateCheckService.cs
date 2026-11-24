@@ -304,7 +304,7 @@ public sealed class UpdateCheckService
                 {
                     break;
                 }
-                if (result.Status == UpdateStatus.Current)
+                if (result.Status is UpdateStatus.Current or UpdateStatus.NewerReleaseKnown)
                 {
                     while (i + 1 < tierCandidates.Length && tierCandidates[i + 1].Descriptor.SkippableAfterHigherSiblingResolves)
                     {

@@ -11,12 +11,10 @@ public sealed partial class MainPage
 {
     private async Task ScanAndCheckCoreAsync(CancellationToken token)
     {
-        ConfigureApplicationHeader();
-        InventoryWorkspace.Visibility = Visibility.Visible;
-        UpdatesWorkspace.Visibility = Visibility.Collapsed;
-        DriversWorkspace.Visibility = Visibility.Collapsed;
-        FilterBox.IsEnabled = true;
-        ShowSystemComponentsCheckBox.IsEnabled = true;
+        if (_activeTab == WorkspaceTab.Drivers)
+        {
+            SwitchWorkspace(WorkspaceTab.Updates);
+        }
         _updates.Clear();
         _allUpdates = [];
         _lastCheckSnapshot = null;
@@ -27,8 +25,8 @@ public sealed partial class MainPage
         _lastDriverSnapshot = null;
         _driversCheckedAt = null;
         UpdateBar.IsOpen = false;
-        ShowUpdatesButton.IsEnabled = false;
-        ShowUpdatesButton.Content = LocalizationService.Get("UpdatesLabel");
+        UpdateNavBadges();
+        RefreshKpiCards();
         var sources = new SharedScanSources(_httpClient, _sourceCacheRoot, token);
         _ = sources.DriversAsync();
         // The Store's query for all apps is the slowest single answer of a scan; it starts now.
@@ -133,10 +131,15 @@ public sealed partial class MainPage
 
     private void ApplyFilter()
     {
+        if (_snapshot is null && _allApplications.Count == 0)
+        {
+            VisibleCountText.Text = LocalizationService.Get("NotScannedLabel");
+            return;
+        }
         var selectedIdentity = (ApplicationsList.SelectedItem as ApplicationRow)?.Source.Identity;
         var filter = FilterBox.Text.Trim();
         var showSystemComponents = ShowSystemComponentsCheckBox.IsChecked == true;
-        var eligible = _allApplications.Where(row => showSystemComponents || !row.IsSystemComponent);
+        var eligible = _allApplications.Where(row => (showSystemComponents || !row.IsSystemComponent) && MatchesApplicationKpiFilter(row));
         var filtered = string.IsNullOrWhiteSpace(filter)
             ? eligible.ToArray()
             : eligible.Where(row => MatchesFilter(row, filter)).ToArray();
@@ -150,6 +153,14 @@ public sealed partial class MainPage
             : _visibleApplications.FirstOrDefault(row => row.Source.Identity == selectedIdentity);
         ApplicationsList.SelectedItem = restored ?? _visibleApplications.FirstOrDefault();
     }
+
+    private bool MatchesApplicationKpiFilter(ApplicationRow row) => _appKpiFilter switch
+    {
+        1 => !string.IsNullOrWhiteSpace(row.Source.InstalledVersion),
+        2 => !string.IsNullOrWhiteSpace(row.Source.PrimaryInstallPath),
+        3 => row.IsProtected,
+        _ => true
+    };
 
     private IEnumerable<ApplicationRow> SortApplications(IEnumerable<ApplicationRow> rows)
     {
@@ -195,6 +206,7 @@ public sealed partial class MainPage
         {
             DetailsPlaceholder.Visibility = Visibility.Visible;
             DetailsContent.Visibility = Visibility.Collapsed;
+            AppInspectorFolderButton.Visibility = Visibility.Collapsed;
             UninstallButton.IsEnabled = false;
             return;
         }
@@ -209,11 +221,22 @@ public sealed partial class MainPage
         DetailScopeText.Text = row.Scope;
         DetailInstallDateText.Text = row.InstallationDateDetail;
         DetailBlockedText.Text = row.BlockedProviders;
+        AppInspectorFolderButton.Visibility = string.IsNullOrWhiteSpace(row.Source.PrimaryInstallPath)
+            ? Visibility.Collapsed
+            : Visibility.Visible;
         RefreshUninstallButton();
         RemovalExplanation.Text = row.Source.RemovalPlan is not null ? string.Empty : LocalizationService.Get(
             row.Source.IsSystemComponent ? "RemovalWindowsComponent" : "RemovalUnavailable");
         RemovalExplanation.Visibility = row.Source.RemovalPlan is null ? Visibility.Visible : Visibility.Collapsed;
         EvidenceItems.ItemsSource = row.Source.Evidence.Select(static evidence => new EvidenceRow(evidence)).ToArray();
+    }
+
+    private async void AppInspectorFolderButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (ApplicationsList.SelectedItem is ApplicationRow row)
+        {
+            await OpenInstallFolderAsync(row.Source.PrimaryInstallPath);
+        }
     }
 
     private async void UninstallButton_Click(object sender, RoutedEventArgs e)
@@ -312,13 +335,11 @@ public sealed partial class MainPage
 
     private void UpdateSummary(InventorySnapshot snapshot)
     {
-        var applications = ShowSystemComponentsCheckBox.IsChecked == true
-            ? snapshot.Applications
-            : snapshot.Applications.Where(static application => !application.IsSystemComponent).ToArray();
-        DetectedCountText.Text = applications.Count.ToString("N0");
-        VersionCountText.Text = applications.Count(static application => !string.IsNullOrWhiteSpace(application.InstalledVersion)).ToString("N0");
-        PathCountText.Text = applications.Count(static application => !string.IsNullOrWhiteSpace(application.PrimaryInstallPath)).ToString("N0");
-        GuardCountText.Text = (applications.Count(static application => application.BlockedProviders.Count > 0) + snapshot.UnmatchedPolicies.Count).ToString("N0");
+        UpdateNavBadges();
+        if (_activeTab == WorkspaceTab.Applications)
+        {
+            RefreshKpiCards();
+        }
     }
 
     private void UpdatePolicies(InventorySnapshot snapshot)

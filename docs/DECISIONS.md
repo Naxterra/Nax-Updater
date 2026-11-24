@@ -2,6 +2,12 @@
 
 Why Nax-Updater works the way it does. Newest first; every release adds its decisions here and updates [DESIGN.md](DESIGN.md). Each entry names the decision, the evidence that led to it, and what was rejected.
 
+## 0.17.85 (2026-11-25)
+
+**Rank explicit official-site recipes above generic installed Electron metadata.** Generic `ElectronBuilderUpdateProvider` (`app-update.yml`) previously ran at `InstalledUpdateProtocol` (400) while explicit reviewed `OfficialSiteUpdateProvider` recipes ran at `ProducerRelease` (300, specificity 95). When an application shipped an unsigned executable or omitted `publisherName` in `app-update.yml` (such as Antigravity), the generic provider failed with `UpdateStatus.Error` and blocked the reviewed official recipe that pinned SHA-512 and the trusted publisher. `ElectronBuilderUpdateProvider` now runs at `ProducerRelease` (300, specificity 80, `SkippableAfterHigherSiblingResolves = true`) so explicit official recipes always win cleanly and skip redundant generic probing once resolved (`Available`, `Current`, or `NewerReleaseKnown`).
+
+**Redesign the WinUI 3 interface around unified top navigation, interactive KPI filtering, and full-tab inspectors.** Replaced scattered view buttons with a segmented top navigation bar (`Updates`, `Applications`, `Drivers`) with live badges and keyboard shortcuts (`Ctrl+1/2/3`, `Ctrl+F`, `F5`, `Esc`), opening directly on `Updates` at launch. Made summary KPI cards context-aware and clickable to filter each workspace cleanly, added draggable `GridSplitter` dividers between every list and inspector (including a new Driver Details inspector), fixed custom button `PointerOver`/`Pressed`/`Disabled` visual states via explicit `ControlTemplate` visual states, replaced plain-text source check output with structured cards and localized provider names, added inline per-row and persistent footer progress bars, and added single-application recheck, local install-folder opening, and right-click row context menus.
+
 ## 0.17.84 (2026-11-24)
 
 **Offer hash- and signature-verified releases immediately without waiting for staged rollouts.** Holding back published releases behind `stagingPercentage` reproduced the 1 to 2 week delay of slow built-in updaters that Nax-Updater exists to avoid. Both `OfficialSiteUpdateProvider` and `ElectronBuilderUpdateProvider` now offer verified releases immediately once published, and `CHECKLIST.md` item 8 was updated accordingly.

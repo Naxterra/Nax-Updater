@@ -1,10 +1,12 @@
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
+using Microsoft.UI.Xaml.Input;
 using NaxUpdater.Core.Models;
 using NaxUpdater.Core.Services;
 using NaxUpdater.Services;
 using System.Collections.ObjectModel;
 using System.Diagnostics;
+using Windows.ApplicationModel.DataTransfer;
 using Windows.System;
 
 namespace NaxUpdater;
@@ -63,6 +65,8 @@ public sealed partial class MainPage : Page
     private bool _checksComplete;
     private bool _userSelectedUpdate;
     private bool _applyingUpdateFilter;
+    private WorkspaceTab _activeTab = WorkspaceTab.Updates;
+    private int _appKpiFilter = -1;
     private ApplicationSortColumn _sortColumn = ApplicationSortColumn.Name;
     private bool _sortDescending;
     private ResultSortColumn _updateSortColumn = ResultSortColumn.Status;
@@ -88,9 +92,21 @@ public sealed partial class MainPage : Page
         _updateOperationJournal = new FileUpdateOperationJournal(Path.Combine(localStateRoot, "update-operation.json"));
         _updateTransactionLease = new FileUpdateTransactionLeaseProvider(Path.Combine(localStateRoot, "update-transaction.lock"));
         MainInfo.IsOpen = App.ShowSafetyInformation;
+
+        NavUpdatesText.Text = LocalizationService.Get("NavUpdatesLabel");
+        NavAppsText.Text = LocalizationService.Get("NavAppsLabel");
+        NavDriversText.Text = LocalizationService.Get("NavDriversLabel");
+        ToolTipService.SetToolTip(NavUpdatesButton, LocalizationService.Get("NavUpdatesTooltip"));
+        ToolTipService.SetToolTip(NavAppsButton, LocalizationService.Get("NavAppsTooltip"));
+        ToolTipService.SetToolTip(NavDriversButton, LocalizationService.Get("NavDriversTooltip"));
+        UpdateInspectorRetryLabel.Text = LocalizationService.Get("RetrySingleCheck");
+        UpdateInspectorFolderLabel.Text = LocalizationService.Get("OpenInstallFolder");
+        AppInspectorFolderLabel.Text = LocalizationService.Get("OpenInstallFolder");
+
         UpdateSortHeaders();
         UpdateResultSortHeaders();
         UpdateDriverSortHeaders();
+        SwitchWorkspace(WorkspaceTab.Updates);
     }
 
     private void MainInfo_CloseButtonClick(InfoBar sender, object args) => App.SetShowSafetyInformation(false);
@@ -216,7 +232,7 @@ public sealed partial class MainPage : Page
         }
         if (_updateBusy || _massUpdateBusy) return;
         _runOutcomes.Clear();
-        if (DriversWorkspace.Visibility == Visibility.Visible)
+        if (_activeTab == WorkspaceTab.Drivers)
         {
             await CheckManufacturerDriversAsync();
             return;
@@ -246,7 +262,7 @@ public sealed partial class MainPage : Page
         finally
         {
             run.Dispose();
-            ScanButtonLabel.Text = LocalizationService.Get(DriversWorkspace.Visibility == Visibility.Visible
+            ScanButtonLabel.Text = LocalizationService.Get(_activeTab == WorkspaceTab.Drivers
                 ? "CheckDriversTop" : "ApplicationScanText");
             SetUpdateBusy(wasBusy, null);
             RefreshRetryButton();
@@ -255,11 +271,11 @@ public sealed partial class MainPage : Page
 
     private void FilterBox_TextChanged(object sender, TextChangedEventArgs e)
     {
-        if (DriversWorkspace is { Visibility: Visibility.Visible })
+        if (_activeTab == WorkspaceTab.Drivers)
         {
             ApplyDriverFilter();
         }
-        else if (UpdatesWorkspace is { Visibility: Visibility.Visible })
+        else if (_activeTab == WorkspaceTab.Updates)
         {
             ApplyUpdateFilter();
         }
@@ -267,6 +283,259 @@ public sealed partial class MainPage : Page
         {
             ApplyFilter();
         }
+    }
+
+    private void ScanAccelerator_Invoked(KeyboardAccelerator sender, KeyboardAcceleratorInvokedEventArgs args)
+    {
+        args.Handled = true;
+        if (ScanButton.IsEnabled)
+        {
+            ScanButton_Click(ScanButton, new RoutedEventArgs());
+        }
+    }
+
+    private void SearchAccelerator_Invoked(KeyboardAccelerator sender, KeyboardAcceleratorInvokedEventArgs args)
+    {
+        args.Handled = true;
+        FilterBox.Focus(FocusState.Keyboard);
+        FilterBox.SelectAll();
+    }
+
+    private void EscapeAccelerator_Invoked(KeyboardAccelerator sender, KeyboardAcceleratorInvokedEventArgs args)
+    {
+        if (!string.IsNullOrEmpty(FilterBox.Text))
+        {
+            args.Handled = true;
+            FilterBox.Text = string.Empty;
+        }
+    }
+
+    private void SwitchToUpdatesAccelerator_Invoked(KeyboardAccelerator sender, KeyboardAcceleratorInvokedEventArgs args)
+    {
+        args.Handled = true;
+        SwitchWorkspace(WorkspaceTab.Updates);
+    }
+
+    private void SwitchToAppsAccelerator_Invoked(KeyboardAccelerator sender, KeyboardAcceleratorInvokedEventArgs args)
+    {
+        args.Handled = true;
+        SwitchWorkspace(WorkspaceTab.Applications);
+    }
+
+    private void SwitchToDriversAccelerator_Invoked(KeyboardAccelerator sender, KeyboardAcceleratorInvokedEventArgs args)
+    {
+        args.Handled = true;
+        if (NavDriversButton.IsEnabled)
+        {
+            DriversButton_Click(NavDriversButton, new RoutedEventArgs());
+        }
+    }
+
+    private void KpiCard_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is not Button { Tag: string tag } || !int.TryParse(tag, out var cardIndex))
+        {
+            return;
+        }
+        if (_activeTab == WorkspaceTab.Updates)
+        {
+            var targetIndex = cardIndex switch
+            {
+                0 => 1, // updates
+                1 => 2, // known
+                2 => 3, // current
+                3 => 4, // errors
+                _ => 0
+            };
+            UpdateStatusFilter.SelectedIndex = UpdateStatusFilter.SelectedIndex == targetIndex ? 0 : targetIndex;
+            RefreshKpiCards();
+            return;
+        }
+        if (_activeTab == WorkspaceTab.Drivers)
+        {
+            var targetIndex = cardIndex switch
+            {
+                0 => 0, // all
+                1 => 2, // current
+                2 => 1, // updates
+                3 => 6, // errors
+                _ => 0
+            };
+            DriverStatusFilter.SelectedIndex = cardIndex > 0 && DriverStatusFilter.SelectedIndex == targetIndex ? 0 : targetIndex;
+            RefreshKpiCards();
+            return;
+        }
+        if (cardIndex == 0)
+        {
+            _appKpiFilter = -1;
+            if (!string.IsNullOrEmpty(FilterBox.Text))
+            {
+                FilterBox.Text = string.Empty;
+            }
+        }
+        else
+        {
+            _appKpiFilter = _appKpiFilter == cardIndex ? -1 : cardIndex;
+        }
+        ApplyFilter();
+        RefreshKpiCards();
+    }
+
+    private void ShowApplicationsButton_Click(object sender, RoutedEventArgs e) => SwitchWorkspace(WorkspaceTab.Applications);
+
+    private void ShowUpdatesButton_Click(object sender, RoutedEventArgs e) => SwitchWorkspace(WorkspaceTab.Updates);
+
+    private void ShowUpdatesWorkspace() => SwitchWorkspace(WorkspaceTab.Updates);
+
+    private void SwitchWorkspace(WorkspaceTab tab)
+    {
+        _activeTab = tab;
+        UpdatesWorkspace.Visibility = tab == WorkspaceTab.Updates ? Visibility.Visible : Visibility.Collapsed;
+        InventoryWorkspace.Visibility = tab == WorkspaceTab.Applications ? Visibility.Visible : Visibility.Collapsed;
+        DriversWorkspace.Visibility = tab == WorkspaceTab.Drivers ? Visibility.Visible : Visibility.Collapsed;
+
+        var activeStyle = (Style)Application.Current.Resources["NavTabActiveButtonStyle"];
+        var inactiveStyle = (Style)Application.Current.Resources["NavTabButtonStyle"];
+        NavUpdatesButton.Style = tab == WorkspaceTab.Updates ? activeStyle : inactiveStyle;
+        NavAppsButton.Style = tab == WorkspaceTab.Applications ? activeStyle : inactiveStyle;
+        NavDriversButton.Style = tab == WorkspaceTab.Drivers ? activeStyle : inactiveStyle;
+
+        ShowSystemComponentsCheckBox.IsEnabled = tab == WorkspaceTab.Applications;
+        FilterBox.IsEnabled = true;
+        FilterBox.PlaceholderText = LocalizationService.Get(tab == WorkspaceTab.Drivers
+            ? "DriverFilterPlaceholder" : "ApplicationFilterPlaceholder");
+        ScanButtonLabel.Text = LocalizationService.Get(_scans.IsActive
+            ? "CancelScan"
+            : tab == WorkspaceTab.Drivers ? "CheckDriversTop" : "ApplicationScanText");
+
+        RefreshKpiCards();
+        if (tab == WorkspaceTab.Updates)
+        {
+            ApplyUpdateFilter();
+        }
+        else if (tab == WorkspaceTab.Applications)
+        {
+            ApplyFilter();
+        }
+        else
+        {
+            ApplyDriverFilter();
+        }
+    }
+
+    private void UpdateNavBadges()
+    {
+        var actionableUpdates = _allUpdates.Count(static row =>
+            row.Source.IsInstallable || row.Source.Status is UpdateStatus.Available or UpdateStatus.StoreQueued);
+        NavUpdatesBadge.Visibility = actionableUpdates > 0 ? Visibility.Visible : Visibility.Collapsed;
+        NavUpdatesBadgeText.Text = actionableUpdates.ToString("N0");
+
+        var appCount = _snapshot is null
+            ? 0
+            : ShowSystemComponentsCheckBox.IsChecked == true
+                ? _snapshot.Applications.Count
+                : _snapshot.Applications.Count(static app => !app.IsSystemComponent);
+        NavAppsBadge.Visibility = appCount > 0 ? Visibility.Visible : Visibility.Collapsed;
+        NavAppsBadgeText.Text = appCount.ToString("N0");
+
+        var driverUpdates = _lastDriverSnapshot?.Results.Count(static r => r.Status == ManufacturerDriverStatus.Available) ?? 0;
+        NavDriversBadge.Visibility = driverUpdates > 0 ? Visibility.Visible : Visibility.Collapsed;
+        NavDriversBadgeText.Text = driverUpdates.ToString("N0");
+    }
+
+    private void RefreshKpiCards()
+    {
+        var activeCard = -1;
+        if (_activeTab == WorkspaceTab.Updates)
+        {
+            DetectedSummaryLabel.Text = LocalizationService.Get("SummaryInstallableUpdates");
+            VersionSummaryLabel.Text = LocalizationService.Get("SummaryKnownReleases");
+            PathSummaryLabel.Text = LocalizationService.Get("SummaryUpToDate");
+            GuardSummaryLabel.Text = LocalizationService.Get("SummaryCheckIssues");
+
+            if (_lastCheckSnapshot is null)
+            {
+                DetectedCountText.Text = "—";
+                VersionCountText.Text = "—";
+                PathCountText.Text = "—";
+                GuardCountText.Text = "—";
+            }
+            else
+            {
+                DetectedCountText.Text = _allUpdates.Count(static r => MatchesUpdateStatusFilter(r, "updates")).ToString("N0");
+                VersionCountText.Text = _allUpdates.Count(static r => MatchesUpdateStatusFilter(r, "known")).ToString("N0");
+                PathCountText.Text = _allUpdates.Count(static r => MatchesUpdateStatusFilter(r, "current")).ToString("N0");
+                GuardCountText.Text = _allUpdates.Count(static r => MatchesUpdateStatusFilter(r, "errors")).ToString("N0");
+            }
+            var filterTag = (UpdateStatusFilter?.SelectedItem as ComboBoxItem)?.Tag?.ToString() ?? "all";
+            activeCard = filterTag switch
+            {
+                "updates" => 0,
+                "known" => 1,
+                "current" => 2,
+                "errors" => 3,
+                _ => -1
+            };
+        }
+        else if (_activeTab == WorkspaceTab.Applications)
+        {
+            DetectedSummaryLabel.Text = LocalizationService.Get("ApplicationDetectedSummary");
+            VersionSummaryLabel.Text = LocalizationService.Get("ApplicationVersionsSummary");
+            PathSummaryLabel.Text = LocalizationService.Get("ApplicationPathsSummary");
+            GuardSummaryLabel.Text = LocalizationService.Get("ApplicationGuardsSummary");
+            if (_snapshot is null)
+            {
+                DetectedCountText.Text = "—";
+                VersionCountText.Text = "—";
+                PathCountText.Text = "—";
+                GuardCountText.Text = "—";
+            }
+            else
+            {
+                var applications = ShowSystemComponentsCheckBox.IsChecked == true
+                    ? _snapshot.Applications
+                    : _snapshot.Applications.Where(static application => !application.IsSystemComponent).ToArray();
+                DetectedCountText.Text = applications.Count.ToString("N0");
+                VersionCountText.Text = applications.Count(static application => !string.IsNullOrWhiteSpace(application.InstalledVersion)).ToString("N0");
+                PathCountText.Text = applications.Count(static application => !string.IsNullOrWhiteSpace(application.PrimaryInstallPath)).ToString("N0");
+                GuardCountText.Text = (applications.Count(static application => application.BlockedProviders.Count > 0) + _snapshot.UnmatchedPolicies.Count).ToString("N0");
+            }
+            activeCard = _appKpiFilter;
+        }
+        else
+        {
+            DetectedSummaryLabel.Text = LocalizationService.Get("DriverGroupsSummary");
+            VersionSummaryLabel.Text = LocalizationService.Get("SummaryUpToDate");
+            PathSummaryLabel.Text = LocalizationService.Get("NavUpdatesLabel");
+            GuardSummaryLabel.Text = LocalizationService.Get("DriverIssuesSummary");
+            if (_lastDriverSnapshot is null)
+            {
+                DetectedCountText.Text = _allDrivers.Count == 0 ? "—" : _allDrivers.Count.ToString("N0");
+                VersionCountText.Text = "—";
+                PathCountText.Text = "—";
+                GuardCountText.Text = "—";
+            }
+            else
+            {
+                DetectedCountText.Text = _allDrivers.Count.ToString("N0");
+                VersionCountText.Text = _allDrivers.Count(static row => MatchesDriverStatusFilter(row, "current")).ToString("N0");
+                PathCountText.Text = _allDrivers.Count(static row => MatchesDriverStatusFilter(row, "updates")).ToString("N0");
+                GuardCountText.Text = _allDrivers.Count(static row => MatchesDriverStatusFilter(row, "errors")).ToString("N0");
+            }
+            var driverTag = (DriverStatusFilter?.SelectedItem as ComboBoxItem)?.Tag?.ToString() ?? "all";
+            activeCard = driverTag switch
+            {
+                "current" => 1,
+                "updates" => 2,
+                "errors" => 3,
+                _ => -1
+            };
+        }
+
+        KpiCard1Border.BorderThickness = new Thickness(activeCard == 0 ? 2 : 1);
+        KpiCard2Border.BorderThickness = new Thickness(activeCard == 1 ? 2 : 1);
+        KpiCard3Border.BorderThickness = new Thickness(activeCard == 2 ? 2 : 1);
+        KpiCard4Border.BorderThickness = new Thickness(activeCard == 3 ? 2 : 1);
     }
 
     private bool OperationBlocked()
@@ -326,64 +595,6 @@ public sealed partial class MainPage : Page
         return true;
     }
 
-    private void ShowApplicationsButton_Click(object sender, RoutedEventArgs e)
-    {
-        ConfigureApplicationHeader();
-        InventoryWorkspace.Visibility = Visibility.Visible;
-        UpdatesWorkspace.Visibility = Visibility.Collapsed;
-        DriversWorkspace.Visibility = Visibility.Collapsed;
-        FilterBox.IsEnabled = true;
-        ShowSystemComponentsCheckBox.IsEnabled = true;
-        ApplyFilter();
-    }
-
-    private void ShowUpdatesButton_Click(object sender, RoutedEventArgs e) => ShowUpdatesWorkspace();
-
-    private void ShowUpdatesWorkspace()
-    {
-        ConfigureApplicationHeader();
-        InventoryWorkspace.Visibility = Visibility.Collapsed;
-        UpdatesWorkspace.Visibility = Visibility.Visible;
-        DriversWorkspace.Visibility = Visibility.Collapsed;
-        FilterBox.IsEnabled = true;
-        // Update checks never include Windows components (Windows Update services them), so
-        // the switch has nothing to show here and is hidden instead of greyed out.
-        ShowSystemComponentsCheckBox.Visibility = Visibility.Collapsed;
-        ApplyUpdateFilter();
-    }
-
-    private void ConfigureApplicationHeader()
-    {
-        ScanButtonLabel.Text = LocalizationService.Get(!_scans.IsActive ? "ApplicationScanText" : "CancelScan");
-        FilterBox.PlaceholderText = LocalizationService.Get("ApplicationFilterPlaceholder");
-        ShowSystemComponentsCheckBox.Visibility = Visibility.Visible;
-        DriversButton.Visibility = Visibility.Visible;
-        DetectedSummaryLabel.Text = LocalizationService.Get("ApplicationDetectedSummary");
-        VersionSummaryLabel.Text = LocalizationService.Get("ApplicationVersionsSummary");
-        PathSummaryLabel.Text = LocalizationService.Get("ApplicationPathsSummary");
-        GuardSummaryLabel.Text = LocalizationService.Get("ApplicationGuardsSummary");
-        if (_snapshot is not null)
-        {
-            UpdateSummary(_snapshot);
-        }
-    }
-
-    private void ConfigureDriverHeader()
-    {
-        ScanButtonLabel.Text = LocalizationService.Get(!_scans.IsActive ? "CheckDriversTop" : "CancelScan");
-        FilterBox.PlaceholderText = LocalizationService.Get("DriverFilterPlaceholder");
-        ShowSystemComponentsCheckBox.Visibility = Visibility.Collapsed;
-        DriversButton.Visibility = Visibility.Collapsed;
-        DetectedSummaryLabel.Text = LocalizationService.Get("DriverGroupsSummary");
-        VersionSummaryLabel.Text = LocalizationService.Get("OfficialPackagesSummary");
-        PathSummaryLabel.Text = LocalizationService.Get("InstallableDriverUpdatesSummary");
-        GuardSummaryLabel.Text = LocalizationService.Get("DriverIssuesSummary");
-        DetectedCountText.Text = _allDrivers.Count == 0 ? "—" : _allDrivers.Count.ToString("N0");
-        VersionCountText.Text = "—";
-        PathCountText.Text = "—";
-        GuardCountText.Text = "—";
-    }
-
     public void SaveLayoutPreferences()
     {
         ApplicationLayout.Save();
@@ -440,17 +651,85 @@ public sealed partial class MainPage : Page
         }
     }
 
+    private async Task OpenInstallFolderAsync(string? fileOrFolderPath)
+    {
+        if (string.IsNullOrWhiteSpace(fileOrFolderPath))
+        {
+            return;
+        }
+        try
+        {
+            var fullPath = Path.GetFullPath(fileOrFolderPath);
+            if (!Path.IsPathFullyQualified(fullPath) ||
+                fullPath.StartsWith(@"\\", StringComparison.Ordinal) ||
+                fullPath.Length < 3 || !char.IsAsciiLetter(fullPath[0]) || fullPath[1] != ':')
+            {
+                throw new NotSupportedException(fileOrFolderPath);
+            }
+            var target = Directory.Exists(fullPath)
+                ? fullPath
+                : File.Exists(fullPath)
+                    ? Path.GetDirectoryName(fullPath)
+                    : null;
+            if (string.IsNullOrWhiteSpace(target) || !Directory.Exists(target))
+            {
+                throw new DirectoryNotFoundException(fullPath);
+            }
+            if (await Launcher.LaunchFolderPathAsync(target))
+            {
+                return;
+            }
+            var explorer = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Windows), "explorer.exe");
+            var startInfo = new ProcessStartInfo(explorer) { UseShellExecute = false };
+            startInfo.ArgumentList.Add(target);
+            using var process = Process.Start(startInfo);
+        }
+        catch (Exception exception) when (exception is System.ComponentModel.Win32Exception or IOException or UnauthorizedAccessException or ArgumentException or NotSupportedException or System.Runtime.InteropServices.COMException)
+        {
+            UpdateBar.Title = LocalizationService.Get("OpenFolderFailedTitle");
+            UpdateBar.Message = fileOrFolderPath + Environment.NewLine + LocalizationService.Text(exception.Message);
+            UpdateBar.Severity = InfoBarSeverity.Error;
+            UpdateBar.IsOpen = true;
+        }
+    }
+
+    private void CopyToClipboard(string text)
+    {
+        try
+        {
+            var package = new DataPackage();
+            package.SetText(text);
+            Clipboard.SetContent(package);
+            Clipboard.Flush();
+        }
+        catch (System.Runtime.InteropServices.COMException)
+        {
+            StatusText.Text = LocalizationService.Get("ClipboardBusyStatus");
+        }
+    }
+
+    private void RefreshActionStates()
+    {
+        RefreshMassUpdateButton();
+        RefreshUninstallButton();
+        RefreshRetryButton();
+        UpdateInspectorRetryButton.IsEnabled = !_updateBusy && !_massUpdateBusy && _snapshot is not null && UpdatesList.SelectedItem is UpdateRow;
+        if (UpdatesList.SelectedItem is UpdateRow updateRow)
+        {
+            UpdateInspectorActionButton.IsEnabled = updateRow.CanAct;
+        }
+        if (DriversList.SelectedItem is ManufacturerDriverRow driverRow)
+        {
+            DriverInspectorActionButton.IsEnabled = driverRow.CanAct;
+        }
+    }
+
     private void SetUpdateBusy(bool busy, string? message)
     {
         _updateBusy = busy;
         ScanButton.IsEnabled = !busy;
-        DriversButton.IsEnabled = !busy;
-        // The lists stay enabled so they can be scrolled and inspected while an
-        // update runs; row actions are locked instead (RefreshMassUpdateButton).
-        ShowUpdatesButton.IsEnabled = _allUpdates.Count > 0;
-        RefreshMassUpdateButton();
-        RefreshUninstallButton();
-        RefreshRetryButton();
+        NavDriversButton.IsEnabled = !busy;
+        RefreshActionStates();
         ScanProgress.IsActive = busy;
         ScanProgress.Visibility = busy ? Visibility.Visible : Visibility.Collapsed;
         if (!string.IsNullOrWhiteSpace(message))
@@ -587,6 +866,13 @@ public sealed partial class MainPage : Page
             CloseButtonText = closeText ?? string.Empty,
             DefaultButton = ContentDialogButton.Primary
         };
+
+    private enum WorkspaceTab
+    {
+        Updates,
+        Applications,
+        Drivers
+    }
 
     private enum ApplicationSortColumn
     {
