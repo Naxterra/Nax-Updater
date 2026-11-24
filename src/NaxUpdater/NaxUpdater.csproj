@@ -8,7 +8,7 @@
     <AssemblyName>Nax-Updater</AssemblyName>
     <StartupHookSupport>false</StartupHookSupport>
     <Product>Nax-Updater</Product>
-    <Version>0.17.82</Version>
+    <Version>0.17.83</Version>
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <ApplicationIcon>Assets\AppIcon.ico</ApplicationIcon>
     <Platforms>x64;ARM64</Platforms>
@@ -31,7 +31,7 @@
     <ProjectReference Include="..\NaxUpdater.Core\NaxUpdater.Core.csproj" />
     <PackageReference Include="Microsoft.Windows.SDK.BuildTools" Version="10.0.28000.2270" />
     <PackageReference Include="Microsoft.WindowsAppSDK" Version="2.2.0" />
-    <PackageReference Include="Microsoft.WindowsPackageManager.ComInterop" Version="1.29.290" />
+    <PackageReference Include="Microsoft.WindowsPackageManager.ComInterop" Version="1.29.380" />
     <PackageReference Include="CommunityToolkit.WinUI.Controls.Sizers" Version="8.2.250402" />
   </ItemGroup>
 

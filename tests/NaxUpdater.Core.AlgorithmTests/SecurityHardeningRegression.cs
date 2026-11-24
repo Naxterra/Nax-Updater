@@ -13,6 +13,7 @@ internal static class SecurityHardeningRegression
         chocolatey_upgrade_arguments_require_installed_only_for_installed_packages(assert);
         user_agent_version_matches_app_project_version(assert);
         desktop_shell_job_is_allowed_only_without_kill_on_close_and_with_desktop_shell_member(assert);
+        winget_com_interop_version_supports_local_rpc_elevation(assert);
     }
 
     private static void programdata_protected_subfolder_is_accepted_despite_ancestor_write_attributes(
@@ -179,5 +180,29 @@ internal static class SecurityHardeningRegression
             "A non-kill nested job without the desktop shell must fail closed as job-bound.");
         assert(UpdateHostLifetime.IsJobBoundForQuery(inJob: true, querySucceeded: false, limitFlags: 0, containsDesktopShell: true),
             "An unreadable job object must fail closed as job-bound.");
+    }
+
+    private static void winget_com_interop_version_supports_local_rpc_elevation(Action<bool, string> assert)
+    {
+        var root = AppContext.BaseDirectory;
+        while (!File.Exists(Path.Combine(root, "NaxUpdater.slnx")))
+            root = Path.GetDirectoryName(root) ?? throw new DirectoryNotFoundException("Repository root not found.");
+        var minimum = new Version(1, 29, 380);
+        var versions = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var project in Directory.EnumerateFiles(root, "*.csproj", SearchOption.AllDirectories))
+        {
+            var doc = XDocument.Load(project);
+            foreach (var reference in doc.Descendants("PackageReference"))
+            {
+                if (!string.Equals(reference.Attribute("Include")?.Value, "Microsoft.WindowsPackageManager.ComInterop", StringComparison.OrdinalIgnoreCase))
+                    continue;
+                var raw = reference.Attribute("Version")?.Value?.Trim() ?? "";
+                versions.Add(raw);
+                var parsed = Version.TryParse(raw.Split('-')[0], out var version) ? version : new Version(0, 0, 0);
+                assert(parsed >= minimum,
+                    $"{Path.GetFileName(project)} references Microsoft.WindowsPackageManager.ComInterop {raw}, which predates the 1.29.380 local RPC elevation fix.");
+            }
+        }
+        assert(versions.Count == 1, $"Projects reference inconsistent Microsoft.WindowsPackageManager.ComInterop versions: {string.Join(", ", versions)}.");
     }
 }

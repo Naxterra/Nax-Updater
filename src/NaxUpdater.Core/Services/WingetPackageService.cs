@@ -114,18 +114,18 @@ public sealed partial class WingetPackageService : IWingetPackageService
 
     private async Task<PreparedCatalogUpdate> PrepareTargetAsync(WingetUpdateTarget target, CancellationToken token)
     {
-        var (manager, catalog) = await ConnectAsync(token, reopen: true);
-        var package = await FindAsync(catalog, target.PackageId, target.InstalledProductCodes, token)
-            ?? throw new UpdateExecutionRefusedException("The approved WinGet package is no longer present.");
-        var key = VersionKey(package, target.Version)
-            ?? throw new UpdateExecutionRefusedException("The approved WinGet version is no longer present.");
-        var options = CreateOptions(key, target.Scope, target.InstallLocation, Enum.Parse<PackageInstallerType>(target.InstallerType));
-        SetArchitecture(options, target.Architecture);
-        ValidatePrepared(package, key, options, target);
+        var (manager, package, key, options) = await AcquirePreparedTargetAsync(target, token);
         // Keep this catalog package, version key and options alive through Apply.
         return new PreparedCatalogUpdate(target, async (progress, cancellationToken) =>
         {
-            ValidatePrepared(package, key, options, target);
+            try
+            {
+                ValidatePrepared(package, key, options, target);
+            }
+            catch (Exception exception) when (WingetFallbackUpdateProvider.IsServerGone(exception) && !cancellationToken.IsCancellationRequested)
+            {
+                (manager, package, key, options) = await AcquirePreparedTargetAsync(target, cancellationToken);
+            }
             // Repeat exact package validation in an elevated process using the same
             // official COM catalog. CLI source names and executable aliases are user settings.
             if (target.Scope == InstallScope.Machine && !IsElevated())
@@ -157,6 +157,31 @@ public sealed partial class WingetPackageService : IWingetPackageService
                     exception.HResult == unchecked((int)0x800704C7) ? 1223 : -1, false, exception.Message);
             }
         });
+    }
+
+    private async Task<(PackageManager Manager, CatalogPackage Package, PackageVersionId Key, InstallOptions Options)> AcquirePreparedTargetAsync(
+        WingetUpdateTarget target, CancellationToken token)
+    {
+        try
+        {
+            return await WingetFallbackUpdateProvider.RetryWhileServerRestartsAsync(async () =>
+            {
+                var (manager, catalog) = await ConnectAsync(token, reopen: true);
+                var package = await FindAsync(catalog, target.PackageId, target.InstalledProductCodes, token)
+                    ?? throw new UpdateExecutionRefusedException("The approved WinGet package is no longer present.");
+                var key = VersionKey(package, target.Version)
+                    ?? throw new UpdateExecutionRefusedException("The approved WinGet version is no longer present.");
+                var options = CreateOptions(key, target.Scope, target.InstallLocation, Enum.Parse<PackageInstallerType>(target.InstallerType));
+                SetArchitecture(options, target.Architecture);
+                ValidatePrepared(package, key, options, target);
+                return (manager, package, key, options);
+            }, static (attempt, pause) => Task.Delay(TimeSpan.FromSeconds(attempt), pause), token);
+        }
+        catch (System.Runtime.InteropServices.COMException exception)
+        {
+            // No upgrade has been submitted yet; report as a pre-start refusal.
+            throw new UpdateExecutionRefusedException(exception.Message);
+        }
     }
 
     // GetApplicableInstaller ignores how the package is currently installed, but

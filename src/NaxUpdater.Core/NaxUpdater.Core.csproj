@@ -11,7 +11,7 @@
   <ItemGroup>
     <PackageReference Include="PdfPig" Version="0.1.16" />
     <PackageReference Include="Microsoft.Data.Sqlite" Version="11.0.0-preview.7.26381.103" />
-    <PackageReference Include="Microsoft.WindowsPackageManager.ComInterop" Version="1.29.290" />
+    <PackageReference Include="Microsoft.WindowsPackageManager.ComInterop" Version="1.29.380" />
     <PackageReference Include="System.Management" Version="11.0.0-rc.3.26522.148" />
     <PackageReference Include="System.Security.Cryptography.Pkcs" Version="11.0.0-rc.3.26522.148" />
   </ItemGroup>

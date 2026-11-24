@@ -18324,7 +18324,7 @@ THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 ==============================================================================
 
 Component: Microsoft.WindowsPackageManager.ComInterop
-Version: 1.29.290
+Version: 1.29.380
 Copyright: (c) Microsoft Corporation. All rights reserved.
 License: MIT
 Used for: Microsoft.Management.Deployment.dll and its Windows Runtime metadata

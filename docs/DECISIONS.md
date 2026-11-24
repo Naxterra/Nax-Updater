@@ -2,6 +2,10 @@
 
 Why Nax-Updater works the way it does. Newest first; every release adds its decisions here and updates [DESIGN.md](DESIGN.md). Each entry names the decision, the evidence that led to it, and what was rejected.
 
+## 0.17.83 (2026-11-21)
+
+**Upgrade `Microsoft.WindowsPackageManager.ComInterop` to 1.29.380 and retry WinGet target preparation on COM server exits.** Starting with WinGet 1.29.380 and App Installer 1.30.x, elevated WinGet COM server manual activation switched from named pipes to local RPC (`ncalrpc`). The older 1.29.290 interop package timed out against App Installer 1.30.310 with `0x800706BA` (`RPC_S_SERVER_UNAVAILABLE`) when applying elevated machine-scope WinGet upgrades. Updating `Microsoft.WindowsPackageManager.ComInterop` to 1.29.380 aligns the elevated COM client transport with current App Installer releases, and wrapping `WingetPackageService` target preparation and pre-apply validation in `RetryWhileServerRestartsAsync` recovers cleanly when the WinGet COM server restarts between catalog checks and apply.
+
 ## 0.17.82 (2026-11-19)
 
 **Broker elevated updates through an ACL-verified copy of Nax-Updater and protected staging.** Running elevated installers, Chocolatey, or WinGet through `cmd.exe` or user-writable temporary folders exposed elevated execution to standard-user file and environment tampering. Elevated updates now run through `PrivilegedUpdateHost`, which verifies that `Nax-Updater.exe` and its installation folder are protected against standard-user writes, binds the approved request hash across a private named pipe, stages installer files into an administrator-owned workspace under Program Files with hash verification, sanitizes `TEMP`, `TMP`, and `PATH`, and reclaims reboot-retained workspaces after the next Windows restart. If Nax-Updater is already elevated, it stages and runs directly in-process instead of spawning a second elevated worker. A portable copy outside a protected folder can still scan and apply per-user or Microsoft Store updates, but elevated updates require an all-users installation in a protected folder.

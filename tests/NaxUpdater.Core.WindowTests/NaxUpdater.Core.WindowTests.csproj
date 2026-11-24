@@ -10,6 +10,6 @@
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="../../src/NaxUpdater.Core/NaxUpdater.Core.csproj" />
-    <PackageReference Include="Microsoft.WindowsPackageManager.ComInterop" Version="1.29.290" />
+    <PackageReference Include="Microsoft.WindowsPackageManager.ComInterop" Version="1.29.380" />
   </ItemGroup>
 </Project>
