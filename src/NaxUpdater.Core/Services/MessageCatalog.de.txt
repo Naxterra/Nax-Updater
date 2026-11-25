@@ -1418,3 +1418,5 @@ en: MSI's live catalog offers Realtek audio package {0} for this exact motherboa
 de: MSIs aktueller Katalog bietet das Realtek-Audiopaket {0} für genau dieses Mainboard an. Der Windows-Audiotreiber von Microsoft ist installiert; sein Versionsschema ist anders.
 en: The complete MSI audio package is protected by MSI's published SHA-256 and Realtek's exact Authenticode publisher. Its supplied silent response file disables automatic restart. Windows must report the Realtek driver on the same audio device before installation is confirmed.
 de: Das vollständige MSI-Audiopaket wird durch MSIs veröffentlichten SHA-256 und Realteks genauen Authenticode-Herausgeber geprüft. Die mitgelieferte Antwortdatei für die unbeaufsichtigte Installation deaktiviert den automatischen Neustart. Windows muss den Realtek-Treiber auf demselben Audiogerät melden, bevor die Installation bestätigt wird.
+en: The spawned child installer did not finish within the time limit.
+de: Der gestartete Unter-Installer wurde nicht innerhalb der Zeitgrenze abgeschlossen.

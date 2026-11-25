@@ -67,7 +67,7 @@ public sealed partial class NextcloudUpdateProvider(HttpClient httpClient, Func<
             return Result(application, channel, null, UpdateStatus.Current, null,
                 $"Nextcloud's update server offers no newer client on the {channel} channel.", null);
         if (VersionOrder.Compare(version, application.NormalizedVersion) <= 0)
-            return Result(application, channel, null, UpdateStatus.Current, null,
+            return Result(application, channel, version, UpdateStatus.Current, null,
                 $"Nextcloud's update server confirms the installed client is current on the {channel} channel.", null);
 
         var shown = string.IsNullOrEmpty(label) ? version : $"{label} ({version})";

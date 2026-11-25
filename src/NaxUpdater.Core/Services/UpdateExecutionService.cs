@@ -533,7 +533,9 @@ public sealed class UpdateExecutionService
             if (plan.RequiresElevation)
                 return await PrivilegedUpdateHost.RunInstallerAsync(plan, prepared, cancellationToken);
             var startInfo = CreateInstallerStartInfo(plan, prepared);
-            return await RunStartedProcessAsync(startInfo, cancellationToken, plan.Interactive);
+            var waitForChildren = plan.Kind is UpdateExecutionKind.DownloadedExe or UpdateExecutionKind.DownloadedZipExe;
+            return await RunStartedProcessAsync(startInfo, cancellationToken, plan.Interactive,
+                prepared.WorkingDirectory, waitForChildren);
         }
         catch (Win32Exception exception) when (exception.NativeErrorCode == 740 && !plan.RequiresElevation && !Environment.IsPrivilegedProcess)
         {
@@ -596,29 +598,125 @@ public sealed class UpdateExecutionService
     internal static async Task<UpdateExecutionResult> RunStartedProcessAsync(
         ProcessStartInfo startInfo,
         CancellationToken cancellationToken,
-        bool interactive = false, string? installerWorkspace = null)
+        bool interactive = false,
+        string? installerWorkspace = null,
+        bool waitForChildInstallers = false,
+        TimeSpan? childInstallerTimeout = null)
     {
         try
         {
             using var process = Process.Start(startInfo) ?? throw new InvalidOperationException("The updater process did not start.");
+            using var descendants = waitForChildInstallers && !interactive ? new ProcessDescendants(process) : null;
+            var childTimedOut = false;
+            int? childExitCode = null;
             try
             {
-                if (interactive) await WaitForInteractiveInstallerAsync(process, cancellationToken, installerWorkspace: installerWorkspace);
-                else await process.WaitForExitAsync(cancellationToken);
+                if (interactive)
+                {
+                    await WaitForInteractiveInstallerAsync(process, cancellationToken, installerWorkspace: installerWorkspace);
+                }
+                else if (descendants is not null)
+                {
+                    (childTimedOut, childExitCode) = await WaitForSilentChildInstallersAsync(
+                        process, descendants, cancellationToken, installerWorkspace, childInstallerTimeout);
+                }
+                else
+                {
+                    await process.WaitForExitAsync(cancellationToken);
+                }
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {
                 // Cancellation stops NaxUpdater from promising a result; it must not delete staged
-                // files out from under an installer that Windows has already started.
+                // files out from under an installer or spawned child installer that Windows has already started.
                 await process.WaitForExitAsync(CancellationToken.None);
+                if (descendants is not null)
+                {
+                    await WaitForSilentChildInstallersAsync(
+                        process, descendants, CancellationToken.None, installerWorkspace, childInstallerTimeout);
+                }
                 throw;
             }
-            return new UpdateExecutionResult(process.ExitCode, IsSuccessfulExitCode(process.ExitCode), null);
+            if (childTimedOut)
+            {
+                return new UpdateExecutionResult(-1, false, "The spawned child installer did not finish within the time limit.");
+            }
+            var exitCode = process.ExitCode;
+            if (exitCode == 0 && childExitCode is { } childCode && childCode != 0)
+            {
+                exitCode = childCode;
+            }
+            return new UpdateExecutionResult(exitCode, IsSuccessfulExitCode(exitCode), null);
         }
         catch (Win32Exception exception) when (exception.NativeErrorCode == 1223)
         {
             return new UpdateExecutionResult(1223, false, "The Windows elevation prompt was cancelled.", NotStarted: true);
         }
+    }
+
+    // Silent self-extractors and WiX Burn / TechSmith bootstrappers (such as snagit.exe) can
+    // unpack a child Bootstrapper.exe or msiexec.exe into TEMP or Package Cache and exit 0
+    // before the real installation completes. Wait for spawned installer descendants without
+    // holding on unrelated user applications the installer may launch at completion, and
+    // propagate child reboot requests (1641/3010) or failure exit codes when the parent exited 0.
+    private static async Task<(bool TimedOut, int? ChildExitCode)> WaitForSilentChildInstallersAsync(
+        Process process,
+        ProcessDescendants descendants,
+        CancellationToken cancellationToken,
+        string? installerWorkspace = null,
+        TimeSpan? childInstallerTimeout = null)
+    {
+        bool IsInstaller(string? path) => IsInteractiveInstallerProgram(path, installerWorkspace);
+        if (!process.HasExited)
+        {
+            var exitTask = process.WaitForExitAsync(cancellationToken);
+            while (!process.HasExited)
+            {
+                descendants.Refresh();
+                descendants.WatchMatching(IsInstaller);
+                await Task.WhenAny(exitTask, Task.Delay(250, cancellationToken));
+                cancellationToken.ThrowIfCancellationRequested();
+            }
+        }
+        descendants.Refresh();
+        descendants.WatchMatching(IsInstaller);
+        var limit = childInstallerTimeout ?? TimeSpan.FromMinutes(15);
+        var handoffGrace = TimeSpan.FromSeconds(2);
+        var waitStarted = Stopwatch.GetTimestamp();
+        var timedOut = false;
+        while (true)
+        {
+            var installerRunning = descendants.AnyDescendantRunning(IsInstaller);
+            if (!installerRunning)
+            {
+                // Allow a short grace window when a non-installer helper descendant is still alive
+                // right after the root exits, in case it is handing off to a child installer.
+                if (descendants.AnyDescendantRunning() && Stopwatch.GetElapsedTime(waitStarted) < handoffGrace)
+                {
+                    await Task.Delay(250, cancellationToken);
+                    descendants.Refresh();
+                    descendants.WatchMatching(IsInstaller);
+                    continue;
+                }
+                break;
+            }
+            if (Stopwatch.GetElapsedTime(waitStarted) >= limit)
+            {
+                timedOut = true;
+                break;
+            }
+            await Task.Delay(500, cancellationToken);
+            descendants.Refresh();
+            descendants.WatchMatching(IsInstaller);
+        }
+        var childCodes = descendants.ReadCompletedExitCodes();
+        int? childExitCode = childCodes.FirstOrDefault(static code => !IsSuccessfulExitCode(code));
+        if (childExitCode == 0)
+        {
+            childExitCode = childCodes.FirstOrDefault(static code => code is 1641 or 3010);
+            if (childExitCode == 0) childExitCode = null;
+        }
+        return (timedOut, childExitCode);
     }
 
     // A publisher's wizard can unpack itself, start its real installer and end its first

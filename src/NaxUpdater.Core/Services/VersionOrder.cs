@@ -37,6 +37,32 @@ public static partial class VersionOrder
         return CompareParts(Tokens(leftSuffix), Tokens(rightSuffix), prerelease: true);
     }
 
+    // True when a publisher lists a shorter 3+ part release version ("6.43.18", "26.8.3",
+    // "27.0.1") that matches the leading components of a 4-part installed build ("6.43.18.2",
+    // "26.8.3.1", "27.0.1.13273"). Rejects 2-part minor prefixes ("8.7" vs "8.7.5") and
+    // prerelease/patch-level installed versions so stale catalogs cannot mask real updates.
+    public static bool IsSameReleasePrefix(string? published, string? installed)
+    {
+        var left = Parse(Clean(published));
+        var right = Parse(Clean(installed));
+        if (left is null || right is null ||
+            left.Value.Kind != SuffixKind.Release ||
+            right.Value.Kind != SuffixKind.Release ||
+            left.Value.Core.Length < 3 ||
+            right.Value.Core.Length != left.Value.Core.Length + 1)
+        {
+            return false;
+        }
+        for (var i = 0; i < left.Value.Core.Length; i++)
+        {
+            if (CompareParts([left.Value.Core[i]], [right.Value.Core[i]]) != 0)
+            {
+                return false;
+            }
+        }
+        return true;
+    }
+
     private enum SuffixKind { Prerelease, Release, PatchLevel }
 
     // Only these words mark a version as older than the release with the same numbers. Any other

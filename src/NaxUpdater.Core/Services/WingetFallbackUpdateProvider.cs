@@ -130,7 +130,7 @@ public sealed partial class WingetFallbackUpdateProvider(
         }
 
         var comparison = VersionOrder.Compare(availableVersion, installedVersion);
-        if (comparison < 0)
+        if (comparison < 0 && !VersionOrder.IsSameReleasePrefix(availableVersion, installedVersion))
         {
             return Result(
                 application,
@@ -141,7 +141,7 @@ public sealed partial class WingetFallbackUpdateProvider(
                 $"The installed version {installedVersion} is newer than the fallback catalog version {availableVersion}; the older catalog value is not presented as an available release.",
                 null) with { AvailabilityReason = UpdateAvailabilityReason.CatalogBehindInstalled };
         }
-        if (comparison == 0)
+        if (comparison <= 0)
         {
             return Result(application, identity, availableVersion, UpdateStatus.Current, source, null, null);
         }

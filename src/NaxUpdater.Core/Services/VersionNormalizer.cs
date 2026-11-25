@@ -12,6 +12,10 @@ public static partial class VersionNormalizer
         }
 
         var trimmed = version.Trim();
+        if (CommaVersionRegex().IsMatch(trimmed))
+        {
+            trimmed = CommaSeparatorRegex().Replace(trimmed, ".");
+        }
         if (!string.Equals(strategy, "FirstThreeNumericComponents", StringComparison.OrdinalIgnoreCase))
         {
             return trimmed;
@@ -27,4 +31,10 @@ public static partial class VersionNormalizer
 
     [GeneratedRegex(@"\d+", RegexOptions.CultureInvariant)]
     private static partial Regex NumericComponentRegex();
+
+    [GeneratedRegex(@"^\d+(?:,\s*\d+)+$", RegexOptions.CultureInvariant)]
+    private static partial Regex CommaVersionRegex();
+
+    [GeneratedRegex(@",\s*", RegexOptions.CultureInvariant)]
+    private static partial Regex CommaSeparatorRegex();
 }

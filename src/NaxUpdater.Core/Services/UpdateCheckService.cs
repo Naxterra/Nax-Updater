@@ -515,7 +515,8 @@ public sealed class UpdateCheckService
                 CorrelationKey = UpdateCorrelation.ForApplication(application)
             };
             if (boundResult.Status == UpdateStatus.Current && boundResult.AvailableVersion is not null &&
-                VersionOrder.Compare(boundResult.AvailableVersion, boundResult.InstalledVersion) < 0)
+                VersionOrder.Compare(boundResult.AvailableVersion, boundResult.InstalledVersion) < 0 &&
+                !VersionOrder.IsSameReleasePrefix(boundResult.AvailableVersion, boundResult.InstalledVersion))
                 boundResult = boundResult with { AvailableVersion = null };
             if (boundResult.ExecutionPlan is not null && boundResult.Status is not (UpdateStatus.Available or UpdateStatus.StoreQueued))
             {

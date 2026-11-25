@@ -213,7 +213,8 @@ internal static class PrivilegedUpdateHost
         start.UseShellExecute = false;
         start.WorkingDirectory = Path.GetDirectoryName(entry)!;
         SetProtectedEnvironment(start, temporary);
-        return directory.Finish(await UpdateExecutionService.RunStartedProcessAsync(start, CancellationToken.None, job.Interactive, directory.Path));
+        var waitForChildren = job.Kind is UpdateExecutionKind.DownloadedExe or UpdateExecutionKind.DownloadedZipExe;
+        return directory.Finish(await UpdateExecutionService.RunStartedProcessAsync(start, CancellationToken.None, job.Interactive, directory.Path, waitForChildren));
     }
 
     private static async Task<UpdateExecutionResult> ApplyNativeAsync(NativeJob job)

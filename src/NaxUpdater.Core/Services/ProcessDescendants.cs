@@ -6,17 +6,57 @@ namespace NaxUpdater.Core.Services;
 // Follows the processes that one process starts, directly or through its children. NSIS
 // uninstallers copy themselves to the temp folder, start that copy and exit at once, so the
 // first process ending says nothing about the uninstall having finished.
-internal sealed class ProcessDescendants
+internal sealed class ProcessDescendants : IDisposable
 {
     private readonly int _rootId;
     // Process ID and start time; the start time tells a descendant from a later process that
     // reuses its ID. It is null when Windows does not let this process read it.
     private readonly Dictionary<int, DateTime?> _tracked = [];
+    // Retained native handles (PROCESS_QUERY_LIMITED_INFORMATION) for selected installer
+    // descendants so GetExitCodeProcess can read their exit codes (such as 3010 reboot
+    // requests or fatal failures) even after they exit or run elevated.
+    private readonly Dictionary<int, IntPtr> _watched = [];
 
     public ProcessDescendants(Process root)
     {
         _rootId = root.Id;
         _tracked[_rootId] = StartTime(root);
+    }
+
+    public void WatchMatching(Func<string?, bool> selected)
+    {
+        foreach (var entry in _tracked)
+        {
+            if (entry.Key == _rootId || _watched.ContainsKey(entry.Key)) continue;
+            if (!selected(ImagePath(entry.Key))) continue;
+            var handle = OpenProcess(QueryLimitedInformation | Synchronize, false, (uint)entry.Key);
+            if (handle == IntPtr.Zero) continue;
+            if (entry.Value is not null && StartTime(entry.Key) is { } start && start != entry.Value)
+            {
+                CloseHandle(handle);
+                continue;
+            }
+            _watched[entry.Key] = handle;
+        }
+    }
+
+    public IReadOnlyList<int> ReadCompletedExitCodes()
+    {
+        var codes = new List<int>();
+        foreach (var handle in _watched.Values)
+        {
+            if (WaitForSingleObject(handle, 0) == WaitObject0 && GetExitCodeProcess(handle, out var exitCode))
+            {
+                codes.Add(unchecked((int)exitCode));
+            }
+        }
+        return codes;
+    }
+
+    public void Dispose()
+    {
+        foreach (var handle in _watched.Values) CloseHandle(handle);
+        _watched.Clear();
     }
 
     // Adds every running process whose parent is already tracked.
@@ -110,9 +150,18 @@ internal sealed class ProcessDescendants
     }
 
     private const uint QueryLimitedInformation = 0x1000;
+    private const uint Synchronize = 0x00100000;
+    private const uint WaitObject0 = 0x00000000;
 
     [DllImport("kernel32.dll", SetLastError = true)]
     private static extern IntPtr OpenProcess(uint access, [MarshalAs(UnmanagedType.Bool)] bool inheritHandle, uint processId);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    private static extern uint WaitForSingleObject(IntPtr handle, uint milliseconds);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool GetExitCodeProcess(IntPtr handle, out uint exitCode);
 
     [DllImport("kernel32.dll", EntryPoint = "QueryFullProcessImageNameW", CharSet = CharSet.Unicode, SetLastError = true)]
     [return: MarshalAs(UnmanagedType.Bool)]

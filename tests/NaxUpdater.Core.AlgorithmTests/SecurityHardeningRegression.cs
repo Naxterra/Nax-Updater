@@ -22,6 +22,8 @@ internal static class SecurityHardeningRegression
         await unresolved_non_store_msix_packages_are_cached_without_repeating_store_search(assert, fixture);
         await antigravity_official_recipe_matches_live_manifest_format(assert);
         await explicit_official_recipe_outranks_failing_generic_electron_metadata(assert, fixture);
+        await current_rows_preserve_latest_version_for_same_release_prefix_and_comma_versions(assert);
+        await silent_bootstrapper_installer_waits_for_spawned_child_installer_processes(assert, fixture);
     }
 
     private static void programdata_protected_subfolder_is_accepted_despite_ancestor_write_attributes(
@@ -416,6 +418,99 @@ internal static class SecurityHardeningRegression
                knownResult.ProviderId == "official:Google.Antigravity" &&
                (knownResult.SourceChecks?.All(s => s.ProviderId != electronProvider.Id) ?? true),
             $"Expected official:Google.Antigravity NewerReleaseKnown without generic Electron override, got {knownResult.ProviderId} ({knownResult.Status}).");
+    }
+
+    private static async Task current_rows_preserve_latest_version_for_same_release_prefix_and_comma_versions(Action<bool, string> assert)
+    {
+        assert(VersionNormalizer.Normalize("6, 43, 18, 2", null) == "6.43.18.2" &&
+               VersionNormalizer.Normalize("10, 0, 8989, 0", null) == "10.0.8989.0" &&
+               VersionNormalizer.Normalize("26.8.3.1", null) == "26.8.3.1",
+            "Comma-separated PE file versions were not normalized to dot-separated versions.");
+
+        assert(VersionOrder.IsSameReleasePrefix("6.43.18", "6.43.18.2") &&
+               VersionOrder.IsSameReleasePrefix("27.0.1", "27.0.1.13273") &&
+               VersionOrder.IsSameReleasePrefix("8.0.5130", "8.0.5130.4") &&
+               !VersionOrder.IsSameReleasePrefix("8.7", "8.7.5") &&
+               !VersionOrder.IsSameReleasePrefix("6.43", "6.43.18.2") &&
+               !VersionOrder.IsSameReleasePrefix("10.0", "10.0.8989.0") &&
+               !VersionOrder.IsSameReleasePrefix("2.24.12", "3.0.0") &&
+               !VersionOrder.IsSameReleasePrefix("6.43.17", "6.43.18.2") &&
+               !VersionOrder.IsSameReleasePrefix("6.43.18-beta.1", "6.43.18.2") &&
+               !VersionOrder.IsSameReleasePrefix("6.43.18", "6.43.18.2-beta.1"),
+            "VersionOrder.IsSameReleasePrefix misclassified a same-release prefix, 2-part minor prefix, prerelease, or older version.");
+
+        var idmApp = new InstalledApplication("fixture:idm", "Internet Download Manager", "Tonec Inc.", "6, 43, 18, 2", "6.43.18.2",
+            "fixture", Environment.ProcessPath, "fixture", null, null, InstallScope.Machine, ManagementMode.Registry, ConfidenceLevel.High, false, [], null, []);
+        var officialIdm = new StubProvider("official:Tonec.InternetDownloadManager",
+            new(UpdateProviderAuthority.ProducerRelease, 95, "fixture"),
+            new UpdateCheckResult(idmApp.Identity, idmApp.DisplayName, idmApp.NormalizedVersion, "6.43.18",
+                UpdateStatus.Current, "official:Tonec.InternetDownloadManager", "Official publisher site",
+                "neutral", "fixture", "neutral", "stable", null, "The publisher's site lists 6.43.18 as its newest release.", null));
+        var checkedIdm = (await new UpdateCheckService([officialIdm]).CheckAsync(new(DateTimeOffset.UtcNow, [idmApp], [], []))).Results.Single();
+        assert(checkedIdm.Status == UpdateStatus.Current && checkedIdm.AvailableVersion == "6.43.18",
+            $"Expected Current row to keep same-release prefix 6.43.18, got '{checkedIdm.AvailableVersion ?? "null"}'.");
+
+        var genuinelyOlder = new StubProvider("official:Older",
+            new(UpdateProviderAuthority.ProducerRelease, 95, "fixture"),
+            new UpdateCheckResult(idmApp.Identity, idmApp.DisplayName, idmApp.NormalizedVersion, "6.43.17",
+                UpdateStatus.Current, "official:Older", "Official publisher site",
+                "neutral", "fixture", "neutral", "stable", null, "Older release.", null));
+        var checkedOlder = (await new UpdateCheckService([genuinelyOlder]).CheckAsync(new(DateTimeOffset.UtcNow, [idmApp], [], []))).Results.Single();
+        assert(checkedOlder.Status == UpdateStatus.Current && checkedOlder.AvailableVersion is null,
+            $"Genuinely older release 6.43.17 must still be stripped from Current row, got '{checkedOlder.AvailableVersion}'.");
+    }
+
+    private static async Task silent_bootstrapper_installer_waits_for_spawned_child_installer_processes(
+        Action<bool, string> assert, string fixture)
+    {
+        assert(ApplicationRemovalService.IsUninstallerProgram(@"C:\ProgramData\Package Cache\{E39956A1-8C87-424C-B8A3-304C450250B5}\Bootstrapper.exe", null),
+            "Bootstrapper.exe inside Package Cache was not recognized as an installer descendant.");
+        assert(!ApplicationRemovalService.IsUninstallerProgram(@"C:\Program Files\TechSmith\Snagit\SnagitEditor.exe", null),
+            "An application executable under Program Files was falsely classified as an installer descendant.");
+
+        // Simulate a silent self-extracting bootstrapper that launches a child installer
+        // executable inside its workspace and exits 0 immediately while the child works.
+        var work = Directory.CreateDirectory(Path.Combine(fixture, "silent-bootstrapper")).FullName;
+        var childExe = Path.Combine(work, "Bootstrapper.exe");
+        File.Copy(Path.Combine(Environment.SystemDirectory, "cmd.exe"), childExe);
+        var marker = Path.Combine(work, "child-finished.txt");
+        var childScript = Path.Combine(work, "child.cmd");
+        var parentScript = Path.Combine(work, "parent.cmd");
+        File.WriteAllText(childScript, $"@echo off\r\nping -n 3 127.0.0.1 >nul\r\necho done > \"{marker}\"\r\n");
+        File.WriteAllText(parentScript, $"@echo off\r\nstart \"\" /b \"{childExe}\" /d /c \"{childScript}\"\r\n");
+        var startInfo = new System.Diagnostics.ProcessStartInfo(Path.Combine(Environment.SystemDirectory, "cmd.exe"))
+        {
+            UseShellExecute = false,
+            CreateNoWindow = true,
+            WorkingDirectory = work
+        };
+        startInfo.ArgumentList.Add("/d");
+        startInfo.ArgumentList.Add("/c");
+        startInfo.ArgumentList.Add(parentScript);
+        var result = await UpdateExecutionService.RunStartedProcessAsync(
+            startInfo, CancellationToken.None, interactive: false, installerWorkspace: work, waitForChildInstallers: true);
+        assert(result.IsSuccess && File.Exists(marker),
+            "RunStartedProcessAsync returned before the spawned child Bootstrapper.exe installer finished.");
+
+        // When the parent bootstrapper exits 0 early and the child installer returns 3010
+        // (reboot required), the reboot exit code must propagate instead of returning 0.
+        var rebootScript = Path.Combine(work, "child-reboot.cmd");
+        var rebootParent = Path.Combine(work, "parent-reboot.cmd");
+        File.WriteAllText(rebootScript, "@echo off\r\nping -n 3 127.0.0.1 >nul\r\nexit /b 3010\r\n");
+        File.WriteAllText(rebootParent, $"@echo off\r\nstart \"\" /b \"{childExe}\" /d /c \"{rebootScript}\"\r\n");
+        var rebootStart = new System.Diagnostics.ProcessStartInfo(Path.Combine(Environment.SystemDirectory, "cmd.exe"))
+        {
+            UseShellExecute = false,
+            CreateNoWindow = true,
+            WorkingDirectory = work
+        };
+        rebootStart.ArgumentList.Add("/d");
+        rebootStart.ArgumentList.Add("/c");
+        rebootStart.ArgumentList.Add(rebootParent);
+        var rebootResult = await UpdateExecutionService.RunStartedProcessAsync(
+            rebootStart, CancellationToken.None, interactive: false, installerWorkspace: work, waitForChildInstallers: true);
+        assert(rebootResult.IsSuccess && rebootResult.ExitCode == 3010,
+            $"Expected child reboot exit code 3010 to propagate, got IsSuccess={rebootResult.IsSuccess}, ExitCode={rebootResult.ExitCode}.");
     }
 
     private sealed class StubHandler(Func<HttpRequestMessage, HttpResponseMessage> respond) : HttpMessageHandler

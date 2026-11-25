@@ -94,12 +94,13 @@ public sealed class ApplicationRemovalService
         TimeSpan? leftBehindLimit = null, Func<string?, bool>? isUninstaller = null, TimeSpan? removedGrace = null)
     {
         isUninstaller ??= static path => IsUninstallerProgram(path, null);
-        var descendants = new ProcessDescendants(process);
+        using var descendants = new ProcessDescendants(process);
         long? removedAt = null;
+        var exitTask = process.WaitForExitAsync(cancellationToken);
         while (!process.HasExited)
         {
             descendants.Refresh();
-            await Task.WhenAny(process.WaitForExitAsync(cancellationToken), Task.Delay(250, cancellationToken));
+            await Task.WhenAny(exitTask, Task.Delay(250, cancellationToken));
             cancellationToken.ThrowIfCancellationRequested();
             if (removedGrace is not { } grace || process.HasExited) continue;
             // An entry that is back (a removal that was rolled back) starts the count again.
@@ -142,14 +143,16 @@ public sealed class ApplicationRemovalService
         if (!string.IsNullOrWhiteSpace(registeredUninstaller) &&
             Path.GetFileName(LongPath(path)).Equals(Path.GetFileName(LongPath(registeredUninstaller)), StringComparison.OrdinalIgnoreCase) &&
             !string.Equals(LongPath(path), LongPath(registeredUninstaller), StringComparison.OrdinalIgnoreCase)) return true;
-        // An uninstaller that an administrator account started uses that account's temp folder.
+        // An uninstaller that an administrator account started uses that account's temp folder,
+        // and WiX Burn / TechSmith bootstrappers run from ProgramData\Package Cache.
         return path.StartsWith(Path.GetTempPath(), StringComparison.OrdinalIgnoreCase) ||
                path.StartsWith(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Windows), "Temp") + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase) ||
-               path.Contains(@"\AppData\Local\Temp\", StringComparison.OrdinalIgnoreCase);
+               path.Contains(@"\AppData\Local\Temp\", StringComparison.OrdinalIgnoreCase) ||
+               path.Contains(@"\Package Cache\", StringComparison.OrdinalIgnoreCase);
     }
 
     private static readonly System.Text.RegularExpressions.Regex InstallerName = new(
-        @"^unins|(?:install(?:er)?|setup)(?:$|[\d\s_.\-])|inst(?:32|64)$",
+        @"^unins|(?:install(?:er)?|setup|bootstrapper)(?:$|[\d\s_.\-])|inst(?:32|64)$",
         System.Text.RegularExpressions.RegexOptions.IgnoreCase | System.Text.RegularExpressions.RegexOptions.CultureInvariant);
 
     internal static string LongPath(string path)

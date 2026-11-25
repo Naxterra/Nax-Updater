@@ -43,7 +43,7 @@ public sealed class WslUpdateProvider(HttpClient httpClient) : IUpdateProvider
         var plan = newer ? new UpdateExecutionPlan(UpdateExecutionKind.NativeCommand, null, null, null,
             "Microsoft Corporation", executable, ["--update", "--web-download"], true, [], [],
             NativeWorkingDirectory: Path.GetDirectoryName(executable)) : null;
-        return new(app.Identity, app.DisplayName, app.NormalizedVersion, newer ? version : null,
+        return new(app.Identity, app.DisplayName, app.NormalizedVersion, version,
             newer ? UpdateStatus.Available : UpdateStatus.Current, Id, "Microsoft WSL release + native Windows updater",
             "application-managed", "Preserved by Microsoft's WSL updater", architecture, "stable", releaseUrl,
             "Microsoft's signed wsl.exe updates WSL from Microsoft's GitHub release using --update --web-download. " +

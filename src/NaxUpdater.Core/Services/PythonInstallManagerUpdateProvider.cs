@@ -66,7 +66,7 @@ internal sealed class PythonInstallManagerUpdateProvider(ProcessQueryRunner proc
             return Error(application, "python.org's index, as read by the Python install manager, has no entry for this runtime.");
 
         if (VersionOrder.Compare(latest, installedVersion) <= 0)
-            return Result(application, null, UpdateStatus.Current,
+            return Result(application, latest, UpdateStatus.Current,
                 $"The Python install manager reports {installedVersion} as the newest {tag} runtime.", null);
 
         // Only the runtime's own interpreters are closed; other Pythons keep running.

@@ -32,7 +32,7 @@ public sealed class MacriumUpdateProvider(HttpClient httpClient) : IUpdateProvid
         var version = ParseReleaseVersion(final, major);
         if (version is null) throw new InvalidOperationException("Macrium's response did not identify an official patch for the installed major version.");
         var newer = VersionOrder.Compare(version, app.NormalizedVersion) > 0;
-        return new(app.Identity, app.DisplayName, app.NormalizedVersion, newer ? version : null,
+        return new(app.Identity, app.DisplayName, app.NormalizedVersion, version,
             newer ? UpdateStatus.NewerReleaseKnown : UpdateStatus.Current, Id, "Macrium official patch releases",
             "application-managed", "Preserved by Macrium Reflect", "provider-selected", "stable", final.AbsoluteUri,
             newer ? "Macrium publishes a newer patch for this major version. The installed Reflect updater must apply it; no undocumented update command is executed."

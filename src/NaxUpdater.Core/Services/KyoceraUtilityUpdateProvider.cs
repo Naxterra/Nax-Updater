@@ -101,7 +101,7 @@ public sealed class KyoceraUtilityUpdateProvider(KyoceraSupportCatalog catalog, 
     private UpdateCheckResult Result(InstalledApplication application, KyoceraModel? model, UpdateStatus status, string? available, string message,
         UpdateExecutionPlan? plan = null) =>
         new(application.Identity, application.DisplayName, application.NormalizedVersion,
-            status is UpdateStatus.NewerReleaseKnown or UpdateStatus.Available ? available : null,
+            status is UpdateStatus.NewerReleaseKnown or UpdateStatus.Available or UpdateStatus.Current ? available : null,
             status, Id, model is null ? "Kyocera support page" : $"Kyocera support page · {model.Name}",
             "application-managed", "Preserved by the application's updater", InstalledApplicationMetadata.Architecture(application) ?? "unknown", "stable",
             model?.SupportPage.AbsoluteUri, message, plan,
